@@ -1,0 +1,83 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- テスト（xUnit: Apache-2.0、Microsoft.NET.Test.Sdk: MIT。NFR-1 確認済み、2026-07-07 承認）。
+       テストプロジェクトは参照方向の制約対象外（全層を参照して検査する側）。 -->
+  <PropertyGroup>
+    <!-- アダプタと同じ3系（net48 / net8 / net10）で回し、ホストランタイム差の回帰を機械検査する -->
+    <TargetFrameworks>$(CadPetaHostTfms)</TargetFrameworks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <!-- EmfWriter.BuildBgrDib のユニット検証で Bitmap を組むため。参照は Out.Emf と同じ流儀
+       （net48=in-box System.Drawing、net8/net10=System.Drawing.Common）。推移参照は net48 の
+       in-box 参照を運ばないため、テスト側にも明示する -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != '$(CadPetaNet48Tfm)'">
+    <PackageReference Include="System.Drawing.Common" Version="$(SystemDrawingCommonVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CadPeta.Core\CadPeta.Core.csproj" />
+    <ProjectReference Include="..\..\src\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <ProjectReference Include="..\..\src\CadPeta.Plugin.Shared\CadPeta.Plugin.Shared.csproj" />
+    <ProjectReference Include="..\..\src\CadPeta.Acquire.Pdf\CadPeta.Acquire.Pdf.csproj" />
+    <ProjectReference Include="..\..\src\CadPeta.Acquire.Acad\CadPeta.Acquire.Acad.csproj" />
+    <ProjectReference Include="..\..\src\CadPeta.Acquire.Common\CadPeta.Acquire.Common.csproj" />
+    <ProjectReference Include="..\..\src\CadPeta.Acquire.Raster\CadPeta.Acquire.Raster.csproj" />
+    <ProjectReference Include="..\..\src\CadPeta.Out.Emf\CadPeta.Out.Emf.csproj" />
+    <ProjectReference Include="..\..\src\CadPeta.Out.Pdf\CadPeta.Out.Pdf.csproj" />
+    <ProjectReference Include="..\..\src\CadPeta.Out.Png\CadPeta.Out.Png.csproj" />
+    <ProjectReference Include="..\..\src\CadPeta.Glyphs.Shx\CadPeta.Glyphs.Shx.csproj" />
+    <!-- 参照方向テストの検査対象（AutoCAD 参照は ExcludeAssets=runtime のため
+         テスト実行フォルダへは複製されず、メタデータ検査のみ行う） -->
+    <ProjectReference Include="..\..\src\CadPeta.Plugin.Acad\CadPeta.Plugin.Acad.csproj" />
+    <!-- 互換CAD第一対象 ARES のアダプタは net48 単一ターゲット。SetTargetFramework で
+         参照先ターゲットを明示し、TFM 自動ネゴシエーション（NU1702 警告の原因）を避ける。
+         参照方向テストはアセンブリの実行ではなく参照メタデータの読み取り（RefNames）に
+         留まるため、実行時に ARES 本体・.NET Framework ランタイムを必要としない。
+         net48 ビルドの成果物がそのまま3ターゲットへ複製され、いずれの構成でも
+         GetReferencedAssemblies() が読める（2026-07-10 実機確認） -->
+    <ProjectReference Include="..\..\src\CadPeta.Acquire.Ares\CadPeta.Acquire.Ares.csproj"
+                       SetTargetFramework="TargetFramework=$(CadPetaNet48Tfm)" />
+    <ProjectReference Include="..\..\src\CadPeta.Plugin.Ares\CadPeta.Plugin.Ares.csproj"
+                       SetTargetFramework="TargetFramework=$(CadPetaNet48Tfm)" />
+  </ItemGroup>
+
+  <!-- 互換CAD第二対象 IJCAD・第三対象 BricsCAD のアダプタはいずれも net8 単一ターゲット。
+       ARES（net48 単一）と異なり、net48 コンシューマから net8 専用プロジェクトへの参照は
+       NuGet が非対応（NU1201。.NET Framework は .NET Core/5+ を参照できない、ARES とは
+       逆方向の非対称性）のため、ARES と同じ SetTargetFramework 明示に加えて net48 ビルドでは
+       この参照自体を外す。ArchitectureTests.cs 側も同じ条件（#if !NET48）で対応する Fact を
+       ガードする -->
+  <!-- CAD 不要の合成ルート（App）は net10 単一ターゲットのため net10 ビルドでのみ参照する。
+       対応するテストは #if NET10_0_OR_GREATER で同じ条件にガードする -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet10Tfm)'">
+    <ProjectReference Include="..\..\src\CadPeta.App\CadPeta.App.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' != '$(CadPetaNet48Tfm)'">
+    <ProjectReference Include="..\..\src\CadPeta.Acquire.Ijcad\CadPeta.Acquire.Ijcad.csproj"
+                       SetTargetFramework="TargetFramework=$(CadPetaNet8Tfm)" />
+    <ProjectReference Include="..\..\src\CadPeta.Plugin.Ijcad\CadPeta.Plugin.Ijcad.csproj"
+                       SetTargetFramework="TargetFramework=$(CadPetaNet8Tfm)" />
+    <ProjectReference Include="..\..\src\CadPeta.Acquire.Bricscad\CadPeta.Acquire.Bricscad.csproj"
+                       SetTargetFramework="TargetFramework=$(CadPetaNet8Tfm)" />
+    <ProjectReference Include="..\..\src\CadPeta.Plugin.Bricscad\CadPeta.Plugin.Bricscad.csproj"
+                       SetTargetFramework="TargetFramework=$(CadPetaNet8Tfm)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AutoCAD 2026 正解チャートから生成した固定格子輝度。生成元PDFのSHA-256も含み、
+         tests/tools/pdf-emf/gradient_fit の golden モードでのみ更新する。 -->
+    <EmbeddedResource Include="..\..\tests\assets\testcharts\gradient\golden_samples.json"
+                      LogicalName="CadPeta.Tests.gradient_golden_samples.json" />
+  </ItemGroup>
+
+</Project>

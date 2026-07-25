@@ -1,0 +1,232 @@
+# CADPeta message catalog (English / LCID 1033)
+# Format: key=value (UTF-8). Blank lines and lines starting with # are ignored.
+# Escapes: \n=newline \t=tab \s=space (for trailing spaces) \\=backslash
+# Values are .NET composite format strings ({0} etc.), formatted with InvariantCulture.
+
+# ---- Keyword display names (matching uses the global names All/Object etc.) ----
+keyword.all=All(A)
+keyword.object=Object(O)
+keyword.margin=Margin(M)
+keyword.file_output=File output(F)
+keyword.emf_background=EMF background(B)
+keyword.layer=Layer(L)
+keyword.text_outline=Text outline(T)
+keyword.shx_substitute=SHX substitute(S)
+keyword.gradient=Gradient(G)
+
+# ---- Range prompt ----
+range.pickfirst_filter=Narrowing output to the pre-selected objects (specify the range next)
+range.filter_set=Output target: narrowed to the selected objects
+range.filter_cleared=Output target: narrowing cleared, including pre-selection (all objects)
+range.selection_cancelled=Object selection cancelled; command aborted
+range.first_corner=\nSpecify first corner or [{0}] <{1}>
+range.second_corner=\nSpecify opposite corner:\s
+range.cancelled=Range input cancelled; command aborted
+range.unknown_keyword=Unknown keyword: {0}
+range.degenerate_window=Window width or height is 0; specify it again
+range.data_selection_cancelled=Object selection cancelled; PETADATA aborted
+range.data_selection_empty=No objects selected; PETADATA aborted
+range.pickfirst_data=Passing the pre-selected objects to structured SVG export
+
+# ---- Scale and option prompt (PETADATA) ----
+scale.prompt.svg=\nSVG scale 1:N, enter N or [{0}] <1:{1:0.##}>
+scale.cancelled=Scale input cancelled; command aborted
+scale.margin_prompt=\nSpecify the crop margin in mm
+scale.margin_cancelled=Margin input cancelled; command aborted
+scale.gradient_dpi_prompt=\nSpecify the DPI for gradient images
+scale.gradient_dpi_state=Gradient resolution: {0:0.##}dpi
+scale.emf_bg_prompt=\nSpecify the EMF transparency-flattening base color as #RRGGBB <{0}>
+scale.emf_bg_cancelled=EMF background color input cancelled; command aborted
+scale.emf_bg_invalid=Specify the EMF background color in #RRGGBB format
+scale.emf_bg_state=EMF flattening base color: {0}
+
+# ---- Option toggle confirmations ----
+toggle.file_output.on=File output: on
+toggle.file_output.off=File output: off
+toggle.layer.on=Group by layer: on (drawing order may change and the appearance may break; affects both the SVG group structure and the EMF drawing order)
+toggle.layer.off=Group by layer: off
+toggle.shx.on=SHX text via substitute font: on (glyph shapes become an approximation in the substitute font, but text stays editable after pasting)
+toggle.shx.off=SHX text via substitute font: off (default; glyphs are outlined exactly as drawn)
+toggle.outline.on=Text outlining: on (all text becomes outline shapes; environment-independent appearance, but text is no longer editable)
+toggle.outline.off=Text outlining: off (default; fonts are kept and text stays editable after pasting)
+
+# ---- PETA/PETADIAG main flow ----
+runner.diag_forces_file_output=Diagnostic mode ignores the file-output-off setting and writes the full set
+runner.no_ocg=The published PDF has no layer (OCG) information, so output continues without layer grouping. Check the layer output setting of the PDF driver
+runner.pdf_published=PDF published: {0} ({1:N0} bytes, {2}ms)
+runner.diag_stage_dump=Diagnostic mode: dumping SVG before and after each conversion stage → {0}
+runner.diag_empty_ir=Diagnostic mode: the IR is empty, so normal output (SVG/EMF/clipboard) is skipped, but the diagnostic log is written
+runner.empty_ir_warning=Warning: the IR is empty (no drawable elements in the plot area). Check the plot area of the layout
+runner.svg_written=SVG output: {0}
+runner.emf_written=EMF output: {0} ({1:N0} bytes, {2}ms)
+runner.emf_opacity_flattened=Transparency detected. Use the SVG file to keep it
+runner.empty_selection_ir=[CadPeta] No drawable elements were acquired from the narrowed output; output and clipboard update aborted (check that the range contains the selected objects)
+runner.background_removed_all=[CadPeta] Background removal may have removed all elements. Check with PETADIAG
+
+# ---- Clipboard failure guidance ({0} interpolates the lower-layer error text) ----
+outcome.clipboard_failed=[CadPeta] Clipboard registration failed: {0}
+outcome.available_emf=[CadPeta] Available EMF: {0}
+outcome.reuse_hint=[CadPeta] This EMF can be used directly via Insert → Pictures in Office. Re-running PETA after the conflict is resolved registers it again
+
+# ---- Result summary ----
+summary.clipboard_ok=copied to clipboard
+summary.clipboard_failed=clipboard registration failed
+summary.file_output_off=(file output off)
+summary.line={0}{1:N0} bytes / {2} shapes → {3}{4}
+summary.option.layer=group by layer
+summary.option.shx=SHX substitute font
+summary.option.outline=text outlining
+summary.option.margin=margin {0:0.###}mm
+summary.options=Options: {0}
+
+# ---- Selection narrowing ----
+selplot.none_supported=No printable selected objects; aborting{0}
+selplot.none_supported_detail=\s({0})
+selplot.excluded=Selection narrowing exclusion candidates: {0}
+selplot.abort_unsupported=Aborted because unsupported objects are included
+selplot.separator=,\s
+confirm.partial=\nExclude {0} unsupported object(s) and output the rest? [Yes/No] <No>:\s
+selplot.reason.invalid=invalid or erased
+selplot.reason.non_entity=not an entity
+selplot.reason.other_space=not directly owned by the current space
+selplot.reason.viewport_model_space=a regular viewport can be selected for output only on the current paper-space layout
+selplot.reason.viewport_controller=the paper-space controller viewport cannot be selected for output
+selplot.reason.viewport_off=an off viewport has no displayed content and cannot be selected for output
+selplot.reason.xref=an external reference is not self-contained in the side database
+selplot.stb_mismatch=The CTB/STB mode of the side database does not match the source drawing
+selplot.media_fallback=Cannot restore paper size {0}; using the closest match
+selplot.stylesheet_fallback=Cannot apply plot style {0}; printing with the default
+selplot.session_summary=Narrowing: {1} of {0} selected objects will be output
+selplot.view_copy_failed=Cannot copy the model view into the side database; continuing with a plan view: {0}
+selplot.force_clone={0}=1, so the side database is built by object cloning instead of Wblock
+selplot.wblock_empty=Wblock produced an empty side database; switching to object cloning
+selplot.wblock_failed=Wblock failed; switching to object cloning: {0}
+selplot.wblock_mismatch=The Wblock side database differs from the source selection; switching to object cloning: {0}
+selplot.clone_mismatch=The side database still differs from the source selection after object cloning: {0}
+selplot.translation_normalized=Normalized a uniform side-database translation back to the source coordinates: {0}
+prompt.unknown_keyword=CAD returned an unknown prompt keyword: {0}
+
+# ---- Plot decisions ----
+plot.window_fit_switch=The window {0:F1}×{1:F1}mm does not fit the printable area {2:F1}×{3:F1}mm at the page setup scale; switching to fit-to-paper
+plot.window_verbose=Window plot: window={0} drawing units, scale={1:F6}mm/unit, rotation={2} deg, paper={3:F3}×{4:F3}mm, printable={5:F3}×{6:F3}mm center=({7:F3},{8:F3}), crop rect=({9:F3},{10:F3})-({11:F3},{12:F3})mm
+
+# ---- Plot port (full/window PDF plot; same text for all 4 products, {0} etc. take the device name) ----
+plotport.busy=Another plot is in progress; cannot start (ProcessPlotState={0})
+plotport.layout_info=Layout: {0} (device={1}, paper={2}, style={3})
+plotport.style_none=none
+plotport.device_failed=Cannot set the PDF device {0} (not installed or broken PC3. ErrorStatus={1})
+plotport.media_missing=Paper size {0} does not exist on {1} and no paper matches its dimensions; continuing with the default paper (output size will differ)
+plotport.media_matched_by_size=Paper size {0} does not exist on the output device; using {1}, which matches its dimensions ({2:F2}x{3:F2} mm)
+plotport.media_fallback=Paper fallback. Temporarily mapping {0} ({1:F2}x{2:F2} mm) to A4-class media {3}
+plotport.paper_units_restored=The device override changed the paper unit to {0}; restoring the page setup value {1}
+plotport.rotation_normalized=Plot rotation {0} does not produce an upright image in this product's PDF; publishing with {1} (paper orientation unchanged)
+plotport.window_failed=Cannot set the plot window (window={0} drawing units, ErrorStatus={1}). Check the two specified points
+plotport.validate_failed=Plot settings validation failed (layout={0}, paper={1}, ErrorStatus={2}). Check the page setup of the layout
+plotport.paper_units_fit=Paper unit {0} cannot be used for the window scale calculation; treating as fit-to-paper
+plotport.media_bounds_null=Cannot get the actual paper size (the current plotter configuration is unavailable even after setting device {0}). Check the PC3 configuration
+plotport.media_bounds_failed=Cannot get the actual paper size (device={0}, paper={1}, ErrorStatus={2}). Check the PC3 configuration
+plotport.config_restore_failed=Failed to restore the current plot configuration (still {0}): {1} (ErrorStatus={2})
+editor.paper_pick_switch=Inside a viewport; switching to paper space while specifying the window (the window is in paper coordinates)
+editor.cvport_restore_mismatch=Cannot restore the viewport after the window pick (expected CVPORT={0}, actual CVPORT={1})
+editor.view_plane_degenerate=The UCS plane is viewed edge-on, so the window collapses to a line and no area can be determined. Change the UCS or the view direction and retry
+
+# ---- PlotEngine ----
+engine.plot_in_progress=Another plot is in progress ({0})
+engine.stage_failed=PlotEngine failed at the {0} stage (ErrorStatus={1}, output={2}). Check write access to the output location and the PDF driver configuration
+engine.pdf_missing=The plot completed but no PDF was generated: {0}. Check the PDF driver configuration
+engine.pdf_done=PDF plot completed: {0}
+
+# ---- Output location ----
+output.dwg_dir_unwritable=Cannot write to the drawing folder: {0}
+output.unsaved=The drawing is unsaved, so its folder cannot be determined
+output.esc_suffix=, Esc to abort
+output.prompt=\nEnter the output folder (Enter for {0}{1}):\s
+output.cancelled_fallback=Input was interrupted; using the fallback folder
+output.chosen_unwritable=Cannot write to the specified folder; using the fallback: {0}
+output.chosen_create_failed=Cannot create the specified folder; using the fallback: {0} ({1})
+output.fallback_create_failed=Cannot create the fallback folder {0}. Aborting because no output location is available
+output.fallback_unwritable=Cannot write to the fallback folder {0}. Aborting because no output location is available
+
+# ---- Diagnostics display ({0} diagnostic category names are language-invariant) ----
+diag.dump=Diagnostic dump: {0}
+diag.dump_failed=Diagnostic dump failed (skipping this stage only): {0} ({1})
+diag.summary_line=\s\s{0}: {1} item(s)
+diag.header=---- Diagnostic log (counts and targets) ----
+diag.count_line={0}: {1} item(s)
+diag.none=(no records)
+diag.json_written=Diagnostic log output: {0}.diag.json
+
+# ---- PETADATA/PETADATADIAG ----
+data.aborted=PETADATA aborted
+data.empty_ir=[CadPeta] No drawable elements were acquired from the selected objects; SVG export aborted
+data.svg_written=Structured SVG export: {0} ({1} elements, {2}ms)
+data.done=[CadPeta] PETADATA completed: {0} ({1} elements)
+data.temp_delete_failed=Cannot delete the temporary SVG: {0} ({1})
+data.gradient.zero=0 item(s)
+data.gradient.count={0} item(s)
+data.gradient.count_dpi={0} item(s) (actual DPI {1:0.##}-{2:0.##})
+data.gradient.summary=[CadPeta] PETADATA gradients: rasterized {0}, reduced {1} item(s) to representative colors
+data.db_acquired=Direct DB acquisition: {0} object(s) ({1}ms)
+data.other_space_excluded=[CadPeta] PETADATA only targets objects directly owned by the current space: excluded {0} item(s) (of {1})
+
+# ---- Clipboard (EMF registration and read-back; Win32 error numbers keep the original text) ----
+emf.file_missing=Clipboard registration: the EMF file does not exist: {0}. Check the result of the EMF output stage
+emf.file_empty=Clipboard registration: the EMF file is empty (0 bytes): {0}. Check the result of the EMF output stage
+emf.load_failed=Clipboard registration: failed to load the EMF (GetEnhMetaFile, Win32 error={0}): {1}. Check whether the file is broken as an EMF
+emf.copy_failed=Clipboard registration: failed to duplicate the EMF handle (CopyEnhMetaFile, Win32 error={0}). Check for low memory
+emf.empty_failed=Clipboard registration: failed to clear the contents (EmptyClipboard, Win32 error={0})
+emf.set_failed=Clipboard registration: failed to set the data (SetClipboardData, Win32 error={0})
+emf.close_failed=Warning: CloseClipboard failed (Win32 error={0}). If the clipboard cannot be opened from other applications, restart the host application
+emf.readback_missing=Clipboard read-back: CF_ENHMETAFILE is unavailable (Win32 error={0}). Check whether another process rewrote the clipboard right after registration
+emf.readback_bits_failed=Clipboard read-back: failed to get the EMF bits (GetEnhMetaFileBits, Win32 error={0})
+emf.readback_mismatch=Clipboard read-back: the registered content does not match the output EMF (clipboard {0:N0} bytes / file {1:N0} bytes). Check whether another process rewrote the clipboard right after registration
+emf.registered=Clipboard registration: CF_ENHMETAFILE {0:N0} bytes (read-back byte match verified). Paste into Office with Ctrl+V
+emf.open_failed=Clipboard {0}: cannot open the clipboard (Win32 error={1}, retried {2} times × {3}ms). Holding process: {4}. Re-run after that application finishes its operation
+emf.stage.set=registration
+emf.stage.verify=read-back verification
+emf.holder_unknown=unknown (opened without a window, or already released at the time of query)
+emf.holder_gone=cannot be identified (the process has already exited)
+
+# ---- User-facing logs of the acquisition layer (diagnostic categories stay language-invariant) ----
+acquire.data_empty=Structured SVG export acquisition: no shapes could be mapped (input {0} entities)
+acquire.data_result=Structured SVG export acquisition: {0} entities → {1} nodes, extent {2:F2}x{3:F2}mm (scale 1:{4:0.##}, margin {5}mm)
+acquire.pdf_rotated_runs=Rotated text runs: {0} (baseline direction mapped to rotate)
+acquire.pdf_unknown_fonts=No font name mapping (output with the raw name): {0}
+acquire.pdf_rotated_images=Image rotation correction: {0} (page quarter-turns baked into pixels losslessly)
+acquire.pdf_clip_merged=Clip consolidation: {0} → {1}
+
+# ---- Temporary artifacts (reservation, cleanup, recovery) ----
+artifact.reserve_failed=Could not reserve an output name after {0:N0} attempts: {1} / {2}
+artifact.temp_root_outside=The temporary work root is outside the CadPeta temp folder: {0}
+artifact.lock_delete_failed=Cannot delete the reservation file: {0}
+artifact.unsafe_delete_refused=Warning: refused to delete an unsafe temporary path: {0}
+artifact.temp_delete_failed=Cannot delete temporary artifacts: {0}
+artifact.warn_frame=Warning: {0} ({1})
+artifact.recovery_root_outside=The recovery folder is outside the CadPeta temp folder: {0}
+artifact.recovery_lock_delete_failed=Warning: cannot delete the recovery reservation file: {0} ({1})
+artifact.recovery_reserve_failed=Could not reserve a recovery EMF name after {0:N0} attempts: {1}
+artifact.recovery_preserve_failed=Warning: cannot preserve the temporary EMF to the recovery folder: {0} ({1})
+
+# ---- Build stamp and load-time banner ----
+stamp.unknown_version=(version unknown)
+stamp.unknown_config=(configuration unknown)
+stamp.unknown_tfm=(TFM unknown)
+stamp.unknown_path=(path unknown)
+stamp.loaded_from=Loaded from: {0}
+app.loaded=[CadPeta] {0} loaded {1}
+
+# ---- Error description frames at the command boundary ({0} etc. keep the original text) ----
+error.prefix=[CadPeta] Error: {0}
+error.api_failed_acad=AutoCAD API failed (ErrorStatus={0}). Check the page setup and the plotter configuration
+error.api_failed={0} API failed (ErrorStatus={1})
+error.access_denied=Access to the output location was denied: {0}. Check folder permissions or specify another output folder
+error.io_failed=File I/O failed: {0}
+error.unsupported_acad=Unsupported input detected: {0}. Report it with the published PDF and the diagnostic log
+error.unsupported=Unsupported input detected: {0}. Report it with the drawing and the diagnostic log
+
+# ---- Reports about the language catalog itself ----
+lang.unknown_host=Language catalog: the host language could not be determined; using 1033.lang (English)
+lang.file_missing=Language catalog {0} not found; using the built-in messages
+lang.file_invalid=Language catalog {0} could not be read; using the built-in messages ({1})
+lang.missing_keys=Language catalog {0} is missing {1} key(s); filled from the built-in messages: {2}
+lang.format_fallback=Language catalog {0}: the value for key {1} cannot be formatted ({2}); continuing with the built-in message

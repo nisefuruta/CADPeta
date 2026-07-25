@@ -1,0 +1,20 @@
+*TESTSHAPE_BASE,test shape base ---o---o---o---o---o---
+A,3,-1,[BOX,ltypeshp.shx,s=1],-1
+*TESTSHAPE_R,test shape rel ---o---o---o---o---o---
+A,3,-1,[BOX,ltypeshp.shx,s=1,r=45],-1
+*TESTSHAPE_A,test shape abs ---o---o---o---o---o---
+A,3,-1,[BOX,ltypeshp.shx,s=1,a=45],-1
+*TESTSHAPE_U,test shape upright ---o---o---o---o---o---
+A,3,-1,[BOX,ltypeshp.shx,s=1,u=45],-1
+*TESTTEXT_BASE,test text base ---T---T---T---T---T---
+A,3,-1,["T",STANDARD,s=1],-1
+*TESTTEXT_R,test text rel ---T---T---T---T---T---
+A,3,-1,["T",STANDARD,s=1,r=45],-1
+*TESTTEXT_A,test text abs ---T---T---T---T---T---
+A,3,-1,["T",STANDARD,s=1,a=45],-1
+*TESTTEXT_U,test text upright ---T---T---T---T---T---
+A,3,-1,["T",STANDARD,s=1,u=45],-1
+*TESTSHAPE_XY,test shape xy offset ---o---o---o---o---o---
+A,3,-1,[BOX,ltypeshp.shx,s=1,x=0.5,y=0.25],-1
+*TESTSHAPE_ZERO,test shape zero-length dash ---o---o---o---o---o---
+A,3,0,[BOX,ltypeshp.shx,s=1],-1

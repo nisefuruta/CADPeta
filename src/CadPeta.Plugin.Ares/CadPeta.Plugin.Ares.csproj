@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 合成ルート（プラグイン入口、互換CAD第一対象 ARES）: 構造SVG書き出し（DB直接取得）と
+       PDFプロット経由のPDF印刷経路を Shared の本体へ結線する。Cli・Plugin.Acad と
+       同格の最外殻であり、参照方向は内側への一方向のみ。ARES 参照は本プロジェクトだけに置く
+       （内側のプロジェクトに現れないことを tests/ArchitectureTests が機械検査する）。 -->
+
+  <PropertyGroup>
+    <!-- ARES Standard 2024（net48）＋ARES Standard 2027（net8）の2系マルチターゲット
+         （根拠と DLL 名は src/Directory.Build.props の CadPetaAresTfms）。NETLOAD 先の
+         ホストランタイムに合わせて配備する -->
+    <TargetFrameworks>$(CadPetaAresTfms)</TargetFrameworks>
+    <!-- NETLOAD されるプラグインは実行ファイルと違い deps.json をホストが読まないため、
+         NuGet 依存（System.Text.Json 等）を出力フォルダへ複製して同一フォルダ配備にする。
+         ARES 参照は HintPath＋Private=false のため複製対象外（ホストが提供） -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <DefineConstants>$(DefineConstants);CADPETA_ARES</DefineConstants>
+    <!-- ARES 本体のインストール先。環境が変わる場合はプロパティで上書きする -->
+    <AresBinDirNet48 Condition="'$(AresBinDirNet48)' == ''">C:\Program Files\Graebert GmbH\ARES Standard 2024\BIN</AresBinDirNet48>
+    <AresBinDirNet8 Condition="'$(AresBinDirNet8)' == ''">C:\Program Files\Graebert GmbH\ARES Standard 2027\BIN</AresBinDirNet8>
+    <!-- ARES 2027 の実体 DLL（HintPath 直接参照）は埋め込み版数が net8 参照アセンブリの
+         互換版数と食い違い MSB3277 になり得る（Acquire.Ares と同じ実測パターン）。
+         コンパイル専用参照で実害がないため、この既知の警告だけを抑制する -->
+    <MSBuildWarningsAsMessages Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+    <!-- 未対応の AresSdkYearNet48 指定を明示的に失敗させる検査（Directory.Build.props）の対象 -->
+    <CadPetaUsesAresSdk>true</CadPetaUsesAresSdk>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadPlotEngineRunner.cs" Link="CadCommon\CadPlotEngineRunner.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadSelectionPlotPort.cs" Link="CadCommon\CadSelectionPlotPort.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadDataExportCommands.cs" Link="CadCommon\CadDataExportCommands.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadHostLanguage.cs" Link="CadCommon\CadHostLanguage.cs" />
+  </ItemGroup>
+
+  <!-- ARES 参照アセンブリ: 利用者所有の本体 DLL への直接参照であり、ビルドには ARES の
+       インストールが前提となる。名前空間は全世代共通で、Teigha.Runtime（CommandMethod・
+       ExtensionApplication）は TD_Mgd*、Teigha.ApplicationServices/EditorInput（Application・
+       Document・Editor・SelectionSet）は FxCoreMgd*。Private=false でコンパイル専用参照とし、
+       実行時はホスト ARES が同名アセンブリを提供する。DLL 名・パスは年式で異なるため、
+       net48 は年式プロパティ（AresSdkYearNet48・AresNet48DllVer。表は
+       src/Directory.Build.props）で、net8（2027=…_Net8_26.8_17）は per-TFM で分ける -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
+    <Reference Include="TD_Mgd_$(AresNet48DllVer)">
+      <HintPath>$(AresBinDirNet48)\TD_Mgd_$(AresNet48DllVer).dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FxCoreMgd_$(AresNet48DllVer)">
+      <HintPath>$(AresBinDirNet48)\FxCoreMgd_$(AresNet48DllVer).dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- 診断ログ JSON（Plugin.Acad の net48 と同じ規則）。net48 は非 in-box のためパッケージ参照 -->
+    <PackageReference Include="System.Text.Json" Version="$(SystemTextJsonVersion)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">
+    <Reference Include="TD_Mgd_Net8_26.8_17">
+      <HintPath>$(AresBinDirNet8)\TD_Mgd_Net8_26.8_17.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FxCoreMgd_Net8_26.8_17">
+      <HintPath>$(AresBinDirNet8)\FxCoreMgd_Net8_26.8_17.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- net8 の System.Text.Json は in-box（基盤ランタイム提供）のためパッケージ参照は不要 -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Plugin.Shared\CadPeta.Plugin.Shared.csproj" />
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Ares\CadPeta.Acquire.Ares.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Pdf\CadPeta.Acquire.Pdf.csproj" />
+    <ProjectReference Include="..\CadPeta.Out.Emf\CadPeta.Out.Emf.csproj" />
+  </ItemGroup>
+
+</Project>

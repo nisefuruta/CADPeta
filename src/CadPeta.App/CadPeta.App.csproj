@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(CadPetaAppTfm)</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CadPeta.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Pdf\CadPeta.Acquire.Pdf.csproj" />
+    <ProjectReference Include="..\CadPeta.Out.Emf\CadPeta.Out.Emf.csproj" />
+    <ProjectReference Include="..\CadPeta.Out.Pdf\CadPeta.Out.Pdf.csproj" />
+    <ProjectReference Include="..\CadPeta.Out.Png\CadPeta.Out.Png.csproj" />
+  </ItemGroup>
+</Project>

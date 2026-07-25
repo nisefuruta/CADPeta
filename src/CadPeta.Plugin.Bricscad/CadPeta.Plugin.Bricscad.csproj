@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 合成ルート（プラグイン入口、互換CAD第三対象 BricsCAD）: 構造SVG書き出し（DB直接取得）と
+       PDFプロット経由のPDF印刷経路を Shared の本体へ結線する。Cli・
+       Plugin.Acad・Plugin.Ares・Plugin.Ijcad と同格の最外殻であり、参照方向は内側への
+       一方向のみ。BricsCAD 参照は本プロジェクトだけに置く（内側のプロジェクトに現れないことを
+       tests/ArchitectureTests が機械検査する）。 -->
+
+  <PropertyGroup>
+    <!-- BricsCAD V26 の managed API は net8（.NETCoreApp v8.0）のため net8 単一ターゲット -->
+    <TargetFramework>$(CadPetaNet8Tfm)</TargetFramework>
+    <!-- NETLOAD されるプラグインは実行ファイルと違い deps.json をホストが読まないため、
+         NuGet 依存を出力フォルダへ複製して同一フォルダ配備にする。
+         BricsCAD 参照は HintPath＋Private=false のため複製対象外（ホストが提供） -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <DefineConstants>$(DefineConstants);CADPETA_BRICSCAD</DefineConstants>
+    <!-- BricsCAD 本体のインストール先。環境が変わる場合はプロパティで上書きする -->
+    <BricscadBinDir Condition="'$(BricscadBinDir)' == ''">C:\Program Files\Bricsys\BricsCAD V26 ja_JP</BricscadBinDir>
+    <!-- TD_Mgd/BrxMgd は NuGet 参照アセンブリではなく実体 DLL（HintPath 直接参照）のため、
+         MSB3277（解決できない競合）警告になり得る（CadPeta.Acquire.Bricscad と同じ実測パターン）。
+         いずれもコンパイル専用参照（Private=false、実行時はホスト BricsCAD が提供）で実害が
+         ないため、この既知の警告だけを抑制する -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadPlotEngineRunner.cs" Link="CadCommon\CadPlotEngineRunner.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadSelectionPlotPort.cs" Link="CadCommon\CadSelectionPlotPort.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadDataExportCommands.cs" Link="CadCommon\CadDataExportCommands.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadHostLanguage.cs" Link="CadCommon\CadHostLanguage.cs" />
+  </ItemGroup>
+
+  <!-- BricsCAD 参照アセンブリ: 利用者所有の本体 DLL への直接参照であり、ビルドには BricsCAD の
+       インストールが前提となる。Teigha.Runtime（CommandMethod・ExtensionApplication）・
+       Teigha.DatabaseServices は TD_Mgd.dll のまま ARES/AutoCAD 版と同じ Teigha.* 名前空間。
+       Bricscad.ApplicationServices（Application・Document・DocumentManager）・
+       Bricscad.EditorInput（Editor・SelectionSet）だけ BrxMgd.dll・Bricscad.* 名前空間へ
+       差し替わる（2026-07-11 リフレクション実機検査で確認した BricsCAD 固有の非対称性）。
+       Private=false でコンパイル専用参照とし、実行時はホスト BricsCAD が同名アセンブリを提供する -->
+  <ItemGroup>
+    <Reference Include="TD_Mgd">
+      <HintPath>$(BricscadBinDir)\TD_Mgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BrxMgd">
+      <HintPath>$(BricscadBinDir)\BrxMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- 診断ログ JSON。net8 は System.Text.Json が in-box のため PackageReference 不要
+         （Plugin.Ijcad と同じ流儀。net48 単一ターゲットの Plugin.Ares とは異なる） -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Plugin.Shared\CadPeta.Plugin.Shared.csproj" />
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Bricscad\CadPeta.Acquire.Bricscad.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Pdf\CadPeta.Acquire.Pdf.csproj" />
+    <ProjectReference Include="..\CadPeta.Out.Emf\CadPeta.Out.Emf.csproj" />
+  </ItemGroup>
+
+</Project>

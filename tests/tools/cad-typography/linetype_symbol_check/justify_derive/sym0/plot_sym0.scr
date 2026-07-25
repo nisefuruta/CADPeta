@@ -1,0 +1,22 @@
+(setvar "CMDECHO" 1)
+-PLOT
+Y
+Model
+AutoCAD PDF (High Quality Print).pc3
+ISO フルブリード A3 (420.00 x 297.00 ミリ)
+M
+L
+N
+W
+-20,-20
+250,150
+1:3
+0.00,0.00
+Y
+.
+Y
+A
+C:/Users/wk/AppData/Local/Temp/cadpeta_p3b_ltjust/sym0/sym0_plot.pdf
+N
+Y
+_.QUIT _Y

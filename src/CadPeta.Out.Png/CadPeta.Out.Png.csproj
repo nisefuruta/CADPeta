@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 出力アダプタ（PNG: GDI+（System.Drawing）による直接ラスタライズ、FR-3）。
+       GDI 依存は Out.Emf と同じくアダプタ層限定（設計書§1.1）。 -->
+
+  <PropertyGroup>
+    <!-- プラグインはホスト AutoCAD のランタイムで読み込まれるため3系マルチターゲット
+         （割当ての根拠は src/Directory.Build.props）。本製品は Windows 専用（要求仕様書§4.1）。
+         内核・ユースケース層は netstandard2.0（中立）のまま -->
+    <TargetFrameworks>$(CadPetaHostTfms)</TargetFrameworks>
+  </PropertyGroup>
+
+  <!-- System.Drawing は IR の直接ラスタライズ（塗り・線・文字・画像）に使う
+       （Out.Emf と同じ判断・同じ流儀）。net48 は in-box の System.Drawing、
+       net8/net10 は System.Drawing.Common（MIT）で賄う -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != '$(CadPetaNet48Tfm)'">
+    <PackageReference Include="System.Drawing.Common" Version="$(SystemDrawingCommonVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+  </ItemGroup>
+
+</Project>

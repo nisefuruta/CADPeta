@@ -1,0 +1,23 @@
+# レンダラ横断（PDFium／GDI／Chromium）比較器の依存定義（uv 管理）。
+# pypdfium2: PDFium バインディング（Apache-2.0 / BSD-3-Clause）
+# pillow   : 画像入出力・色空間変換（HPND）
+# numpy    : 前景マスクのシフト探索・膨張・ROI 集計の画素処理（BSD-3-Clause）
+# 既存の window_contract / pdf-emf 側の pyproject とは分ける（共用の依存を検証目的で汚さない）。
+[project]
+name = "cadpeta-peta-option-matrix"
+version = "0.1.0"
+description = "PETA E2E 総点検向けのレンダラ横断（正解PDF対EMF/SVG）画像比較ツール"
+requires-python = ">=3.12"
+dependencies = [
+    "pypdfium2>=4.30",
+    "pillow>=10.0",
+    "numpy>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

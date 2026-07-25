@@ -1,0 +1,10 @@
+;; 出力先ログ（カレントディレクトリ基準。必要に応じて絶対パスへ変更）
+(setq tclog "dwg_hatch_log.txt")
+(defun lg (s / f) (setq f (open tclog "a")) (princ s f) (princ "\n" f) (close f) nil)
+(lg (strcat "DWG=" (getvar "DWGNAME") " MEASUREMENT=" (itoa (getvar "MEASUREMENT")) " HPMAXLINES=" (itoa (getvar "HPMAXLINES"))))
+(setq ss (ssget "_X" (list (cons 0 "HATCH"))))
+(lg (strcat "HATCH-COUNT=" (itoa (if ss (sslength ss) 0))))
+(setq i 0)
+(while (and ss (< i (sslength ss))) (progn (setq d (entget (ssname ss i)) p (cdr (assoc 10 (cdr (member (assoc 92 d) d))))) (lg (strcat "H" (itoa i) " pat=" (cdr (assoc 2 d)) " solid=" (itoa (cdr (assoc 70 d))) " scale=" (if (assoc 41 d) (rtos (cdr (assoc 41 d)) 2 4) "n/a") " angle=" (if (assoc 52 d) (rtos (cdr (assoc 52 d)) 2 2) "n/a") " color=" (if (assoc 420 d) (strcat "TC:" (itoa (cdr (assoc 420 d)))) (if (assoc 62 d) (strcat "ACI:" (itoa (cdr (assoc 62 d)))) "ByLayer")) " layer=" (cdr (assoc 8 d)) " at=" (if p (strcat (rtos (car p) 2 1) "," (rtos (cadr p) 2 1)) "?"))) (setq i (1+ i))))
+(lg "INSPECT2-DONE")
+_.QUIT _N

@@ -1,0 +1,5 @@
+(setvar "SECURELOAD" 0)
+(load "C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/justify_check/probe_stale10.lsp")
+(c:PROBESTALE10 "C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/justify_check/probe_stale10_dump.txt")
+(setvar "SECURELOAD" 1)
+_.QUIT _Y

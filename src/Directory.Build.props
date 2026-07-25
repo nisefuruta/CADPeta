@@ -1,0 +1,121 @@
+<Project>
+  <!-- src/ 配下（本実装）の共通設定。tests/ の検証資産へ波及させないため、
+       リポジトリルートではなくここに置く。
+       参照方向の規則（設計書§1.1）は各 csproj の ProjectReference と
+       tests/CadPeta.Tests の参照方向テストが守る。 -->
+
+  <PropertyGroup>
+    <!-- ==== TFM の一元定義（マジックナンバー禁止の適用: TFM 文字列を csproj へ直書きしない） ====
+         プラグインはホスト AutoCAD のランタイムで読み込まれるため3系を揃える。
+         割当ての根拠（2026-07-07 一次情報確認。Autodesk 公式ヘルプ・ADN/APS ブログ）:
+         - AutoCAD 2024 以前 = .NET Framework 4.8（ObjectARX 2026「About Managed .NET Compatibility」）
+         - AutoCAD 2025/2026 = .NET 8（同上・APS ブログ「AutoCAD 2025/2026 (25_0/25_1): Require .NET 8」）
+         - AutoCAD 2027     = .NET 10（ADN ブログ 2026-04-11「managed applications must target .NET 10.0」）
+         開発・単独配布（CLI・単独入口）は .NET 10 を基本とする（恒久方針、2026-07-07） -->
+    <CadPetaNet48Tfm>net48</CadPetaNet48Tfm>
+    <CadPetaNet8Tfm>net8.0-windows</CadPetaNet8Tfm>
+    <CadPetaNet10Tfm>net10.0-windows</CadPetaNet10Tfm>
+    <!-- 内核（Core・UseCases）: 3系すべてから参照可能な中立ターゲット -->
+    <CadPetaKernelTfm>netstandard2.0</CadPetaKernelTfm>
+    <!-- プラグイン側で使うアダプタ（Acquire.Pdf・Out.Emf）とテスト: 3系マルチターゲット -->
+    <CadPetaHostTfms>$(CadPetaNet48Tfm);$(CadPetaNet8Tfm);$(CadPetaNet10Tfm)</CadPetaHostTfms>
+    <!-- 互換CAD第一対象 ARES のアダプタ・プラグイン: net48（ARES Standard 2024＝.NET Framework
+         世代ホスト。BIN は FxCoreMgd_23.1_16.dll / TD_Mgd_23.1_16.dll）と net8（ARES Standard 2027＝
+         .NET 8 世代ホスト。BIN は FxCoreMgd_Net8_26.8_17.dll / TD_Mgd_Net8_26.8_17.dll。2026-07-13
+         本機の実 BIN で確認）の2系マルチターゲット。名前空間は両世代とも Teigha.* で共通だが
+         DLL 名・インストール先が版で異なるため per-TFM 参照とする（IJCAD/BricsCAD が net8 単一
+         なのは対応版が net8 世代のみのため。ARES は 2024・2027 の両世代を実機所有） -->
+    <CadPetaAresTfms>$(CadPetaNet48Tfm);$(CadPetaNet8Tfm)</CadPetaAresTfms>
+    <!-- 単独配布の入口（Cli）: .NET 10 基準 -->
+    <CadPetaAppTfm>$(CadPetaNet10Tfm)</CadPetaAppTfm>
+
+    <!-- ==== パッケージ版数の一元定義 ====
+         PdfPig: Apache-2.0（Phase 0 で本実装採用を確定、要求仕様書§8）。
+         netstandard2.0/net471 資産を持ち net48 でも成立（追加依存 Microsoft.Bcl.HashCode /
+         System.Memory はいずれも MIT。2026-07-07 確認） -->
+    <PdfPigVersion>0.1.15</PdfPigVersion>
+    <!-- System.Drawing.Common: MIT。net8/net10 側のみ使用（net48 は in-box の System.Drawing）。
+         版は 8.0 系に固定する: プラグインはホスト AutoCAD の WindowsDesktop 共有フレームワーク
+         （2025/2026 = .NET 8 → SDC アセンブリ版 8.0.0.0 を提供）内で解決されるため、
+         9.0 要求は版不整合の FileLoadException になる（AutoCAD 2026 実測、2026-07-07）。
+         8.0 要求なら同版・上位版（.NET 10 ホスト）のどちらでも束縛できる -->
+    <SystemDrawingCommonVersion>8.0.28</SystemDrawingCommonVersion>
+    <!-- AutoCAD .NET 参照アセンブリ（NuGet、Autodesk 公式発行を nuspec で確認、2026-07-07）。
+         ライセンスは ObjectARX 同梱契約（開発目的の複製・第三者提供を許諾。コピーレフト・
+         有償条項なし＝NFR-1 適合）。コンパイル専用参照とし実行資産に含めない
+         （ExcludeAssets=runtime。実行時はホスト AutoCAD が同名アセンブリを提供）。
+         版対応（nuspec と NuGet flatcontainer で実確認）: 24.3.0=AutoCAD 2024
+         (net47資産→net48で参照可)／25.0.0=2025・25.1.0=2026(net8.0)／26.0.0=2027(net10.0)。
+         net8 系は 2025/2026 の両方で動かすため系内最古の 25.0.0 でコンパイルする -->
+    <AcadNetVersionNet48>24.3.0</AcadNetVersionNet48>
+    <AcadNetVersionNet8>25.0.0</AcadNetVersionNet8>
+    <AcadNetVersionNet10>26.0.0</AcadNetVersionNet10>
+    <!-- System.Text.Json: MIT。診断ログ JSON の直列化（Cli は in-box、net48 プラグインのみパッケージ） -->
+    <SystemTextJsonVersion>9.0.0</SystemTextJsonVersion>
+
+    <!-- netstandard2.0 の既定 LangVersion は 7.3 のため明示必須（record/init 等を使う） -->
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- ==== 互換CAD 参照アセンブリの解決先 ====
+       互換CAD（ARES/IJCAD/BricsCAD）のプラグイン／アダプタは、利用者所有の本体 DLL を HintPath で
+       compile 専用参照する（Private=false。実行時はホストが提供）。既定は本体のインストール先だが、
+       試用期間切れ・アンインストール・別マシンで本体が無くてもビルドできるよう、
+       lib/vendor-refs/<cad>/ に退避コピー（または Refasmer 等の参照専用 DLL）があればそちらを優先する。
+       lib/vendor-refs は .gitignore 済みで、ベンダーSDK を公開リポへ混入させない（再配布可否は各社
+       ライセンスに従う）。各 csproj 側の既定は本 props が先に設定するため発火しない（フォールバック）。 -->
+  <PropertyGroup>
+    <CadPetaVendorRefs>$(MSBuildThisFileDirectory)..\lib\vendor-refs</CadPetaVendorRefs>
+
+    <BricscadBinDir Condition="'$(BricscadBinDir)' == '' And Exists('$(CadPetaVendorRefs)\bricscad\TD_Mgd.dll')">$(CadPetaVendorRefs)\bricscad</BricscadBinDir>
+    <BricscadBinDir Condition="'$(BricscadBinDir)' == ''">C:\Program Files\Bricsys\BricsCAD V26 ja_JP</BricscadBinDir>
+
+    <IjcadBinDir Condition="'$(IjcadBinDir)' == '' And Exists('$(CadPetaVendorRefs)\ijcad\GcDbMgd.dll')">$(CadPetaVendorRefs)\ijcad</IjcadBinDir>
+    <IjcadBinDir Condition="'$(IjcadBinDir)' == ''">C:\Program Files\ITJP\IJCAD 2026 PRO</IjcadBinDir>
+
+    <!-- ARES net48 スロットの SDK 年式。ARES は net48 世代でも年式ごとに SDK のアセンブリ名が
+         異なる（下表）ため、同じ net48 でも年式別のペイロードを組む。既定は 2024 で日常ビルドの
+         挙動を変えず、dist が -p:AresSdkYearNet48=2020/2023 で旧年式を組む。
+         年式→DLL版サフィックスの対応は本表だけが持つ（2026-07-21 本機の実 BIN で確認）。
+         2022 は本体・SDK 未入手のため未登載（BIN は 2023 と同名 DLL だが FxCoreMgd の埋め込み
+         版数が異なる見込みで、実物照合まで対応を宣言しない） -->
+    <CadPetaAresDefaultSdkYear>2024</CadPetaAresDefaultSdkYear>
+    <AresSdkYearNet48 Condition="'$(AresSdkYearNet48)' == ''">$(CadPetaAresDefaultSdkYear)</AresSdkYearNet48>
+    <AresNet48DllVer Condition="'$(AresSdkYearNet48)' == '2024'">23.1_16</AresNet48DllVer>
+    <AresNet48DllVer Condition="'$(AresSdkYearNet48)' == '2023'">4.03_15</AresNet48DllVer>
+    <AresNet48DllVer Condition="'$(AresSdkYearNet48)' == '2020'">4.03_14</AresNet48DllVer>
+
+    <AresBinDirNet48 Condition="'$(AresBinDirNet48)' == '' And Exists('$(CadPetaVendorRefs)\ares\$(AresSdkYearNet48)\TD_Mgd_$(AresNet48DllVer).dll')">$(CadPetaVendorRefs)\ares\$(AresSdkYearNet48)</AresBinDirNet48>
+    <AresBinDirNet48 Condition="'$(AresBinDirNet48)' == ''">C:\Program Files\Graebert GmbH\ARES Standard $(AresSdkYearNet48)\BIN</AresBinDirNet48>
+
+    <AresBinDirNet8 Condition="'$(AresBinDirNet8)' == '' And Exists('$(CadPetaVendorRefs)\ares\2027\TD_Mgd_Net8_26.8_17.dll')">$(CadPetaVendorRefs)\ares\2027</AresBinDirNet8>
+    <AresBinDirNet8 Condition="'$(AresBinDirNet8)' == ''">C:\Program Files\Graebert GmbH\ARES Standard 2027\BIN</AresBinDirNet8>
+  </PropertyGroup>
+
+  <!-- 既定以外の ARES 年式は出力・中間フォルダを年式別に分離し、既定ビルドの成果物・
+       インクリメンタルビルド状態と混線させない（BaseIntermediateOutputPath は
+       Directory.Build.props でのみ確実に効く） -->
+  <PropertyGroup Condition="'$(AresSdkYearNet48)' != '$(CadPetaAresDefaultSdkYear)'">
+    <BaseOutputPath>bin\ares$(AresSdkYearNet48)\</BaseOutputPath>
+    <BaseIntermediateOutputPath>obj\ares$(AresSdkYearNet48)\</BaseIntermediateOutputPath>
+    <!-- 既定アイテム除外は $(Base*OutputPath) 配下しか対象にしないため、年式別パスへ移すと
+         既定ビルドの bin\・obj\ に残る自動生成ソースが **/*.cs グロブへ拾われて属性重複になる。
+         bin\・obj\ 全体を除外して混入を断つ -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <!-- 未対応の年式指定は参照解決の手前で明示的に失敗させる（黙って TD_Mgd_.dll を探しに
+       行かない）。CadPetaUsesAresSdk は ARES の SDK を参照する csproj だけが立てる -->
+  <Target Name="CadPetaVerifyAresSdkYear" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(CadPetaUsesAresSdk)' == 'true' And '$(TargetFramework)' == '$(CadPetaNet48Tfm)' And '$(AresNet48DllVer)' == ''">
+    <Error Text="AresSdkYearNet48='$(AresSdkYearNet48)' は未対応のARES年式です。対応年式とDLL版サフィックスは src/Directory.Build.props の表へ追加してください。" />
+  </Target>
+
+  <!-- init アクセサ・record が要求する IsExternalInit 型は .NET 5 以降の BCL にのみ存在する。
+       netstandard2.0 / net48 ターゲットへはシム（internal）をリンク挿入する -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaKernelTfm)' Or '$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
+    <Compile Include="$(MSBuildThisFileDirectory)Compat\IsExternalInit.cs" Link="Compat\IsExternalInit.cs" />
+  </ItemGroup>
+</Project>

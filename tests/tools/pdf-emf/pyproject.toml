@@ -1,0 +1,13 @@
+# CADPeta Phase 0 検証ツールの依存定義（uv 管理）
+# pikepdf  : MPL-2.0（ファイル単位弱コピーレフト、NFR-1 適合。調査_PDF解析ライブラリ.md §1）
+# pypdfium2: PDFium バインディング（Apache-2.0 / BSD-3-Clause、NFR-1 適合）
+[project]
+name = "cadpeta-phase0-tools"
+version = "0.1.0"
+description = "Phase 0 抽出検証ツール（本実装ではない）"
+requires-python = ">=3.12"
+dependencies = [
+    "pikepdf>=10.9",
+    "pypdfium2>=4.30",
+    "pillow>=11.0",
+]

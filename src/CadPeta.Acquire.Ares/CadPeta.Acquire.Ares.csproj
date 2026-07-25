@@ -1,0 +1,77 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 取得アダプタ（互換CAD第一対象 ARES: DB直接取得）: モデル空間の選択オブジェクトを
+       図面データベースから直接読み、出所メタデータ（data-*）付きの SVG IR へ写像する。
+       ARES 参照はプラグイン合成ルートと本プロジェクトだけに置く
+       （tests/ArchitectureTests が機械検査する）。 -->
+
+  <PropertyGroup>
+    <!-- ARES Standard 2024（net48）＋ARES Standard 2027（net8）の2系マルチターゲット
+         （根拠と DLL 名は src/Directory.Build.props の CadPetaAresTfms） -->
+    <TargetFrameworks>$(CadPetaAresTfms)</TargetFrameworks>
+    <!-- ARES 本体のインストール先。環境が変わる場合はプロパティで上書きする -->
+    <AresBinDirNet48 Condition="'$(AresBinDirNet48)' == ''">C:\Program Files\Graebert GmbH\ARES Standard 2024\BIN</AresBinDirNet48>
+    <AresBinDirNet8 Condition="'$(AresBinDirNet8)' == ''">C:\Program Files\Graebert GmbH\ARES Standard 2027\BIN</AresBinDirNet8>
+    <!-- ARES 2027 の TD_Mgd_Net8_26.8_17.dll / FxCoreMgd_Net8_26.8_17.dll は NuGet 参照
+         アセンブリではなく実体 DLL（HintPath 直接参照）のため、実行時に依存する埋め込み
+         版数が net8.0-windows 参照アセンブリの互換版数と食い違い、MSB3277（解決できない競合）
+         警告になり得る（IJCAD/BricsCAD の net8 実体 DLL 参照と同じ実測パターン）。
+         いずれもコンパイル専用参照（Private=false、実行時はホスト ARES が提供）で実害が
+         ないため、この既知の警告だけを抑制する -->
+    <MSBuildWarningsAsMessages Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+    <DefineConstants>$(DefineConstants);CADPETA_ARES</DefineConstants>
+    <!-- 未対応の AresSdkYearNet48 指定を明示的に失敗させる検査（Directory.Build.props）の対象 -->
+    <CadPetaUsesAresSdk>true</CadPetaUsesAresSdk>
+  </PropertyGroup>
+
+  <!-- 4製品同文の取得本体は CadCommon の共有ソース（#if 分岐＋using エイリアスで SDK 差を
+       吸収）。製品固有の API 差は本プロジェクト直下の LinetypeShapeUprightCompat.cs が持つ -->
+  <ItemGroup>
+    <Compile Include="..\CadPeta.Acquire.CadCommon\CadIrAcquirer.cs" Link="CadCommon\CadIrAcquirer.cs" />
+    <Compile Include="..\CadPeta.Acquire.CadCommon\CadTextMapper.cs" Link="CadCommon\CadTextMapper.cs" />
+  </ItemGroup>
+
+  <!-- ARES 参照アセンブリ: 利用者所有の本体 DLL への直接参照であり、ビルドには ARES の
+       インストールが前提となる（NuGet 配布の参照アセンブリを持たないため）。
+       名前空間は全世代共通で、Teigha.Runtime（CommandMethod 等）・
+       Teigha.DatabaseServices/Geometry/Colors は TD_Mgd*、Teigha.ApplicationServices/
+       EditorInput は FxCoreMgd*。Private=false でコンパイル専用参照とし、実行時はホスト ARES が
+       同名アセンブリを提供する。DLL 名・パスは年式で異なるため、net48 は年式プロパティ
+       （AresSdkYearNet48・AresNet48DllVer。表は src/Directory.Build.props）で、
+       net8（2027=…_Net8_26.8_17）は per-TFM で分ける -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
+    <Reference Include="TD_Mgd_$(AresNet48DllVer)">
+      <HintPath>$(AresBinDirNet48)\TD_Mgd_$(AresNet48DllVer).dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FxCoreMgd_$(AresNet48DllVer)">
+      <HintPath>$(AresBinDirNet48)\FxCoreMgd_$(AresNet48DllVer).dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Color.ColorValue（System.Drawing.Color）を使うため。net48 は in-box 参照。
+         net8 は基盤ランタイムの System.Drawing.Primitives で足りる（AutoCAD 版 csproj と同じ規則） -->
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">
+    <Reference Include="TD_Mgd_Net8_26.8_17">
+      <HintPath>$(AresBinDirNet8)\TD_Mgd_Net8_26.8_17.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FxCoreMgd_Net8_26.8_17">
+      <HintPath>$(AresBinDirNet8)\FxCoreMgd_Net8_26.8_17.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Core\CadPeta.Core.csproj" />
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <!-- SHX 文字の輪郭化（グリフ輪郭ポートの SHX 実装。既定の写像方式） -->
+    <ProjectReference Include="..\CadPeta.Glyphs.Shx\CadPeta.Glyphs.Shx.csproj" />
+    <!-- CAD API に依存しない共有計算（曲線近似・線種の端部整列・線種記号の角度解決・
+         既定値・GDIフォントメトリクス）。AutoCAD 構造SVG書き出しアダプタと共有する -->
+    <ProjectReference Include="..\CadPeta.Acquire.Common\CadPeta.Acquire.Common.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Raster\CadPeta.Acquire.Raster.csproj" />
+  </ItemGroup>
+
+</Project>

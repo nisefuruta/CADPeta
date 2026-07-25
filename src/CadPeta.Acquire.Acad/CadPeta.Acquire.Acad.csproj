@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 取得アダプタ（構造SVG書き出し: AutoCAD DB 直接取得）: モデル空間の選択オブジェクトを
+       図面データベースから直接読み、出所メタデータ（data-*）付きの SVG IR へ写像する。
+       AutoCAD 参照はプラグイン合成ルートと本プロジェクトだけに置く
+       （tests/ArchitectureTests が機械検査する）。 -->
+
+  <PropertyGroup>
+    <!-- ホスト AutoCAD のランタイムで読み込まれるため3系（根拠は src/Directory.Build.props） -->
+    <TargetFrameworks>$(CadPetaHostTfms)</TargetFrameworks>
+    <DefineConstants>$(DefineConstants);CADPETA_ACAD</DefineConstants>
+  </PropertyGroup>
+
+  <!-- 4製品同文の取得本体は CadCommon の共有ソース（#if 分岐＋using エイリアスで SDK 差を
+       吸収）。製品固有の API 差は本プロジェクト直下の LinetypeShapeUprightCompat.cs が持つ -->
+  <ItemGroup>
+    <Compile Include="..\CadPeta.Acquire.CadCommon\CadIrAcquirer.cs" Link="CadCommon\CadIrAcquirer.cs" />
+    <Compile Include="..\CadPeta.Acquire.CadCommon\CadTextMapper.cs" Link="CadCommon\CadTextMapper.cs" />
+  </ItemGroup>
+
+  <!-- AutoCAD 参照アセンブリ: acdbmgd（Database・Entity 等）の AutoCAD.NET.Model と、
+       その前提 accoremgd の AutoCAD.NET.Core。GUI 専用層 acmgd は参照しない
+       （accoreconsole でも動作させる）。ExcludeAssets=runtime でコンパイル専用 -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
+    <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet48)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Model" Version="$(AcadNetVersionNet48)" ExcludeAssets="runtime" />
+    <!-- AutoCAD の Color.ColorValue（System.Drawing.Color）を使うため。net48 は in-box 参照、
+         net8/net10 は基盤ランタイムの System.Drawing.Primitives で足りる -->
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">
+    <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet8)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Model" Version="$(AcadNetVersionNet8)" ExcludeAssets="runtime" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet10Tfm)'">
+    <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet10)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Model" Version="$(AcadNetVersionNet10)" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Core\CadPeta.Core.csproj" />
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <!-- SHX 文字の輪郭化（グリフ輪郭ポートの SHX 実装。既定の写像方式） -->
+    <ProjectReference Include="..\CadPeta.Glyphs.Shx\CadPeta.Glyphs.Shx.csproj" />
+    <!-- AutoCAD API に依存しない共有計算（曲線近似・線種の端部整列・線種記号の角度解決・
+         既定値・GDIフォントメトリクス）。互換CADアダプタと共有する -->
+    <ProjectReference Include="..\CadPeta.Acquire.Common\CadPeta.Acquire.Common.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Raster\CadPeta.Acquire.Raster.csproj" />
+  </ItemGroup>
+
+</Project>

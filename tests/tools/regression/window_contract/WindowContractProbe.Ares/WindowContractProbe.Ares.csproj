@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 窓プロットの座標契約を ARES 実機で測る計測器。移植元は
+       tests/tools/regression/window_contract/WindowContractProbe（AutoCAD SDK 版）で、
+       記録スキーマ・3候補（生値・UCS→WCS・WCS→DCS）の構造は完全に一致させる。
+       製品コード（CadPeta.Plugin.*）・CadPeta.* を一切参照しない。測定対象の実装を使って
+       契約を測ると循環するため、ARES の SDK だけに依存する独立した計測器として組む
+       （移植元も同じ方針で AutoCAD SDK 専属）。
+       検証資産のため src/Directory.Build.props の管理外だが、tests/Directory.Build.props が
+       src/Directory.Build.props を Import しているため、$(CadPetaAresTfms) 等の一元定義は
+       本プロジェクトからも参照できる（2026-07-16 実ビルドで確認）。 -->
+
+  <PropertyGroup>
+    <!-- ARES Standard 2024（net48）＋ARES Standard 2027（net8）の2系マルチターゲット。
+         src/CadPeta.Plugin.Ares と揃える（根拠は src/Directory.Build.props の CadPetaAresTfms） -->
+    <TargetFrameworks>$(CadPetaAresTfms)</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>WindowContractProbe.Ares</AssemblyName>
+    <RootNamespace>CadPeta.Probe.Ares</RootNamespace>
+    <DefineConstants>$(DefineConstants);CADPETA_ARES</DefineConstants>
+    <!-- ARES 2027 の実体 DLL（HintPath 直接参照）は埋め込み版数が net8 参照アセンブリの
+         互換版数と食い違い MSB3277 になり得る（src/CadPeta.Plugin.Ares と同じ実測パターン）。
+         コンパイル専用参照で実害がないため、この既知の警告だけを抑制する -->
+    <MSBuildWarningsAsMessages Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <!-- ARES 参照アセンブリ: src/CadPeta.Plugin.Ares.csproj と同一の参照方法（HintPath＋Private=false
+       のコンパイル専用参照、実行時はホスト ARES が同名アセンブリを提供）。
+       AresBinDirNet48・AresBinDirNet8（本体既定パス／lib/vendor-refs 優先）は
+       src/Directory.Build.props が定義済みのためここでは上書きしない。
+       Teigha.Runtime（CommandMethod・ExtensionApplication・Exception）と
+       Teigha.ApplicationServices/EditorInput（Application・Document・Editor）は FxCoreMgd*、
+       Teigha.DatabaseServices/Geometry（Layout・PlotSettings・Matrix3d 等）は TD_Mgd*、
+       Teigha.PlottingServices（PlotFactory・PlotEngine 等）は FxCoreMgd* が提供する
+       （2026-07-16 実 DLL のシンボル確認）。 -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
+    <Reference Include="TD_Mgd_23.1_16">
+      <HintPath>$(AresBinDirNet48)\TD_Mgd_23.1_16.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FxCoreMgd_23.1_16">
+      <HintPath>$(AresBinDirNet48)\FxCoreMgd_23.1_16.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">
+    <Reference Include="TD_Mgd_Net8_26.8_17">
+      <HintPath>$(AresBinDirNet8)\TD_Mgd_Net8_26.8_17.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FxCoreMgd_Net8_26.8_17">
+      <HintPath>$(AresBinDirNet8)\FxCoreMgd_Net8_26.8_17.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- CadPeta.* への ProjectReference・PackageReference は禁止（測定対象の実装で契約を測ると
+       循環する。移植元も製品コード非参照）。JSON 出力も手書きシリアライザで賄うため
+       System.Text.Json 等の外部依存を一切持たない -->
+
+</Project>

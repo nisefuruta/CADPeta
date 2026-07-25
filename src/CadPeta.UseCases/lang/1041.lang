@@ -1,0 +1,232 @@
+# CADPeta 表示文言カタログ（日本語 / LCID 1041）
+# 書式: キー=値（UTF-8）。空行と # 行は無視する。
+# エスケープ: \n=改行 \t=タブ \s=空白（行末の空白の明示用） \\=バックスラッシュ
+# 値は .NET 複合書式（{0} 等）。数値は InvariantCulture で整形される。
+
+# ---- キーワード表示名（判定はグローバル名 All/Object 等で行い、ここは表示のみ） ----
+keyword.all=全体(A)
+keyword.object=オブジェクト(O)
+keyword.margin=余白(M)
+keyword.file_output=ファイル出力(F)
+keyword.emf_background=EMF背景(B)
+keyword.layer=レイヤ(L)
+keyword.text_outline=文字輪郭(T)
+keyword.shx_substitute=SHX代替(S)
+keyword.gradient=グラデーション(G)
+
+# ---- 範囲プロンプト ----
+range.pickfirst_filter=選択済みのオブジェクトへ出力対象を絞り込む（範囲は続けて指定する）
+range.filter_set=出力対象: 選択オブジェクトへ絞り込む
+range.filter_cleared=出力対象: 先選択を含む絞り込みを解除（全オブジェクト）
+range.selection_cancelled=オブジェクト選択をキャンセルしたためコマンドを中止する
+range.first_corner=\n最初のコーナーを指定 または [{0}] <{1}>
+range.second_corner=\nもう一方のコーナーを指定:\s
+range.cancelled=範囲指定をキャンセルしたためコマンドを中止する
+range.unknown_keyword=未知のキーワード: {0}
+range.degenerate_window=窓の幅または高さが 0 のため指定し直すこと
+range.data_selection_cancelled=オブジェクト選択をキャンセルしたため PETADATA を中止する
+range.data_selection_empty=オブジェクトが選択されなかったため PETADATA を中止する
+range.pickfirst_data=選択済みのオブジェクトを構造SVG書き出しへ渡す
+
+# ---- 尺度・オプションプロンプト（PETADATA） ----
+scale.prompt.svg=\nSVG尺度 1:N の N を指定 または [{0}] <1:{1:0.##}>
+scale.cancelled=尺度の入力をキャンセルしたためコマンドを中止する
+scale.margin_prompt=\nクロップの余白をmmで指定
+scale.margin_cancelled=余白の入力をキャンセルしたためコマンドを中止する
+scale.gradient_dpi_prompt=\nグラデーション画像のDPIを指定
+scale.gradient_dpi_state=グラデーション解像度: {0:0.##}dpi
+scale.emf_bg_prompt=\nEMFの透過合成下地色を #RRGGBB で指定 <{0}>
+scale.emf_bg_cancelled=EMF背景色の入力をキャンセルしたためコマンドを中止する
+scale.emf_bg_invalid=EMF背景色は #RRGGBB 形式で指定すること
+scale.emf_bg_state=EMF合成下地色: {0}
+
+# ---- オプション切替の確認表示 ----
+toggle.file_output.on=ファイル出力: オン
+toggle.file_output.off=ファイル出力: オフ
+toggle.layer.on=レイヤ別グループ化: オン（描画順が変わり見た目が崩れ得る。SVG のグループ構造と EMF の描画順の両方に反映）
+toggle.layer.off=レイヤ別グループ化: オフ
+toggle.shx.on=SHX文字の代替書体出力: オン（字形は代替書体の近似になるが、貼り付け先で文字編集できる）
+toggle.shx.off=SHX文字の代替書体出力: オフ（既定。字形どおりに輪郭化する）
+toggle.outline.on=文字アウトライン化: オン（すべての文字を輪郭の図形にする。環境非依存の見た目になるが文字編集はできない）
+toggle.outline.off=文字アウトライン化: オフ（既定。フォント保持＝貼り付け先で文字編集できる）
+
+# ---- PETA/PETADIAG 本体フロー ----
+runner.diag_forces_file_output=診断モードのためファイル出力オフ指定を無視し一式を書き出す
+runner.no_ocg=発行 PDF にレイヤ情報(OCG)がないためレイヤ別グループ化を行わずに出力する。PDF ドライバのレイヤ出力設定を確認すること
+runner.pdf_published=PDF発行: {0}（{1:N0} bytes, {2}ms）
+runner.diag_stage_dump=診断モード: 変換層の各段の前後を SVG ダンプする → {0}
+runner.diag_empty_ir=診断モード: 空IRのため通常出力（SVG/EMF/クリップボード）は行わないが、診断ログは書き出す
+runner.empty_ir_warning=警告: IR が空（プロット範囲に描画要素がない）。レイアウトのプロット領域を確認すること
+runner.svg_written=SVG出力: {0}
+runner.emf_written=EMF出力: {0}（{1:N0} bytes, {2}ms）
+runner.emf_opacity_flattened=透過図形検出。透過表現はSVGファイルを利用のこと
+runner.empty_selection_ir=[CadPeta] 絞り込み出力から描画要素を取得できなかったため出力とクリップボード更新を中止する（範囲に選択オブジェクトが含まれるか確認すること）
+runner.background_removed_all=[CadPeta] 背景除去が全要素を除去した可能性がある。PETADIAG で確認すること
+
+# ---- クリップボード失敗案内（{0} は下位層のエラー文の内挿。枠のみ翻訳） ----
+outcome.clipboard_failed=[CadPeta] クリップボード登録に失敗した: {0}
+outcome.available_emf=[CadPeta] 利用可能な EMF: {0}
+outcome.reuse_hint=[CadPeta] この EMF は Office の「挿入」→「画像」でそのまま利用できる。競合の解消後に PETA を再実行すれば再登録される
+
+# ---- 結果サマリ ----
+summary.clipboard_ok=クリップボード登録
+summary.clipboard_failed=クリップボード登録失敗
+summary.file_output_off=（ファイル出力オフ）
+summary.line={0}{1:N0} bytes / {2}図形 → {3}{4}
+summary.option.layer=レイヤ別グループ化
+summary.option.shx=SHX代替書体
+summary.option.outline=文字輪郭化
+summary.option.margin=余白{0:0.###}mm
+summary.options=オプション: {0}
+
+# ---- 選択絞り込み ----
+selplot.none_supported=出力可能な選択オブジェクトがないため中止する{0}
+selplot.none_supported_detail=（{0}）
+selplot.excluded=絞り込みの除外候補: {0}
+selplot.abort_unsupported=非対応対象が含まれるため中止する
+selplot.separator=、
+confirm.partial=\n{0}件の非対応対象を除外して部分出力する? [Yes/No] <No>:\s
+selplot.reason.invalid=無効または削除済み
+selplot.reason.non_entity=エンティティではない
+selplot.reason.other_space=現在の空間直属ではない
+selplot.reason.viewport_model_space=通常ビューポートはペーパー空間のカレントレイアウトでのみ選択出力できる
+selplot.reason.viewport_controller=ペーパー空間の制御ビューポートは選択出力の対象にできない
+selplot.reason.viewport_off=オフのビューポートは表示内容がないため選択出力の対象にできない
+selplot.reason.xref=外部参照は側DBで自己完結しない
+selplot.stb_mismatch=側DBの CTB/STB モードが元図面と一致しない
+selplot.media_fallback=用紙 {0} を復元できないため近似用紙を使う
+selplot.stylesheet_fallback=印刷スタイル {0} を適用できないため既定のまま印刷する
+selplot.session_summary=絞り込み: 選択{0}件中{1}件を出力対象にする
+selplot.view_copy_failed=モデルビューを側DBへ複製できないため平面ビューとして続行する: {0}
+selplot.force_clone={0}=1 のため Wblock を使わずオブジェクト複製で側DBを作る
+selplot.wblock_empty=Wblock の側DBが空だったため、オブジェクト複製へ切り替える
+selplot.wblock_failed=Wblock に失敗したため、オブジェクト複製へ切り替える: {0}
+selplot.wblock_mismatch=Wblock 後の側DBが元選択と一致しないため、オブジェクト複製へ切り替える: {0}
+selplot.clone_mismatch=オブジェクト複製後の側DBが元選択と一致しない: {0}
+selplot.translation_normalized=側DBで生じた一様な平行移動を元座標へ補正した: {0}
+prompt.unknown_keyword=CAD が未知のプロンプトキーワードを返した: {0}
+
+# ---- プロット判断 ----
+plot.window_fit_switch=窓 {0:F1}×{1:F1}mm はページ設定の尺度で印刷可能領域 {2:F1}×{3:F1}mm に収まらないため、用紙合わせ（フィット）へ切り替える
+plot.window_verbose=窓プロット: 窓={0} 図面単位、尺度={1:F6}mm/単位、回転={2}度、用紙={3:F3}×{4:F3}mm、印刷可能={5:F3}×{6:F3}mm 中心=({7:F3},{8:F3})、クロップ矩形=({9:F3},{10:F3})-({11:F3},{12:F3})mm
+
+# ---- プロットポート（全体・窓のPDF印刷。4製品同文で {0} 等にデバイス名が入る） ----
+plotport.busy=別のプロットが進行中のため開始できない（ProcessPlotState={0}）
+plotport.layout_info=レイアウト: {0}（デバイス={1}、用紙={2}、スタイル={3}）
+plotport.style_none=なし
+plotport.device_failed=PDFデバイス {0} を設定できない（未インストールまたは PC3 の破損。ErrorStatus={1}）
+plotport.media_missing=用紙 {0} は {1} に存在せず、寸法の合う用紙も無いため既定用紙で進める（出力寸法が変わる）
+plotport.media_matched_by_size=用紙 {0} は発行デバイスに無いため、寸法の合う {1} を使う（{2:F2}×{3:F2}mm）
+plotport.media_fallback=用紙縮退。{0}（{1:F2}×{2:F2}mm）をA4系の{3}へ一時変換
+plotport.paper_units_restored=デバイス上書きで用紙単位が {0} に変わったため、ページ設定の {1} へ戻す
+plotport.rotation_normalized=プロット回転 {0} はこの製品の PDF で像が正立にならないため {1} で発行する（用紙の向きは同じ）
+plotport.window_failed=プロット窓を設定できない（窓={0} 図面単位、ErrorStatus={1}）。指定した2点を確認すること
+plotport.validate_failed=プロット設定の検証に失敗した（レイアウト={0}、用紙={1}、ErrorStatus={2}）。レイアウトのページ設定を確認すること
+plotport.paper_units_fit=用紙単位 {0} は窓の尺度計算に使えないため用紙合わせで扱う
+plotport.media_bounds_null=用紙の実寸を取得できない（デバイス={0} を設定後も現在のプロッタ構成が取得できない）。PC3 構成を確認すること
+plotport.media_bounds_failed=用紙の実寸を取得できない（デバイス={0}、用紙={1}、ErrorStatus={2}）。PC3 構成を確認すること
+plotport.config_restore_failed=プロット現在構成の復元に失敗（{0} のまま）: {1}（ErrorStatus={2}）
+editor.paper_pick_switch=ビューポート内のため、窓指定の間ペーパー空間へ切り替える（窓はペーパー座標）
+editor.cvport_restore_mismatch=窓指定後にビューポートを復元できない（期待CVPORT={0} 実CVPORT={1}）
+editor.view_plane_degenerate=UCS 平面を真横から見ているため窓が線に潰れて範囲を決められない。UCS かビューの向きを変えてやり直すこと
+
+# ---- PlotEngine ----
+engine.plot_in_progress=別のプロットが進行中（{0}）
+engine.stage_failed=PlotEngine が {0} 段で失敗した（ErrorStatus={1}、出力先={2}）。出力先の書き込み可否と PDF ドライバ構成を確認すること
+engine.pdf_missing=プロットは完了したが PDF が生成されていない: {0}。PDF ドライバ構成を確認すること
+engine.pdf_done=PDF印刷完了: {0}
+
+# ---- 出力先の決定 ----
+output.dwg_dir_unwritable=図面フォルダへ書き込めない: {0}
+output.unsaved=未保存図面のため図面フォルダが定まらない
+output.esc_suffix=、Esc で中止
+output.prompt=\n出力フォルダを入力（Enter で {0}{1}）:\s
+output.cancelled_fallback=入力が中断されたため退避先を使う
+output.chosen_unwritable=指定フォルダへ書き込めないため退避先を使う: {0}
+output.chosen_create_failed=指定フォルダを作成できないため退避先を使う: {0}（{1}）
+output.fallback_create_failed=退避先 {0} を作成できない。出力先を確保できないため中止する
+output.fallback_unwritable=退避先 {0} へ書き込めない。出力先を確保できないため中止する
+
+# ---- 診断表示（{0} の診断カテゴリ名は言語不変。行の書式だけ翻訳する） ----
+diag.dump=診断ダンプ: {0}
+diag.dump_failed=診断ダンプに失敗（この段のみ飛ばす）: {0}（{1}）
+diag.summary_line=\s\s{0}: {1}件
+diag.header=---- 診断ログ（件数と対象） ----
+diag.count_line={0}: {1}件
+diag.none=（記録なし）
+diag.json_written=診断ログ出力: {0}.diag.json
+
+# ---- PETADATA/PETADATADIAG ----
+data.aborted=PETADATAを中止した
+data.empty_ir=[CadPeta] 選択オブジェクトから描画要素を取得できなかったため SVG 書き出しを中止する
+data.svg_written=構造 SVG 書き出し: {0}（{1}要素、{2}ms）
+data.done=[CadPeta] PETADATA 完了: {0}（{1}要素）
+data.temp_delete_failed=一時 SVG を削除できない: {0}（{1}）
+data.gradient.zero=0件
+data.gradient.count={0}件
+data.gradient.count_dpi={0}件（実DPI {1:0.##}～{2:0.##}）
+data.gradient.summary=[CadPeta] PETADATA グラデーション: {0}をラスタ化、{1}件を代表色へ縮退
+data.db_acquired=DB直接取得: {0}オブジェクト（{1}ms）
+data.other_space_excluded=[CadPeta] PETADATA は現在の空間直属のオブジェクトのみを対象とする: {0}件を除外した（対象={1}件）
+
+# ---- クリップボード（EMF登録・読み戻し。Win32エラー番号等の内挿は原文のまま） ----
+emf.file_missing=クリップボード登録: EMF ファイルが存在しない: {0}。EMF 出力段の結果を確認すること
+emf.file_empty=クリップボード登録: EMF ファイルが空（0 bytes）: {0}。EMF 出力段の結果を確認すること
+emf.load_failed=クリップボード登録: EMF の読み込みに失敗した（GetEnhMetaFile, Win32エラー={0}）: {1}。ファイルが EMF 形式として壊れていないか確認すること
+emf.copy_failed=クリップボード登録: EMF ハンドルの複製に失敗した（CopyEnhMetaFile, Win32エラー={0}）。メモリ不足の可能性を確認すること
+emf.empty_failed=クリップボード登録: 内容の消去に失敗した（EmptyClipboard, Win32エラー={0}）
+emf.set_failed=クリップボード登録: データ設定に失敗した（SetClipboardData, Win32エラー={0}）
+emf.close_failed=警告: CloseClipboard が失敗した（Win32エラー={0}）。クリップボードが他アプリから開けない場合はホストアプリケーションを再起動すること
+emf.readback_missing=クリップボード読み戻し: CF_ENHMETAFILE が取得できない（Win32エラー={0}）。登録直後に他プロセスがクリップボードを書き換えた可能性を確認すること
+emf.readback_bits_failed=クリップボード読み戻し: EMF ビット列の取得に失敗した（GetEnhMetaFileBits, Win32エラー={0}）
+emf.readback_mismatch=クリップボード読み戻し: 登録内容が出力 EMF と一致しない（クリップボード {0:N0} bytes / ファイル {1:N0} bytes）。登録直後に他プロセスがクリップボードを書き換えた可能性を確認すること
+emf.registered=クリップボード登録: CF_ENHMETAFILE {0:N0} bytes（読み戻しバイト一致を確認）。Office へ Ctrl+V で貼り付けられる
+emf.open_failed=クリップボード{0}: クリップボードを開けない（Win32エラー={1}、{2}回×{3}ms リトライ済み）。保持プロセス: {4}。当該アプリの操作が終わってから再実行すること
+emf.stage.set=登録
+emf.stage.verify=読み戻し検証
+emf.holder_unknown=不明（ウィンドウなしで開かれているか、取得時点で解放済み）
+emf.holder_gone=特定できない（該当プロセスは終了済み）
+
+# ---- 取得層の利用者向けログ（診断カテゴリは言語不変で、ここには含めない） ----
+acquire.data_empty=構造SVG書き出し取得: 写像できた図形がない（入力 {0} エンティティ）
+acquire.data_result=構造SVG書き出し取得: {0}エンティティ → {1}ノード 範囲 {2:F2}x{3:F2}mm（尺度 1:{4:0.##}・余白 {5}mm）
+acquire.pdf_rotated_runs=回転文字ラン: {0}件（ベースライン方向→rotate 写像）
+acquire.pdf_unknown_fonts=フォント名写像なし（生名のまま出力）: {0}
+acquire.pdf_rotated_images=画像の回転補正: {0}件（回転ページの四半回転を画素へ無劣化で焼き込み）
+acquire.pdf_clip_merged=クリップ集約: {0} → {1}
+
+# ---- 一時成果物（予約・後始末・回復） ----
+artifact.reserve_failed=出力名を {0:N0} 回予約できなかった: {1} / {2}
+artifact.temp_root_outside=一時作業ルートが CadPeta 一時フォルダ外にある: {0}
+artifact.lock_delete_failed=予約ファイルを削除できない: {0}
+artifact.unsafe_delete_refused=警告: 安全でない一時パスの削除を拒否した: {0}
+artifact.temp_delete_failed=一時成果物を削除できない: {0}
+artifact.warn_frame=警告: {0}（{1}）
+artifact.recovery_root_outside=回復先が CadPeta 一時フォルダ外にある: {0}
+artifact.recovery_lock_delete_failed=警告: 回復予約ファイルを削除できない: {0}（{1}）
+artifact.recovery_reserve_failed=回復EMF名を {0:N0} 回予約できなかった: {1}
+artifact.recovery_preserve_failed=警告: 一時EMFを回復場所へ保全できない: {0}（{1}）
+
+# ---- ビルド識別子と読込時表示 ----
+stamp.unknown_version=(版数不明)
+stamp.unknown_config=(構成不明)
+stamp.unknown_tfm=(TFM不明)
+stamp.unknown_path=(パス不明)
+stamp.loaded_from=読み込み元: {0}
+app.loaded=[CadPeta] {0} 読込 {1}
+
+# ---- コマンド境界のエラー説明枠（{0} 等の内挿は下位層の原文のまま） ----
+error.prefix=[CadPeta] エラー: {0}
+error.api_failed_acad=AutoCAD API が失敗した（ErrorStatus={0}）。ページ設定とプロッタ構成を確認すること
+error.api_failed={0} API が失敗した（ErrorStatus={1}）
+error.access_denied=出力先へのアクセスが拒否された: {0}。フォルダ権限を確認するか別の出力先を指定すること
+error.io_failed=ファイル入出力に失敗した: {0}
+error.unsupported_acad=未対応の入力を検出した: {0}。発行 PDF と診断ログを添えて報告すること
+error.unsupported=未対応の入力を検出した: {0}。図面と診断ログを添えて報告すること
+
+# ---- 言語カタログ自身の報告 ----
+lang.unknown_host=言語カタログ: ホスト言語を判定できないため 1033.lang（英語）を使う
+lang.file_missing=言語カタログ {0} が見つからないため組み込みの文言を使う
+lang.file_invalid=言語カタログ {0} を読めないため組み込みの文言を使う（{1}）
+lang.missing_keys=言語カタログ {0} に未定義のキー {1} 件を組み込みの文言で補う: {2}
+lang.format_fallback=言語カタログ {0} のキー {1} の値では表示を組み立てられない（{2}）。組み込みの文言で続ける

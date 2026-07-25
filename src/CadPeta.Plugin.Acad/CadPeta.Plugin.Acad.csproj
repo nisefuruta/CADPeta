@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 合成ルート（プラグイン入口、設計書§4.1・§8）: AutoCAD .NET から現在レイアウトを
+       ベクタPDFへサイレントプロットし、PDF印刷経路パイプライン（取得→変換→出力）へ結線する。
+       Cli と同格の最外殻であり、参照方向（設計書§1.1）は内側への一方向のみ。
+       AutoCAD 参照は本プロジェクトだけに置く（内側4プロジェクトに現れないことを
+       tests/ArchitectureTests が機械検査する）。 -->
+
+  <PropertyGroup>
+    <!-- ホスト AutoCAD のランタイムで読み込まれるため3系（根拠は src/Directory.Build.props） -->
+    <TargetFrameworks>$(CadPetaHostTfms)</TargetFrameworks>
+    <!-- NETLOAD されるプラグインは実行ファイルと違い deps.json をホストが読まないため、
+         NuGet 依存（PdfPig 等）を出力フォルダへ複製して同一フォルダ配備にする。
+         AutoCAD 参照は ExcludeAssets=runtime のため複製対象外（ホストが提供） -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <DefineConstants>$(DefineConstants);CADPETA_ACAD</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadPlotEngineRunner.cs" Link="CadCommon\CadPlotEngineRunner.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadSelectionPlotPort.cs" Link="CadCommon\CadSelectionPlotPort.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadDataExportCommands.cs" Link="CadCommon\CadDataExportCommands.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadHostLanguage.cs" Link="CadCommon\CadHostLanguage.cs" />
+  </ItemGroup>
+
+  <!-- AutoCAD 参照アセンブリ: AutoCAD.NET.Core（accoremgd: PlottingServices・Editor 等）と
+       AutoCAD.NET.Model（acdbmgd: Database・Layout 等）のみ。GUI 専用層 acmgd を持つ
+       AutoCAD.NET は参照せず、accoreconsole（コアコンソール）でも NETLOAD 可能に保つ
+       （2026-07-07 実機確認）。ExcludeAssets=runtime でコンパイル専用（配布物に含めない） -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
+    <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet48)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Model" Version="$(AcadNetVersionNet48)" ExcludeAssets="runtime" />
+    <!-- 診断ログ JSON（設計書§7）。net8/net10 は in-box のため net48 のみパッケージ -->
+    <PackageReference Include="System.Text.Json" Version="$(SystemTextJsonVersion)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">
+    <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet8)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Model" Version="$(AcadNetVersionNet8)" ExcludeAssets="runtime" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet10Tfm)'">
+    <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet10)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Model" Version="$(AcadNetVersionNet10)" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Plugin.Shared\CadPeta.Plugin.Shared.csproj" />
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Pdf\CadPeta.Acquire.Pdf.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Acad\CadPeta.Acquire.Acad.csproj" />
+    <ProjectReference Include="..\CadPeta.Out.Emf\CadPeta.Out.Emf.csproj" />
+  </ItemGroup>
+
+</Project>

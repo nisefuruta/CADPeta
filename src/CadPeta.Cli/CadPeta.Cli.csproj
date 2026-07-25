@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 合成ルート（コンソール入口）: 取得アダプタと出力アダプタを結線する唯一の場所
+       （設計書§1.1）。tests/tools の検証ハーネスからの回帰実行の入口を兼ねる。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>cadpeta</AssemblyName>
+    <!-- 単独配布の入口は .NET 10 基準（恒久方針。根拠は src/Directory.Build.props） -->
+    <TargetFramework>$(CadPetaAppTfm)</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.App\CadPeta.App.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- アダプタ層の予行: PdfPig への参照はここ（外側）だけに置き、
+       IrModel（内核）へは ProjectReference の一方向で依存する（設計書§1.1）。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- 画像合成のピクセル走査（LockBits）用 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PdfPig" Version="0.1.15" />
+    <!-- JPEG(DCT) デコード用。検証ツール限定（MIT、Windows のみ）。本実装の依存にはしない -->
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IrModel\IrModel.csproj" />
+    <!-- 合成ルート: 取得アダプタ（PdfPig）と出力アダプタ（EmfOut）を結線するのはここだけ -->
+    <ProjectReference Include="..\EmfOut\EmfOut.csproj" />
+  </ItemGroup>
+
+</Project>

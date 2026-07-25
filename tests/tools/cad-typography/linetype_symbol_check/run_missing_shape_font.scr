@@ -1,0 +1,10 @@
+(setvar "SECURELOAD" 0)
+(load "C:\\Users\\wk\\AppData\\Local\\Temp\\cadpeta_p3b_ltsym\\gen_missing_shape_font.lsp")
+NETLOAD
+C:\Users\wk\repo\CADPeta\src\CadPeta.Plugin.Acad\bin\Debug\net8.0-windows\CadPeta.Plugin.Acad.dll
+(setvar "SECURELOAD" 1)
+PETADATA
+ALL
+
+
+_.QUIT _Y

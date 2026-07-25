@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CADPeta AutoCAD プラグインの自動読込記述（Autodesk Application Plug-in Bundle）。
+     1 bundle に3系の DLL を同梱し、AutoCAD の版（R番号）で読み分ける。
+     - net48  = AutoCAD 2021〜2024（R24.0〜R24.3、.NET Framework 4.8）
+     - net8   = AutoCAD 2025〜2026（R25.0〜R25.1、.NET 8）
+     - net10  = AutoCAD 2027 以降（R26.0〜、.NET 10）
+     R番号対応は Autodesk 公式（RuntimeRequirements の SeriesMin/SeriesMax）と本端末レジストリで
+     裏取り済み。ComponentEntry ごとに別 ModuleName・別 RuntimeRequirements を持てることは
+     Autodesk 公式サンプル（net48=SeriesMax R24.3 / net8=SeriesMin R25.0）で確認した。
+     読込は起動時（LoadOnAutoCADStartup="True"）。起動時に読むのは小さいプラグイン DLL 本体
+     だけで、PdfPig/GDI 等の依存は PETA 実行時に遅延ロードされるため常駐コストは無視できる。
+     コマンド起動時ロード（LoadOnCommandInvocation）は accoreconsole の AutoLoader では
+     不発（GUI 専用機構のためヘッドレス検証不能）と実測したため、実績のある起動時ロードを採る。
+     読込理由を True の属性で指定する簡潔形は公式サンプルどおりで、明示 LoadReasons 要素は
+     理由を False に無効化する場合のみ要る。 -->
+<ApplicationPackage
+    SchemaVersion="1.0"
+    ProductType="Application"
+    Name="CADPeta"
+    AppVersion="1.0.0"
+    Description="CAD図面をOfficeへベクタ形式で貼り付ける（PETA / PETADIAG）"
+    Author="WATANABE Kazufumi"
+    ProductCode="{F79DD514-154F-4F75-AB3A-1EF016F21D67}">
+
+  <CompanyDetails Name="WATANABE Kazufumi" Url="" Email="" />
+
+  <Components Description="AutoCAD 2021-2024 (.NET Framework 4.8)">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R24.0" SeriesMax="R24.3" />
+    <ComponentEntry
+        AppName="CADPeta"
+        ModuleName="./Contents/net48/CadPeta.Plugin.Acad.dll"
+        AppType=".Net"
+        LoadOnAutoCADStartup="True">
+      <Commands GroupName="CADPeta">
+        <Command Local="PETA" Global="PETA" />
+        <Command Local="PETADIAG" Global="PETADIAG" />
+      </Commands>
+    </ComponentEntry>
+  </Components>
+
+  <Components Description="AutoCAD 2025-2026 (.NET 8)">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R25.0" SeriesMax="R25.1" />
+    <ComponentEntry
+        AppName="CADPeta"
+        ModuleName="./Contents/net8/CadPeta.Plugin.Acad.dll"
+        AppType=".Net"
+        LoadOnAutoCADStartup="True">
+      <Commands GroupName="CADPeta">
+        <Command Local="PETA" Global="PETA" />
+        <Command Local="PETADIAG" Global="PETADIAG" />
+      </Commands>
+    </ComponentEntry>
+  </Components>
+
+  <Components Description="AutoCAD 2027+ (.NET 10)">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R26.0" />
+    <ComponentEntry
+        AppName="CADPeta"
+        ModuleName="./Contents/net10/CadPeta.Plugin.Acad.dll"
+        AppType=".Net"
+        LoadOnAutoCADStartup="True">
+      <Commands GroupName="CADPeta">
+        <Command Local="PETA" Global="PETA" />
+        <Command Local="PETADIAG" Global="PETADIAG" />
+      </Commands>
+    </ComponentEntry>
+  </Components>
+
+</ApplicationPackage>

@@ -1,0 +1,12 @@
+# Phase 3 検証ツール（Justify 位置ずれの構造SVG書き出し／PDF印刷経路突き合わせ）の依存定義（uv 管理）
+# pillow: 画像処理（HPND、MIT類似）
+# numpy : 見当枠検出・インクbbox計測の画素処理（BSD-3-Clause）
+[project]
+name = "cadpeta-phase3-justify-check"
+version = "0.1.0"
+description = "TEXT Justify 全種の構造SVG書き出し／PDF印刷経路の位置ずれ実測ツール（本実装ではない）"
+requires-python = ">=3.12"
+dependencies = [
+    "pillow>=11.0",
+    "numpy>=2.0",
+]

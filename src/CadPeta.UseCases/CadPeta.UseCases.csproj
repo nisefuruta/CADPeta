@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ユースケース層: 取得→変換→出力のオーケストレーションと境界ポート（設計書§1.1）。
+       参照は内核（CadPeta.Core）への一方向のみ。PackageReference を追加してはならない
+       （tests/CadPeta.Tests の参照方向テストが機械検査する）。 -->
+
+  <PropertyGroup>
+    <!-- 3系（net48 / net8 / net10、src/Directory.Build.props）すべてから参照可能な中立ターゲット -->
+    <TargetFramework>$(CadPetaKernelTfm)</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Core\CadPeta.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CadPeta.Tests" />
+  </ItemGroup>
+
+  <!-- 言語カタログ（lang ファイル方式）。この DLL の隣の lang フォルダへ配備して実行時に読む
+       （再ビルドなしの文言差し替え・言語追加の口）。同じファイルを組み込みリソースにも持ち、
+       lang フォルダのファイルが無い・読めない場合のフォールバックにする（MessageCatalogs.cs 参照）。
+       原本をここへ置くのは、クリップボード層・一時成果物層・ビルド識別子を含む全層が
+       カタログを引けるようにするため。 -->
+  <ItemGroup>
+    <None Update="lang\1041.lang;lang\1033.lang" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="lang\1041.lang;lang\1033.lang" />
+  </ItemGroup>
+
+</Project>

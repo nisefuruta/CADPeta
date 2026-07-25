@@ -1,0 +1,22 @@
+{
+  "solution": {
+    "path": "CadPeta.sln",
+    "projects": [
+      "src\\CadPeta.Core\\CadPeta.Core.csproj",
+      "src\\CadPeta.UseCases\\CadPeta.UseCases.csproj",
+      "src\\CadPeta.Acquire.Common\\CadPeta.Acquire.Common.csproj",
+      "src\\CadPeta.Acquire.Pdf\\CadPeta.Acquire.Pdf.csproj",
+      "src\\CadPeta.Acquire.Raster\\CadPeta.Acquire.Raster.csproj",
+      "src\\CadPeta.Acquire.Acad\\CadPeta.Acquire.Acad.csproj",
+      "src\\CadPeta.Glyphs.Shx\\CadPeta.Glyphs.Shx.csproj",
+      "src\\CadPeta.Out.Emf\\CadPeta.Out.Emf.csproj",
+      "src\\CadPeta.Out.Pdf\\CadPeta.Out.Pdf.csproj",
+      "src\\CadPeta.Out.Png\\CadPeta.Out.Png.csproj",
+      "src\\CadPeta.Plugin.Shared\\CadPeta.Plugin.Shared.csproj",
+      "src\\CadPeta.Plugin.Acad\\CadPeta.Plugin.Acad.csproj",
+      "src\\CadPeta.Cli\\CadPeta.Cli.csproj"
+      ,"src\\CadPeta.App\\CadPeta.App.csproj"
+      ,"src\\CadPeta.Gui\\CadPeta.Gui.csproj"
+    ]
+  }
+}

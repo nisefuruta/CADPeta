@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 窓プロットの座標契約を実機で測る計測器。SetPlotWindowArea がどの座標系の値を期待するかを、
+       生値・UCS→WCS・WCS→DCS の3候補を同一条件で発行して確定する。
+       製品コード（CadPeta.Plugin.*）を参照しない。測定対象の実装を使って契約を測ると循環するため、
+       AutoCAD の SDK だけに依存する独立した計測器として組む。
+       検証資産のため src/Directory.Build.props の管理外（tests/ 配下）である。 -->
+
+  <PropertyGroup>
+    <!-- AutoCAD 2026（.NET 8）で NETLOAD する。版対応の根拠は src/Directory.Build.props -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>WindowContractProbe</AssemblyName>
+    <!-- NETLOAD されるためホストが deps.json を読まない。依存は同一フォルダ配備にする -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ExcludeAssets=runtime: コンパイル専用参照（実行時はホスト AutoCAD が同名アセンブリを提供）。
+         25.0.0 = AutoCAD 2025/2026 系の最古版でコンパイルし両版で動かす -->
+    <PackageReference Include="AutoCAD.NET.Core" Version="25.0.0" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Model" Version="25.0.0" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

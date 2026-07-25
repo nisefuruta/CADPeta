@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 内核（ドメイン層）の予行: 外部パッケージ参照ゼロを物理的に維持する（設計書§1.1）。
+       PackageReference をこのプロジェクトに追加してはならない。 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

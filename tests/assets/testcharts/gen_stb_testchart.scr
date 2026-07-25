@@ -1,0 +1,12 @@
+(setvar "CMDECHO" 1)
+(setvar "FILEDIA" 0)
+; STB（名前の付いた印刷スタイル）図面 STB_RECT.dwg を生成する。
+; 実行方法: acadISO -Named Plot Styles.dwt のコピーを /i で開き、本 scr を /s で流す。
+;   accoreconsole /i <acadISO -Named Plot Styles.dwt のコピー> /s gen_stb_testchart.scr /l ja-JP
+; SAVEAS のパスは出力先の絶対パスへ読み替える。PSTYLEMODE=0（STB）であることを出力で確認する。
+(princ "\nPSTYLEMODE=")(princ (getvar "PSTYLEMODE"))(princ)
+(entmakex (list '(0 . "LWPOLYLINE") '(100 . "AcDbEntity") (cons 8 "0") '(100 . "AcDbPolyline") '(90 . 4) '(70 . 1) '(10 0.0 0.0) '(10 20.0 0.0) '(10 20.0 10.0) '(10 0.0 10.0)))
+_.SAVEAS
+2018
+<STB_RECT.dwg の出力先絶対パス>
+_.QUIT

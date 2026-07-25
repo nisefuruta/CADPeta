@@ -1,0 +1,12 @@
+﻿(defun c:PROBETRACKS ( / f ent lst i )
+  (command "-linetype" "L" "TRACKS" "acadiso.lin" "")
+  (setq f (open "C:\\Users\\wk\\AppData\\Local\\Temp\\cadpeta_p3b_ltjust\\tracks_dump.txt" "w"))
+  (setq ent (tblobjname "LTYPE" "TRACKS"))
+  (setq lst (entget ent))
+  (foreach pair lst
+    (write-line (vl-prin1-to-string pair) f)
+  )
+  (close f)
+  (princ)
+)
+(c:PROBETRACKS)

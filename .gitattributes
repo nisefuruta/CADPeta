@@ -1,0 +1,14 @@
+# 改行規約（設計書外の運用ルール）: 改行を編集ツールによらず決定的にする。
+# 実態は「blob=LF（text=auto の check-in 正規化）・作業コピー=CRLF（eol=crlf のチェックアウト）」。
+# LF を書く編集ツールで作成・編集した作業コピーは、コミット前に CRLF へ揃える
+# （揃えないと add 時に「LF will be replaced by CRLF」
+# 警告が出る＝作業コピーがチェックアウト結果と食い違っている予告）。
+* text=auto eol=crlf
+
+# バイナリは改行変換の対象外にする（誤変換で破損させない）
+*.png binary
+*.emf binary
+*.pdf binary
+*.dwg binary
+*.ico binary
+*.cer binary

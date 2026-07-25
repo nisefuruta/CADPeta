@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 出力アダプタ（PDF: 自前の最小PDFライタ、FR-3）。パッケージ参照ゼロ・BCL のみで組む。
+       EMF/SVG に対する従属的な出口という位置づけのため、フォント埋め込み等は行わず、
+       文字はグリフ輪郭ポート（IGlyphOutliner）で輪郭化して path で描く。
+       PackageReference / 他プロジェクトへの ProjectReference（Core・UseCases 以外）を
+       追加してはならない（tests/CadPeta.Tests の参照方向テストが機械検査する）。 -->
+
+  <PropertyGroup>
+    <!-- 3系（net48 / net8 / net10、src/Directory.Build.props）すべてから参照可能な中立ターゲット。
+         ストリームを無圧縮にする方針と合わせ、3系・実行環境に依らずバイト決定的にする -->
+    <TargetFramework>$(CadPetaKernelTfm)</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Core\CadPeta.Core.csproj" />
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+  </ItemGroup>
+
+  <!-- PNG デコード（PdfPngDecoder）の画素展開をユニット検証するため、テストへ internal を公開する。 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="CadPeta.Tests" />
+  </ItemGroup>
+
+</Project>

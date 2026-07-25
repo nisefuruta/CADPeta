@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 取得アダプタの共有計算層: 特定のCAD製品APIに依存しない純粋計算（曲線近似・線種の
+       端部整列・線種記号の角度解決・数値既定値・GDIフォントメトリクス）を、構造SVG書き出し
+       （AutoCAD）アダプタと今後追加する互換CADアダプタの間で共有する。外部パッケージ
+       参照ゼロで組み、他プロジェクトへの参照は内核（Core）だけを許す。CAD製品固有の
+       API 呼び出しは置かない（参照方向テスト tests/CadPeta.Tests/ArchitectureTests.cs が
+       機械検査する）。GDIフォントメトリクスの Win32 P/Invoke は、CAD製品APIに依存しない
+       アダプタ支援コードとして正当な例外に位置づける。 -->
+
+  <PropertyGroup>
+    <!-- 3系（net48 / net8 / net10、src/Directory.Build.props）すべてから参照可能な中立ターゲット -->
+    <TargetFramework>$(CadPetaKernelTfm)</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Core\CadPeta.Core.csproj" />
+  </ItemGroup>
+
+</Project>

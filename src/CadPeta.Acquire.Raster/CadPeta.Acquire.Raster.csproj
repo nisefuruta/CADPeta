@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- グラデーションハッチのラスタ化層: 特定のCAD製品APIに依存しない純粋計算（実測式評価・
+       GDI+ラスタ化・画素予算判定）と、その結果からのIR組み立て・診断記録（GradientEmitter）を
+       構造SVG書き出しアダプタ4製品（AutoCAD/ARES/BricsCAD/IJCAD）の間で共有する。
+       外部プロジェクト参照は内核（Core）と、CAD製品APIに依存しない取得共通既定値・診断カテゴリ
+       定数（Acquire.Common）だけを許す（参照方向テスト tests/CadPeta.Tests/ArchitectureTests.cs
+       が機械検査する）。 -->
+
+  <PropertyGroup>
+    <TargetFrameworks>$(CadPetaHostTfms)</TargetFrameworks>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != '$(CadPetaNet48Tfm)'">
+    <PackageReference Include="System.Drawing.Common" Version="$(SystemDrawingCommonVersion)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Core\CadPeta.Core.csproj" />
+    <!-- グラデーション診断カテゴリ定数（AcquireDiagCategories）・取得共通既定値を
+         GradientEmitter から使うため参照する -->
+    <ProjectReference Include="..\CadPeta.Acquire.Common\CadPeta.Acquire.Common.csproj" />
+  </ItemGroup>
+</Project>

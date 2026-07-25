@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <TargetFramework>$(CadPetaAppTfm)</TargetFramework>
+    <AssemblyName>cadpeta-gui</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\CadPeta.App\CadPeta.App.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="app.ico" LogicalName="CadPeta.Gui.app.ico" /></ItemGroup>
+</Project>

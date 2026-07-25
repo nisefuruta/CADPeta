@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- グリフ輪郭ポート（IGlyphOutliner）の SHX/ビッグフォント実装。
+       自前のバイナリ解釈器のみで完結させ、外部パッケージ参照ゼロ・BCL のみで組む。
+       取得系（Acquire.Acad の SHX 文字）・出力系（Out.Emf のクリップ交差文字等）の
+       どちらからも使われ得るため独立プロジェクトとし、参照方向テスト
+       （tests/CadPeta.Tests/ArchitectureTests.cs）の検査対象へ加える。
+       PackageReference / 他プロジェクトへの ProjectReference（Core・UseCases 以外）を
+       追加してはならない。 -->
+
+  <PropertyGroup>
+    <!-- 3系（net48 / net8 / net10、src/Directory.Build.props）すべてから参照可能な中立ターゲット -->
+    <TargetFramework>$(CadPetaKernelTfm)</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Core\CadPeta.Core.csproj" />
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CP932（Shift_JIS）変換表。生成手順・埋め込み形式は tests/tools/cad-typography/gen_cp932_table.ps1 参照 -->
+    <EmbeddedResource Include="Cp932Encode.bin" />
+  </ItemGroup>
+
+  <!-- バイトコード解釈（ShxGlyphWalker）を合成バイト列で単体検証するため、
+       テストへ internal を公開する（オクタント弧・バルジ弧等の幾何は境界ポート越しには検査しづらい）。 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="CadPeta.Tests" />
+  </ItemGroup>
+
+</Project>

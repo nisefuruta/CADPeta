@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- IJCAD 2026 PRO での .NET プラグイン読込可否を確認する最小プローブ。
+       本体 BIN の managed DLL を compile 専用参照する（実行時はホストが提供する）。
+       製品コードではない（検証ハーネス）。ソリューション（CadPeta.sln）へは加えない。 -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- IJCAD 本体のインストール先。環境が変わる場合はプロパティで上書きする -->
+    <IjcadBinDir Condition="'$(IjcadBinDir)' == ''">C:\Program Files\ITJP\IJCAD 2026 PRO</IjcadBinDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Itjp.Ijcad.Runtime / DatabaseServices / Geometry / Colors -->
+    <Reference Include="GcDbMgd">
+      <HintPath>$(IjcadBinDir)\GcDbMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Itjp.Ijcad.Runtime / ApplicationServices.Core（Application 等） -->
+    <Reference Include="GcCoreMgd">
+      <HintPath>$(IjcadBinDir)\GcCoreMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Itjp.Ijcad.ApplicationServices / EditorInput（Application・Document・Editor・SelectionSet） -->
+    <Reference Include="GcMgd">
+      <HintPath>$(IjcadBinDir)\GcMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

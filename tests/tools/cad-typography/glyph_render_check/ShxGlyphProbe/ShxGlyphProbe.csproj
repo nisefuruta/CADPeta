@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Phase 3 検証専用: 自前 SHX 解釈器（CadPeta.Glyphs.Shx）を AutoCAD 実機レンダと
+       機械比較するためのプローブ。リポジトリの CadPeta.sln へは加えない単独 csproj。 -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>ShxGlyphProbe</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\src\CadPeta.Core\CadPeta.Core.csproj" />
+    <ProjectReference Include="..\..\..\..\..\src\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <ProjectReference Include="..\..\..\..\..\src\CadPeta.Glyphs.Shx\CadPeta.Glyphs.Shx.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CP932（配置TSVの文字コード）を .NET Core で読むための符号ページプロバイダ。MIT。
+         検証専用プローブのみで使用し、製品コード（src/）には持ち込まない -->
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

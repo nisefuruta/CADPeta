@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 窓プロットの座標契約を実機で測る計測器（BricsCAD 版）。生値・UCS→WCS・WCS→DCS の3候補を
+       同一条件で発行して確定する。移植元: ..\WindowContractProbe（AutoCAD 版）。構造・記録
+       スキーマは移植元と完全一致させる。
+       製品コード（CadPeta.Plugin.*）を参照しない。測定対象の実装を使って契約を測ると循環するため、
+       BricsCAD の SDK だけに依存する独立した計測器として組む（移植元も同じ方針）。
+       検証資産のため src/Directory.Build.props の管理外（tests/ 配下）である。 -->
+
+  <PropertyGroup>
+    <!-- BricsCAD V26 の managed API は net8（.NETCoreApp v8.0）のため net8 単一ターゲット
+         （src/CadPeta.Plugin.Bricscad と同じ判断） -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>WindowContractProbe.Bricscad</AssemblyName>
+    <!-- BricsCAD 本体のインストール先。環境が変わる場合はプロパティで上書きする -->
+    <BricscadBinDir Condition="'$(BricscadBinDir)' == ''">C:\Program Files\Bricsys\BricsCAD V26 ja_JP</BricscadBinDir>
+    <!-- TD_Mgd/BrxMgd は NuGet 参照アセンブリではなく実体 DLL（HintPath 直接参照）のため、
+         MSB3277（解決できない競合）警告になり得る（src/CadPeta.Plugin.Bricscad と同じ実測パターン）。
+         いずれもコンパイル専用参照（Private=false、実行時はホスト BricsCAD が提供）で実害が
+         ないため、この既知の警告だけを抑制する -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <!-- BricsCAD 参照アセンブリ: 利用者所有の本体 DLL への直接参照であり、ビルドには BricsCAD の
+       インストールが前提となる。Teigha.Runtime（CommandMethod・CommandClass）・
+       Teigha.DatabaseServices（PlotSettings・Layout 等）・Teigha.Geometry（Point3d・Matrix3d 等）は
+       TD_Mgd.dll、Bricscad.ApplicationServices（Application・Document）・Bricscad.EditorInput
+       （Editor）・Bricscad.PlottingServices（PlotFactory・PlotInfo 等）は BrxMgd.dll（2026-07-11
+       リフレクション実機検査で確認した BricsCAD 固有の非対称性、src/CadPeta.Plugin.Bricscad と同じ）。
+       Private=false でコンパイル専用参照とし、実行時はホスト BricsCAD が同名アセンブリを提供する -->
+  <ItemGroup>
+    <Reference Include="TD_Mgd">
+      <HintPath>$(BricscadBinDir)\TD_Mgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BrxMgd">
+      <HintPath>$(BricscadBinDir)\BrxMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- JSON 出力は System.Text.Json を含め外部パッケージを一切使わない（同一ファイル内の
+       MiniJson を参照）。NuGet 依存が無いため PackageReference・CopyLocalLockFileAssemblies は
+       不要である -->
+
+</Project>

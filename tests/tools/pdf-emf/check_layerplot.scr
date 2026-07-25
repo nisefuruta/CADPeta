@@ -1,0 +1,3 @@
+(load "C:/Users/wk/repo/CADPeta/tests/tools/pdf-emf/check_layerplot.lsp")
+CHKLP
+_.QUIT _Y

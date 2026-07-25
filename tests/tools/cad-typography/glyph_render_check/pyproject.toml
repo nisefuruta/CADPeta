@@ -1,0 +1,14 @@
+# Phase 3 検証ツール（SHX 実機突き合わせ）の依存定義（uv 管理）
+# pypdfium2: PDFium バインディング（Apache-2.0 / BSD-3-Clause）
+# pillow   : 画像処理（HPND、MIT類似）
+# numpy    : 見当枠検出の画素処理（BSD-3-Clause）
+[project]
+name = "cadpeta-phase3-glyph-render-check"
+version = "0.1.0"
+description = "SHX 解釈器の AutoCAD 実機突き合わせ検証ツール（本実装ではない）"
+requires-python = ">=3.12"
+dependencies = [
+    "pypdfium2>=4.30",
+    "pillow>=11.0",
+    "numpy>=2.0",
+]

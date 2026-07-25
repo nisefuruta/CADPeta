@@ -1,0 +1,2 @@
+# 実行時の一時物（scr・コンソール出力・プローブPDF）。charts/ と charts.log は追跡する
+tmp/

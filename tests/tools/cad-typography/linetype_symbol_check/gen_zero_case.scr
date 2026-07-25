@@ -1,0 +1,5 @@
+(setvar "SECURELOAD" 0)
+(load "C:\\Users\\wk\\AppData\\Local\\Temp\\cadpeta_p3b_ltsym\\gen_zero_case.lsp")
+(setvar "SECURELOAD" 1)
+_.SAVEAS 2018 C:/Users/wk/AppData/Local/Temp/cadpeta_p3b_ltsym/zero_case.dwg
+_.QUIT _Y

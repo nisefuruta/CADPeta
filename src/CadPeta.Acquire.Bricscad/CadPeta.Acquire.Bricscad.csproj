@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 取得アダプタ（互換CAD第三対象 BricsCAD: DB直接取得）: モデル空間の選択オブジェクトを
+       図面データベースから直接読み、出所メタデータ（data-*）付きの SVG IR へ写像する。
+       BricsCAD 参照はプラグイン合成ルートと本プロジェクトだけに置く
+       （tests/ArchitectureTests が機械検査する）。 -->
+
+  <PropertyGroup>
+    <!-- BricsCAD V26 の managed API は net8（.NETCoreApp v8.0）のため net8 単一ターゲット -->
+    <TargetFramework>$(CadPetaNet8Tfm)</TargetFramework>
+    <!-- BricsCAD 本体のインストール先。環境が変わる場合はプロパティで上書きする -->
+    <BricscadBinDir Condition="'$(BricscadBinDir)' == ''">C:\Program Files\Bricsys\BricsCAD V26 ja_JP</BricscadBinDir>
+    <!-- TD_Mgd/BrxMgd は NuGet 参照アセンブリではなく実体 DLL（HintPath 直接参照）のため、
+         実行時に依存する埋め込み版数が参照アセンブリの互換版数と食い違い、MSB3277
+         （解決できない競合）警告になり得る（CadPeta.Acquire.Ijcad と同じ実測パターン）。
+         いずれもコンパイル専用参照（Private=false、実行時はホスト BricsCAD が提供）で実害が
+         ないため、この既知の警告だけを抑制する -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+    <DefineConstants>$(DefineConstants);CADPETA_BRICSCAD</DefineConstants>
+  </PropertyGroup>
+
+  <!-- 4製品同文の取得本体は CadCommon の共有ソース（#if 分岐＋using エイリアスで SDK 差を
+       吸収）。製品固有の API 差は本プロジェクト直下の LinetypeShapeUprightCompat.cs が持つ -->
+  <ItemGroup>
+    <Compile Include="..\CadPeta.Acquire.CadCommon\CadIrAcquirer.cs" Link="CadCommon\CadIrAcquirer.cs" />
+    <Compile Include="..\CadPeta.Acquire.CadCommon\CadTextMapper.cs" Link="CadCommon\CadTextMapper.cs" />
+  </ItemGroup>
+
+  <!-- BricsCAD 参照アセンブリ: 利用者所有の本体 DLL への直接参照であり、ビルドには BricsCAD の
+       インストールが前提となる（NuGet 配布の参照アセンブリを持たないため）。
+       DB 系（Teigha.DatabaseServices/Geometry/Colors/Runtime。CommandMethod・
+       CommandClass を含む）は TD_Mgd.dll のまま ARES/AutoCAD 版と同じ Teigha.* 名前空間。
+       App/Editor 系（Bricscad.ApplicationServices/EditorInput）だけ BrxMgd.dll・
+       Bricscad.* 名前空間へ差し替わる（2026-07-11 リフレクション実機検査で確認した
+       BricsCAD 固有の非対称性）。Private=false でコンパイル専用参照とし、実行時はホスト
+       BricsCAD が同名アセンブリを提供する -->
+  <ItemGroup>
+    <Reference Include="TD_Mgd">
+      <HintPath>$(BricscadBinDir)\TD_Mgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BrxMgd">
+      <HintPath>$(BricscadBinDir)\BrxMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Core\CadPeta.Core.csproj" />
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <!-- SHX 文字の輪郭化（グリフ輪郭ポートの SHX 実装。既定の写像方式） -->
+    <ProjectReference Include="..\CadPeta.Glyphs.Shx\CadPeta.Glyphs.Shx.csproj" />
+    <!-- CAD API に依存しない共有計算（曲線近似・線種の端部整列・線種記号の角度解決・
+         既定値・GDIフォントメトリクス）。AutoCAD/ARES/IJCAD 構造SVG書き出しアダプタと共有する -->
+    <ProjectReference Include="..\CadPeta.Acquire.Common\CadPeta.Acquire.Common.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Raster\CadPeta.Acquire.Raster.csproj" />
+  </ItemGroup>
+
+</Project>

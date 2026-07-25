@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 窓プロットの座標契約を IJCAD 実機で測る計測器。移植元は
+       tests/tools/regression/window_contract/WindowContractProbe（AutoCAD SDK 版）で、
+       記録スキーマ・3候補（生値・UCS→WCS・WCS→DCS）の構造は完全に一致させる。
+       製品コード（CadPeta.Plugin.*）・CadPeta.* を一切参照しない。測定対象の実装を使って
+       契約を測ると循環するため、IJCAD の SDK だけに依存する独立した計測器として組む
+       （移植元も同じ方針で AutoCAD SDK 専属）。
+       検証資産のため src/Directory.Build.props の管理外だが、tests/Directory.Build.props が
+       src/Directory.Build.props を Import しているため、$(CadPetaNet8Tfm)・$(IjcadBinDir) 等の
+       一元定義は本プロジェクトからも参照できる（src/CadPeta.Plugin.Ijcad と同じ実測パターン）。 -->
+
+  <PropertyGroup>
+    <!-- IJCAD 2026 PRO の managed API は net8（.NETCoreApp v8.0）のため net8 単一ターゲット。
+         src/CadPeta.Plugin.Ijcad と揃える -->
+    <TargetFramework>$(CadPetaNet8Tfm)</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>WindowContractProbe.Ijcad</AssemblyName>
+    <RootNamespace>CadPeta.Probe.Ijcad</RootNamespace>
+    <!-- NETLOAD されるためホストが deps.json を読まない。本計測器は外部パッケージ依存を
+         一切持たない（JSON も手書きシリアライザで賄う）ため複製対象は無いが、
+         src/CadPeta.Plugin.Ijcad と同じ配備前提を明示しておく -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <DefineConstants>$(DefineConstants);CADPETA_IJCAD</DefineConstants>
+    <!-- IJCAD 本体のインストール先。既定は src/Directory.Build.props の $(IjcadBinDir)
+         （lib/vendor-refs 優先・無ければ既定インストール先）を使う。ここでは上書きしない -->
+  </PropertyGroup>
+
+  <!-- IJCAD 参照アセンブリ: src/CadPeta.Plugin.Ijcad.csproj と同一の参照方法（HintPath＋
+       Private=false のコンパイル専用参照、実行時はホスト IJCAD が同名アセンブリを提供）。
+       Itjp.Ijcad.Runtime（CommandMethod・Exception）・Itjp.Ijcad.EditorInput（Editor）・
+       ApplicationServices.Core.Application（DocumentManager・GetSystemVariable）は GcCoreMgd.dll、
+       DatabaseServices・Geometry（Layout・PlotSettings・Matrix3d・Extents2d 等）・
+       ApplicationServices.Document は GcDbMgd.dll、GUI 側の ApplicationServices.Application は
+       GcMgd.dll（2026-07-16 実 DLL のリフレクションで確認、src/CadPeta.Plugin.Ijcad と同じ形状）。
+       Private=false でコンパイル専用参照とし、実行時はホスト IJCAD が同名アセンブリを提供する -->
+  <ItemGroup>
+    <Reference Include="GcDbMgd">
+      <HintPath>$(IjcadBinDir)\GcDbMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GcCoreMgd">
+      <HintPath>$(IjcadBinDir)\GcCoreMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GcMgd">
+      <HintPath>$(IjcadBinDir)\GcMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- GcDbMgd 等の実体 DLL（HintPath 直接参照）は埋め込み版数が net8 参照アセンブリの
+       互換版数と食い違い MSB3277（解決できない競合）警告になる（src/CadPeta.Plugin.Ijcad と
+       同じ実測パターン）。コンパイル専用参照で実害がないため、この既知の警告だけを抑制する -->
+  <PropertyGroup>
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <!-- CadPeta.* への ProjectReference・PackageReference は禁止（測定対象の実装で契約を測ると
+       循環する。移植元も製品コード非参照）。JSON 出力も手書きシリアライザで賄うため
+       System.Text.Json 等の外部依存を一切持たない -->
+
+</Project>

@@ -1,0 +1,18 @@
+﻿;;; probe_style.lsp
+;;; -STYLE コマンドで TrueType (Arial) の文字スタイルを作れるか、実プロンプト列で確認する。
+;;; 使い方: (load "...probe_style.lsp") の後 (c:PROBESTYLE "ダンプ出力先.txt")
+(defun c:PROBESTYLE (dumppath / f rec ename)
+  (command "_.-STYLE" "arial_tt" "Arial" 0.0 1.0 0.0 "N" "N")
+  (command "_.TEXT" (list 20.0 20.0 0.0) 10.0 0.0 "TrueTypeCheck" "")
+  (setq f (open dumppath "w"))
+  (setq rec (tblsearch "STYLE" "arial_tt"))
+  (write-line "STYLE record (tblsearch):" f)
+  (write-line (vl-prin1-to-string rec) f)
+  (setq ename (tblobjname "STYLE" "arial_tt"))
+  (write-line "STYLE record (entget with ACAD xdata):" f)
+  (write-line (vl-prin1-to-string (entget ename '("ACAD"))) f)
+  (close f)
+  (princ "\nPROBESTYLE: 完了")
+  (princ))
+(princ "\nprobe_style.lsp をロードしました。")
+(princ)

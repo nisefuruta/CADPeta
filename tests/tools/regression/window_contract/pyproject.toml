@@ -1,0 +1,13 @@
+# 窓プロットの座標契約を判定するためのページレンダ比較の依存定義（uv 管理）。
+# pypdfium2: PDFium バインディング（Apache-2.0 / BSD-3-Clause）
+# pillow   : 画素比較（HPND）
+# pdf-emf 側の pyproject とは分ける（共用の依存を検証目的で汚さない）。
+[project]
+name = "cadpeta-window-contract"
+version = "0.1.0"
+description = "窓プロットの座標契約を確定する実機計測の比較ツール"
+requires-python = ">=3.12"
+dependencies = [
+    "pypdfium2>=4.30",
+    "pillow>=10.0",
+]

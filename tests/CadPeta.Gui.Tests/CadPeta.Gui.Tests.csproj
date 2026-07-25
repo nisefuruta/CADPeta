@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>$(CadPetaNet10Tfm)</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+  <ItemGroup><ProjectReference Include="..\..\src\CadPeta.Gui\CadPeta.Gui.csproj" /></ItemGroup>
+  <!-- 最小成果物バイト列はCadPeta.Testsと同一定義をリンク共有し、複製を持たない -->
+  <ItemGroup><Compile Include="..\CadPeta.Tests\MinimalArtifactBytes.cs" Link="MinimalArtifactBytes.cs" /></ItemGroup>
+</Project>

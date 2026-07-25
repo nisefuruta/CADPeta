@@ -1,0 +1,4 @@
+*JP15,justify test pattern P15 dash10 gap5
+A,10,-5
+*JP24,justify test pattern P24 asymmetric dash12 gap5 dash6 gap1
+A,12,-5,6,-1

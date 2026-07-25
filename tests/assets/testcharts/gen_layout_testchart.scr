@@ -1,0 +1,29 @@
+(setvar "CMDECHO" 1)
+_.-LAYOUT _N PETA_A3
+(setvar "CTAB" "PETA_A3")
+_.MVIEW 10,8.5 410,288.5
+_.MSPACE
+_.ZOOM _W 0,0 400,280
+_.PSPACE
+-PLOT
+Y
+PETA_A3
+AutoCAD PDF (High Quality Print).pc3
+ISO �t���u���[�h A3 (420.00 x 297.00 �~��)
+M
+L
+N
+L
+1:1
+0.00,0.00
+Y
+monochrome.ctb
+Y
+N
+N
+N
+C:/Users/wk/repo/CADPeta/tests/assets/testcharts/TESTCHART2_layout_console_ref.pdf
+Y
+Y
+_.SAVEAS 2018 C:/Users/wk/repo/CADPeta/tests/assets/testcharts/TESTCHART2_layout.dwg
+_.QUIT _Y

@@ -1,0 +1,4 @@
+STYLE record (tblsearch):
+((0 . "STYLE") (2 . "arial_tt") (70 . 0) (40 . 0.0) (41 . 1.0) (50 . 0.0) (71 . 0) (42 . 10.0) (3 . "arial.ttf") (4 . ""))
+STYLE record (entget with ACAD xdata):
+((-1 . <}Œ`–¼: 1510108c460>) (0 . "STYLE") (330 . <}Œ`–¼: 151002c7030>) (5 . "2CE") (100 . "AcDbSymbolTableRecord") (100 . "AcDbTextStyleTableRecord") (2 . "arial_tt") (70 . 0) (40 . 0.0) (41 . 1.0) (50 . 0.0) (71 . 0) (42 . 10.0) (3 . "arial.ttf") (4 . "") (-3 ("ACAD" (1000 . "Arial") (1071 . 34))))

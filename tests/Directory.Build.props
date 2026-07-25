@@ -1,0 +1,7 @@
+<Project>
+  <!-- tests/ 配下の共通設定。TFM・LangVersion 等の一元定義は src/ 側を取り込む（重複定義しない） -->
+  <Import Project="$(MSBuildThisFileDirectory)..\src\Directory.Build.props" />
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

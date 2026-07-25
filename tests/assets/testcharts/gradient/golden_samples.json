@@ -1,0 +1,256 @@
+{
+  "SourceRenderer": "AutoCAD 2026 accoreconsole / AutoCAD PDF (High Quality Print).pc3",
+  "HatchWidthMm": 340,
+  "HatchHeightMm": 220,
+  "ExcludedEdgeMm": 3,
+  "SampleColumns": 17,
+  "SampleRows": 11,
+  "MedianErrorLimitLevels": 2.5,
+  "P95ErrorLimitLevels": 7.5,
+  "RmseLimitLevels": 4.5,
+  "Charts": [
+    {
+      "Shape": "LINEAR",
+      "Suffix": "a000_s000",
+      "AngleRadians": 0,
+      "Shift": 0,
+      "SourcePdf": "grad_LINEAR_bw_a000_s000.pdf",
+      "SourcePdfSha256": "BA89B665A981290886A16297BAA49D93404551621A3CB9DF959BEBA573016E94",
+      "Values": "AhIhMUFQYHB/j5+vvs7d7f0CEiExQVBgcH+Pn66+zt3t/QISITFBUGBwf4+frr7O3e39AhIiMUFRYHCAj5+uvs7d7f0CEiIxQVFgcICPn6++zt7t/QISIjFBUWBwgI+fr77O3u39AhIhMUFQYHB/j56uvs7d7f0CEiIxQVBgcH+Pn66+zt3t/QISIjFBUWBwgI+frr7O3u39AhIiMUFRYHCAj5+vvs7e7f0CEiIxQVFgcICPn6++zt7t/Q=="
+    },
+    {
+      "Shape": "LINEAR",
+      "Suffix": "a045_s000",
+      "AngleRadians": 0.7853981633974483,
+      "Shift": 0,
+      "SourcePdf": "grad_LINEAR_bw_a045_s000.pdf",
+      "SourcePdfSha256": "3F3F757E7D1BCA9CE384D58A0BD2352EC62FBBD9703A9F80114154537C894A03",
+      "Values": "ZG53gYqUnaewusPN1+Dq8/1aZG13gIqTnaawucPM1uDp81BaY212gImTnKavucLM1t/pRlBaY213gImTnKavucLM1d89R1BaY212gImSnKWvuMLL1TM9RlBZY2x2f4mSnKWvuMLMKTM8Rk9ZYmx1foiSm6WuuMIgKjM9Rk9ZYmx1f4iSm6WuuBYgKTM8Rk9ZYmt1foiRm6SuDBYfKTI8RU9YYWt0foeRmqQCDBUfKDI7RU5XYWp0fYeQmg=="
+    },
+    {
+      "Shape": "LINEAR",
+      "Suffix": "a000_s050",
+      "AngleRadians": 0,
+      "Shift": 0.5,
+      "SourcePdf": "grad_LINEAR_bw_a000_s050.pdf",
+      "SourcePdfSha256": "8D3B5C862BEDF04A338EBE7C3ED05A13974B65B325932A7DDFC796FCDCE45425",
+      "Values": "BB44Umt8jJajrrnEz9rl8PsEHjhSa3yHlaOuucTP2uTv+gQdN1JreoeVo665xM/a5fD6BB44Umt5h5WjrrjDz9rl8PoEHTdRa4GMlaOuucTP2eTv+gQeN1Bnfo2Yo665xM/a5e/6BB03UWuBjZWjrrnEz9nk7/oEHjhSa3mHlaOuuMPP2uXw+gQdN1JrfIeVo665xM/a5fD6BB44Umt6h5WjrrnEz9rk7/oEHjhSa3yLl6OuucTP2uXw+w=="
+    },
+    {
+      "Shape": "CYLINDER",
+      "Suffix": "a000_s000",
+      "AngleRadians": 0,
+      "Shift": 0,
+      "SourcePdf": "grad_CYLINDER_bw_a000_s000.pdf",
+      "SourcePdfSha256": "6553F023FFF2AF630B9AC9A4413DD871C33AF070686C7D7AF1BA6C98D9F9FBB5",
+      "Values": "BjRfi7bR6/X+9evRtotfNAYHM1+LttHr9f7169G2i18zBwc2YIu20ev1/vXr0baLYTYHBzZjjbXV7PT+9OvUtY1jNgcHNWSQtNTr9f7169S0kGQ1Bwc2ZI6w0ur4/vjq0rCNZDUHBzVkkLTU6/X+9evUtJBkNQcHNmONtdXs9P7069W1jWM2Bwc2YIu20ev1/vXr0baLYTYHBzNfi7bR6/X+9evRtotfMwcGNF+LttHr9f7169G2i180Bg=="
+    },
+    {
+      "Shape": "CYLINDER",
+      "Suffix": "a045_s000",
+      "AngleRadians": 0.7853981633974483,
+      "Shift": 0,
+      "SourcePdf": "grad_CYLINDER_bw_a045_s000.pdf",
+      "SourcePdfSha256": "46517066F26B607A9818E4E2715BAAC16C3A86CCD9A124FFC6B3EEC86151C0F2",
+      "Values": "8PX3+fz07d/RvaaQel5BJQji7vb6/vvz7uDOv6mTd1pAJdTh7Pb8+/3z7N/Pv6yQeF9BwdLg6vf8/v7z7N/PwKuSe16rvtTe7vf8/vjy7OLSwamTeparwdPg7vX6/vr17uDTwauWepOpwdLi7PL7/fz37t7Uvqtee5KrwM/f7PX+/vv36uDSwUFfeJCrv8/f7fP9+/v27OHUJUBad5OpwM/g7vP5+/r27uIIJUFdepCmvdHf7fT8+fb18A=="
+    },
+    {
+      "Shape": "CYLINDER",
+      "Suffix": "a000_s050",
+      "AngleRadians": 0,
+      "Shift": 0.5,
+      "SourcePdf": "grad_CYLINDER_bw_a000_s050.pdf",
+      "SourcePdfSha256": "6BEC37684C69BAB42E7B1F66B161FCC425FD74028E4E8A45F97FC85E412F1674",
+      "Values": "C1eh1/b5+/Dm0bqkjm5OLQwLWKHX9vj78ObQuqSObk4tDQtaoNT2+fvw5tC6pI5uTi0NC1ue0/f++/Dm0LqkjW9PLg0LW6HX9/348ObQv6iMb08uDQtantP2/Pjv5tK+qItuTy4NC1uh1/f9+PDm0L+ojG9PLg0LW57T9/778ObQuqSNb08uDQtaoNT2+fvw5tC6pI5uTi4NC1ih1/b4+/Dm0Lqkjm5OLQ0LV6HX9vn78ebSuqSObk0tDA=="
+    },
+    {
+      "Shape": "INVCYLINDER",
+      "Suffix": "a000_s000",
+      "AngleRadians": 0,
+      "Shift": 0,
+      "SourcePdf": "grad_INVCYLINDER_bw_a000_s000.pdf",
+      "SourcePdfSha256": "7714F83C99CEA92400B2DA3C2B9066BFAA462A1DD95FB161DFC15B03736FD713",
+      "Values": "+Mugc0gtEwkACRMtSHOgyvj4zKBzSC0TCQAJEy1Ic5/L9/jJnnNILRMJAAkTLUhznsj3+MmccUkpEgoAChMqSXGbyPf4yZpuSioTCQAJEypKbprJ9/jJmnBOLBQGAAYULE5xmsn3+MmabkoqEwkACRMqSm6ayff4yZxxSSkSCgAKEylJcZvI9/jJnnJILRMJAAkTLUhzncj3+Mygc0gtEwkACRMtSHOfy/f5y6BzSC0TCQAJEy1Ic5/K+A=="
+    },
+    {
+      "Shape": "INVCYLINDER",
+      "Suffix": "a045_s000",
+      "AngleRadians": 0.7853981633974483,
+      "Shift": 0,
+      "SourcePdf": "grad_INVCYLINDER_bw_a045_s000.pdf",
+      "SourcePdfSha256": "D25E837071EB38E8E9FE2F986027D5C21B3B7EF0A682787A769BAE5EA2330D60",
+      "Values": "DgkHBQMKER8tQVhuhKC92fYcEAgEAAMLEB4wP1Vqh6S+2SodEggCAwELEh8vP1Juhp+9PSweFAcCAAALEh8vPlNsg6BTQCogEAcCAAYMEhwsPVVrhGhTPSseEAkEAAQJEB4rPVNohGtVPSwcEgwDAQIHECAqQFOhg2xTPi8fEgkAAAMHFB4sPb2fhm5TPy8fEQsBAwMIEh0q2r+lh2tVPi8eEAsFAwQIEBz32r2hhG5YQS0fEQoCBQgJDg=="
+    },
+    {
+      "Shape": "INVCYLINDER",
+      "Suffix": "a000_s050",
+      "AngleRadians": 0,
+      "Shift": 0.5,
+      "SourcePdf": "grad_INVCYLINDER_bw_a000_s050.pdf",
+      "SourcePdfSha256": "B75D77E9944C11BDCAC3462DC44A42D9451F887A3215DD2B3E3C47BFE52D870C",
+      "Values": "9KhdJwgFAw4YLURacJCw0fL0pl0nCAYDDhguRFpwkLDR8fSkXioIBQMOGC5EWnCQsNHx9KNgKwcAAw4YLkRacY+v0PH0o10nBwEGDhguP1Zyj6/Q8fSkYCsIAgYPGCxAVnOQr9Dx9KNdJwcBBg4YLj9Wco+v0PH0o2ArBwADDhguRFpxj6/Q8fSkXioIBQMOGC5EWnCQsNHx9KZdJwgGAw4YLkRacJCw0fH0qF0nCAUDDRgsRFpwkLHR8g=="
+    },
+    {
+      "Shape": "SPHERICAL",
+      "Suffix": "a000_s000",
+      "AngleRadians": 0,
+      "Shift": 0,
+      "SourcePdf": "grad_SPHERICAL_bw_a000_s000.pdf",
+      "SourcePdfSha256": "9600CB2C1F387C02E653DB62F984468B3B0C048BB816305B84CA8B85D3B2E51F",
+      "Values": "AAMLLU9le4OLg3tlTy0LAwAABCpNcIqhqbGpoYlwTSoEAAAcQGiNp8HJ0MnBp41pQBwAACVWfqLC1+Xp5dbBon5VJQAALVyLr8/m9Pb05c+vi1wtAAc2ZI6w0ur4//jq0rCNZDUHAC1ci6/P5vT29OXPr4tcLQAAJVZ+osLX5enl18GiflYlAAAcQGmNqMHJ0MnBp41pQBwAAAQqTXCKoamxqaGKcE0qAwAAAwstT2V7g4uDe2VPLQsDAA=="
+    },
+    {
+      "Shape": "SPHERICAL",
+      "Suffix": "a045_s000",
+      "AngleRadians": 0.7853981633974483,
+      "Shift": 0,
+      "SourcePdf": "grad_SPHERICAL_bw_a045_s000.pdf",
+      "SourcePdfSha256": "2FD93E1DFE0BE919FB38BC2FBE08FCB040E6B9A1004C82F0F96128B33C330FD0",
+      "Values": "ByRAXXiKm6GnoZuKeF1AJAcXOVl2kqa4vsS+uKaSdlk5FyZMbIupvdDX3dfQvaiLbEwmMFZ5mbnR4ezv7OHRuZl5VjA3XYKiw9vs9vn27NvDooJdNz1jianD3uz1//Xs3sOpiWM9N12CosPb7Pb59uzbw6KCXTcwVnmZudHh7O/s4dG5mXlWMCZMbIuovdDX3dfQvaiLbEwmFzlZdpKmuL7EvrimknZZORcHJEFdeIqboaehm4p4XUAkBw=="
+    },
+    {
+      "Shape": "SPHERICAL",
+      "Suffix": "a000_s050",
+      "AngleRadians": 0,
+      "Shift": 0.5,
+      "SourcePdf": "grad_SPHERICAL_bw_a000_s050.pdf",
+      "SourcePdfSha256": "12CB767D21103BBDB0B7AFD074938AF7EDA9A8B8417BE69D98581F461C33CF8A",
+      "Values": "s87n8Pjv5cquhVguAwAAAACx1Ov1/PPpzbGJYjMDAAAAALDQ5/T27+XJrYRbMQMAAAAAo8LY5ejl1sChfE8mAgAAAACMrsLO0M3AqotpPxUFAAAAAHWPoq60rp2HcUsmCgYCAAAATmt9g4qIfGdPLQoAAAAAAAAoQE1WXlxQPi8MAAAAAAAAAAcUIiwzKyISDgAAAAAAAAAAAgAAAwoCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+    },
+    {
+      "Shape": "INVSPHERICAL",
+      "Suffix": "a000_s000",
+      "AngleRadians": 0,
+      "Shift": 0,
+      "SourcePdf": "grad_INVSPHERICAL_bw_a000_s000.pdf",
+      "SourcePdfSha256": "61FCC7A0748332CB18697B350C2937EDE75BB30433243FF27C74DA18E9DDC3A8",
+      "Values": "//zz0a+Zg3tze4OZr9Hz/P//+tSxjnVdVU1VXXWOsdT6///ivpZxVz01LjU9V3GVvuL//9qogFw8JxkVGSg9XICp2v//0aJzTy8YCggKGS9Pc6LR//jJmnBOLBQGAAYULE5xmsn4/9Gic08vGAoIChkvT3Oi0f//2qiAXDwnGRUZJz1cgKja//7ivpVxVj01LjU9V3GVvuL+/vrUsY50XVVNVV10jrHU+/7//PPRr5mDe3N7g5mv0fP8/w=="
+    },
+    {
+      "Shape": "INVSPHERICAL",
+      "Suffix": "a045_s000",
+      "AngleRadians": 0.7853981633974483,
+      "Shift": 0,
+      "SourcePdf": "grad_INVSPHERICAL_bw_a045_s000.pdf",
+      "SourcePdfSha256": "A5D3CF68201E72F5F72F3472FADE18E3FF9240666B6F3B238A2BA12DE287AD58",
+      "Values": "+Nq+oYZ0Y11XXWN0hqG+2vjoxaaIbFhGQDpARlhsiabF6NmyknNVQS4nIScuQVZzkrLZzqiFZUUtHRIPEh0tRWWFqM7HoXxcOyMSCAYIEiM7XHyhx8GbdVU7IBIJAAkSIDtVdZvBx6F8XDsjEggGCBIjO1x8ocfOqIVlRS0dEg8SHS1FZYWoztmyknNWQS4nIScuQVZzkrLZ6MWmiGxYRkA6QEZYbImmxej42r6ihnRjXVddY3SGor7a+A=="
+    },
+    {
+      "Shape": "INVSPHERICAL",
+      "Suffix": "a000_s050",
+      "AngleRadians": 0,
+      "Shift": 0.5,
+      "SourcePdf": "grad_INVSPHERICAL_bw_a000_s050.pdf",
+      "SourcePdfSha256": "EFA4BD50286F85476ED36B6C4BB49F50BF5B5B866A8765AA30DAB97D2BCE1674",
+      "Values": "SzAXDgYPGTRQeabR/P////9NKhMJAgsVMU11nMz8/////04uFwoIDxk0UXqkzvz/////WzwmGRYZKD5dgq/Y/f////9yUDwwLjE+VHOVv+n5/////4lvXFBKUGF3jbPY9Pn9////sJOBe3R2gpev0fT////////WvrGooKKuwNDz//////////fq3NLM1N3s8f///////////f//+/T9/////////////////////////////////////w=="
+    },
+    {
+      "Shape": "HEMISPHERICAL",
+      "Suffix": "a000_s000",
+      "AngleRadians": 0,
+      "Shift": 0,
+      "SourcePdf": "grad_HEMISPHERICAL_bw_a000_s000.pdf",
+      "SourcePdfSha256": "98F0BFE0B3299DA500F66C9C1F952BAD3E51CB76713DFE3FC0E91DD8F38B24B2",
+      "Values": "Eh0nMTo+QkZIRkI+OjEnHRImMj1IUVZZXWBdWVZRSD0yJjlGUl1na29zd3Nva2ddUkY5TFlmcnuBhIiLiISBe3JmWUxgbXqGjJKYnKCcmJKMhnptYHOAjZedo6mutK6po52XjYBzf4+cqK60ur7Cvrq0rqicj3+Lnqu2v8XJzdHNycW/tquei5aptcHO09fb39vX087BtamWobC9y9jd4ebq5uHd2Mu9sKGsusfU4ebr8PTw6+bh1ce6rA=="
+    },
+    {
+      "Shape": "HEMISPHERICAL",
+      "Suffix": "a045_s000",
+      "AngleRadians": 0.7853981633974483,
+      "Shift": 0,
+      "SourcePdf": "grad_HEMISPHERICAL_bw_a045_s000.pdf",
+      "SourcePdfSha256": "BDDFECA95B1AAB1D8AB0EEB2C6C8F0998B98323EFA74DE8ED3D73EE3EBB25358",
+      "Values": "BBEeLDlGU2BtdXuBiImKjIwPIC88SVZkcX6Fi5KZmpubmxorPExaZ3SBjZSboqmqqqqqJTdIWGd1gY6aoamwt7m5ubgwQVNjcX+NmqeutbvCyMjIxztMXm58ipimtLrBx87U19bWQFFjd4aToa+8xMzS2N7e3t1FV2l9jpypt8TM1N3k5uXl5EtccIOWpLLAzdXd5ezt7OzsUGJ1iJupt8TS2uLq8fLz8/NVaHqNn626ydbf5u72+Pn6+g=="
+    },
+    {
+      "Shape": "HEMISPHERICAL",
+      "Suffix": "a000_s050",
+      "AngleRadians": 0,
+      "Shift": 0.5,
+      "SourcePdf": "grad_HEMISPHERICAL_bw_a000_s050.pdf",
+      "SourcePdfSha256": "4A141136ACE35CC9D53C64B578CC8E00725B47DAD8EFFEAA4B23A9E8F8C1491C",
+      "Values": "SEVBPjkwJhwRCwoIBgQDAQBeW1hUUEY7MSYaCgYAAAABAHNwbWtmXFFFOioZCgABAwUBiYaDgHpvY1hMPCwcCQMGBQGem5iVi4B2al9PPSsYBwkFAbSxrqeckod8cV5LOSYTCQUBwcG+uK2imIt+a1hFMyAJBQHO0czHv7OmmIt4ZlNAKhIFAdve2NLNwLOlmIVyXkk0HQUB5+bg3NfKva+ijXhjTzomDwDz7+rl4NLFuKqVgGtWQSwXAg=="
+    },
+    {
+      "Shape": "INVHEMISPHERICAL",
+      "Suffix": "a000_s000",
+      "AngleRadians": 0,
+      "Shift": 0,
+      "SourcePdf": "grad_INVHEMISPHERICAL_bw_a000_s000.pdf",
+      "SourcePdfSha256": "2629632C5E138DC4B36F6139A31C052C3230EAB49B84742C9DF7479A4FDAB2C7",
+      "Values": "7OHXzcTAvLi2uLzAxM3X4ezYzMG2railoZ6hpaittsHM2MW4rKGXk4+Lh4uPk5ehrLjFsqWYjIN9enZzdnp9g4yYpbKekYR4cmxmYl5iZmxyeISRnot+cWdhW1VQSlBVW2FncX6Lf29iVlBKREA8QERKUFZib39zYVNIPzk1MS0xNTk/SFNgc2hVST0wKycjHyMnKzA9SVVoXU5BMyYhHRgUGB0hJjNBTl1SRDcqHRgTDgoOExgdKTdEUg=="
+    },
+    {
+      "Shape": "INVHEMISPHERICAL",
+      "Suffix": "a045_s000",
+      "AngleRadians": 0.7853981633974483,
+      "Shift": 0,
+      "SourcePdf": "grad_INVHEMISPHERICAL_bw_a045_s000.pdf",
+      "SourcePdfSha256": "0626A69235E48F68ADA3E6F05D858346CBF5CFE1E4B10BC51DB404EE35334C72",
+      "Values": "++7g08a5q56RiYR9dnV0cnLw39DDtaibjoB5c2xlZGNjY+TTwrKkl4p9cWpjXFVUVFRU2si3ppeJfXBkXVVOR0VFRUbOvaubjX9xZFdQSUM8NjY2N8OyoJCCdGZYSkQ9NzAqJygovq2bh3hrXU9COjIsJiAgICG5p5WBcGJVRzoyKiEaGBkZGrOijntoWkw+MSkhGRIREhISrpyJdmNVRzosJBwUDQwLCwuploRxX1FENSgfGBAIBgUEBA=="
+    },
+    {
+      "Shape": "INVHEMISPHERICAL",
+      "Suffix": "a000_s050",
+      "AngleRadians": 0,
+      "Shift": 0.5,
+      "SourcePdf": "grad_INVHEMISPHERICAL_bw_a000_s050.pdf",
+      "SourcePdfSha256": "5B41D8ADC352E8C0097565B00562AD807C623E801ED83F6AFFE68CDCC9BD5FE2",
+      "Values": "trm9wMXO2eLt8/X2+Pr8/v+go6aqrrjDzdjl9Pn////9/ouOkZOYoq25xNTl9f/+/Pr+dXh7foSPm6aywtPj9fv5+v5gY2Zpc36IlJ+vwdTn+PX6/kpNUFdibHeCjaCzxdjr9vr+PT1ARlFcZnOAk6a5y971+v4wLTI3P0tYZnOGmKu+1Oz6/iMgJiwxPktZZnmMoLXK4vr+FxkeIic0QU9ccYecsMXZ7/4LDxQZHiw5RlRpfpOpvtPo/Q=="
+    },
+    {
+      "Shape": "CURVED",
+      "Suffix": "a000_s000",
+      "AngleRadians": 0,
+      "Shift": 0,
+      "SourcePdf": "grad_CURVED_bw_a000_s000.pdf",
+      "SourcePdfSha256": "043E283C4C5F3501DA9260FCE4A6BFB13C96E211A076A5855892244274CBF371",
+      "Values": "AAUFBQUFBQUFBQUFBQUFBQEiGSgoKCgoKCgoKCgoKCgbIz89QkdLS0tLS0tLS0tIRD9AW2JjaGxubm5ubm5ubWllY114foWIio2QkZGRkI6LiYaAe5WboaaprK6xtLKvraqopJ6YqrG3vL/CxcbHx8bEwb65s62+xszR1djZ2dra2dnX087JwczU2uDm6ezt7u7t6+ji3djQ1Nrh6fDz9ff5+Pb08uvk3tjb4+nv9fj6/P38+/n38uzm3w=="
+    },
+    {
+      "Shape": "CURVED",
+      "Suffix": "a045_s000",
+      "AngleRadians": 0.7853981633974483,
+      "Shift": 0,
+      "SourcePdf": "grad_CURVED_bw_a045_s000.pdf",
+      "SourcePdfSha256": "324AF2407F4B0BAD9734D2BB2D78D47ED4CE913749AD1CF7283BC9E1427C01FD",
+      "Values": "BBIgLjtJV2VzfYeRmqGnrrMRIDA9S1hmdIKMlZ+orrS5vh4tPU1baXaDj5iiq7S6wMXIKztLWml1go6bpK63wMbLz9I4SFdndIGOm6ixusLK0dbZ3UVVZHOAjZqntLzEzNTc4eTnT19ufouYpbK9xczV3eTl6OtYaHiIl6OuusXN1d7l6ert8GJygpGeq7fDztbe5e3u8PH0bHyKl6OwvMnV3OTr8vT19vh2g5CcqbXCztvj6PD3+Pr8/A=="
+    },
+    {
+      "Shape": "CURVED",
+      "Suffix": "a000_s050",
+      "AngleRadians": 0,
+      "Shift": 0.5,
+      "SourcePdf": "grad_CURVED_bw_a000_s050.pdf",
+      "SourcePdfSha256": "0BB7EC9EA656D7D4538CDDBE715B7012965ADA9E14164C6B9F363C47E594966D",
+      "Values": "BQUFBQUFBQUFAAAAAAAAAAAmKSopJyUlJSUeFxAKAwAAAEdKTVBQTkxJRkA5MywlGw8GaGtucXJwbWpnYVpUTEI4LCGJjJCTkZCOi4iCenJpYFVIPKqtsbKwr62rqaCXjoZ9cWRXv8PHycfGxMS8uKykm5KEd2rU2Nze3t7b1s7KxLywpZiLfOPo7O7v7Orm4dvTysGypZiK6vH3+Pn38/Ds5NzTyrurnpDx9vj8//v49vHq4NfPwbOmlg=="
+    },
+    {
+      "Shape": "INVCURVED",
+      "Suffix": "a000_s000",
+      "AngleRadians": 0,
+      "Shift": 0,
+      "SourcePdf": "grad_INVCURVED_bw_a000_s000.pdf",
+      "SourcePdfSha256": "04E8F3C731FD61B20EEB44AC9D82A1D2DEB08AA902F6B140BDA4E28F098DAE68",
+      "Values": "/vr6+vr6+vr6+vr6+vr6+v7d5dfX19fX19fX19fX19fj3MDBvLe0tLS0tLS0tLS2ur+/o52blpKQkJCQkJCQkZWZm6GGgHl2dHFubW1tbnBzdXh+hGljXVhVUlBNSkxPUVRWWmBmVE1HQj88OTg3Nzg6PUBFS1FBODItKSYlJSQkJSUnKzA1PTIqJB4YFRIREBARExYcISYuKiQdFQ4LCQcFBggKDBMaICYjGxUPCQYEAgECAwUHDBIYHw=="
+    },
+    {
+      "Shape": "INVCURVED",
+      "Suffix": "a045_s000",
+      "AngleRadians": 0.7853981633974483,
+      "Shift": 0,
+      "SourcePdf": "grad_INVCURVED_bw_a045_s000.pdf",
+      "SourcePdfSha256": "B7A182EDA0881FF8129FDF489CB28DCE0F6340FEDB6FA9E79130D1ED8E3BFDC3",
+      "Values": "++3f0cO1p5mLgXdtZF1XUEvu3s/CtKeZinxyaV9WUEpFQOHRwbGjloh7b2ZcU0pEPjk208S0pJWJfHBjWlBHPjgzLyzGtqeXin1wY1ZNRDw0LSglIbmpmot+cWRXSkI6MioiHRoXr5+QgHNmWUxBOTIpIRoZFhOmloZ2Z1tQRDkxKSAZFRQRDpyMfG1gU0c7MCggGRIQDg0KkoJ0Z1tOQjUpIhoTDAoJCAaIe29iVUk8MCMbFg4HBgQCAg=="
+    },
+    {
+      "Shape": "INVCURVED",
+      "Suffix": "a000_s050",
+      "AngleRadians": 0,
+      "Shift": 0.5,
+      "SourcePdf": "grad_INVCURVED_bw_a000_s050.pdf",
+      "SourcePdfSha256": "4796D6F1735DFAC84869FE56CF32A2CA0F24C995A02F7AF3D9D51AD7424C3EC7",
+      "Values": "+vr6+vr6+vr6///////////Z1tTW19nZ2dng5+71/P///7e0sa6usLK1uL7Fy9La5O/5lpOQjYyOkZSXnaSqsrzG0t11cm5rbW5wc3Z8hIyVnqm2wlRRTUxOT1FTVV5ncHiBjZqnPzs3NTc4OjpCRlJaY2x6h5QrJiIhISAjKDA0OkJOWWZzghsWEhAPEhQYHSMrND1MWWZ0FA0HBgUHCw4SGiIrNENTYG4NCAYDAAMGCA0UHicvPUtYaA=="
+    }
+  ]
+}

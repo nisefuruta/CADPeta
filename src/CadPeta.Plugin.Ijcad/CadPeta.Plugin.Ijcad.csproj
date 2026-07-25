@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 合成ルート（プラグイン入口、互換CAD第二対象 IJCAD）: 構造SVG書き出し（DB直接取得）と
+       PDFプロット経由のPDF印刷経路を Shared の本体へ結線する。Cli・Plugin.Acad・
+       Plugin.Ares と同格の最外殻であり、参照方向は内側への一方向のみ。IJCAD 参照は
+       本プロジェクトだけに置く（内側のプロジェクトに現れないことを tests/ArchitectureTests
+       が機械検査する）。 -->
+
+  <PropertyGroup>
+    <!-- IJCAD 2026 PRO の managed API は net8（.NETCoreApp v8.0）のため net8 単一ターゲット -->
+    <TargetFramework>$(CadPetaNet8Tfm)</TargetFramework>
+    <!-- NETLOAD されるプラグインは実行ファイルと違い deps.json をホストが読まないため、
+         NuGet 依存を出力フォルダへ複製して同一フォルダ配備にする。
+         IJCAD 参照は HintPath＋Private=false のため複製対象外（ホストが提供） -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <DefineConstants>$(DefineConstants);CADPETA_IJCAD</DefineConstants>
+    <!-- IJCAD 本体のインストール先。環境が変わる場合はプロパティで上書きする -->
+    <IjcadBinDir Condition="'$(IjcadBinDir)' == ''">C:\Program Files\ITJP\IJCAD 2026 PRO</IjcadBinDir>
+    <!-- GcDbMgd/GcCoreMgd/GcMgd は NuGet 参照アセンブリではなく実体 DLL（HintPath 直接参照）
+         のため、実行時に依存する Microsoft.VisualBasic/System.Drawing/WindowsBase の埋め込み
+         版数（8.0.0.0）が net8.0-windows 参照アセンブリの互換版数（4.0.0.0/10.0.0.0）と
+         食い違い、MSB3277（解決できない競合）警告になる（CadPeta.Acquire.Ijcad と同じ実測）。
+         いずれもコンパイル専用参照（Private=false、実行時はホスト IJCAD が提供）で実害が
+         ないため、この既知の警告だけを抑制する -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadPlotEngineRunner.cs" Link="CadCommon\CadPlotEngineRunner.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadSelectionPlotPort.cs" Link="CadCommon\CadSelectionPlotPort.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadDataExportCommands.cs" Link="CadCommon\CadDataExportCommands.cs" />
+    <Compile Include="..\CadPeta.Plugin.CadCommon\CadHostLanguage.cs" Link="CadCommon\CadHostLanguage.cs" />
+  </ItemGroup>
+
+  <!-- IJCAD 参照アセンブリ: 利用者所有の本体 DLL への直接参照であり、ビルドには IJCAD の
+       インストールが前提となる。Itjp.Ijcad.Runtime（CommandMethod・ExtensionApplication）・
+       Itjp.Ijcad.EditorInput（Editor・SelectionSet）・ApplicationServices.Core.Application
+       （DocumentManager・GetSystemVariable）は GcCoreMgd.dll、DatabaseServices・
+       ApplicationServices.Document は GcDbMgd.dll、GUI 側の ApplicationServices.Application は
+       GcMgd.dll。Private=false でコンパイル専用参照とし、実行時はホスト IJCAD が
+       同名アセンブリを提供する -->
+  <ItemGroup>
+    <Reference Include="GcDbMgd">
+      <HintPath>$(IjcadBinDir)\GcDbMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GcCoreMgd">
+      <HintPath>$(IjcadBinDir)\GcCoreMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GcMgd">
+      <HintPath>$(IjcadBinDir)\GcMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Plugin.Shared\CadPeta.Plugin.Shared.csproj" />
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Ijcad\CadPeta.Acquire.Ijcad.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Pdf\CadPeta.Acquire.Pdf.csproj" />
+    <ProjectReference Include="..\CadPeta.Out.Emf\CadPeta.Out.Emf.csproj" />
+  </ItemGroup>
+
+</Project>

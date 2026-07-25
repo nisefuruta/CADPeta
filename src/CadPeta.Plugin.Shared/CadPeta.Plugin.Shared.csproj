@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- プラグイン層の単一情報源（SSOT）。PETA/PETADIAG の本体フロー・範囲プロンプト・
+       印刷経路のプロット判断・窓配置の純粋数学・中立な既定値を、4製品（AutoCAD・ARES・
+       IJCAD・BricsCAD）で共有する。CAD 固有処理は境界ポート（IEditorPort・IPlotPort）
+       として切り出し、各製品の薄い殻が実装する。
+       不可侵の制約: 本プロジェクトは CAD SDK を一切参照しない。中立型（double・タプル・
+       不透明ハンドル object）だけでポートと会話し、製品差はポート実装だけに封じ込める。
+       Acquire.Common 参照は CAD 非依存の取得共通既定値（グラデーション DPI）と
+       診断カテゴリ定数（AcquireDiagCategories）に限る。
+       この制約は tests/ArchitectureTests が機械検査する。
+       ターゲットはホスト側アダプタ（Out.Emf）と揃えた3系。CAD 参照ゼロは TFM ではなく
+       参照アセンブリ集合で担保する。 -->
+
+  <PropertyGroup>
+    <TargetFrameworks>$(CadPetaHostTfms)</TargetFrameworks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CadPeta.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.Core\CadPeta.Core.csproj" />
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+    <ProjectReference Include="..\CadPeta.Acquire.Common\CadPeta.Acquire.Common.csproj" />
+  </ItemGroup>
+
+  <!-- 診断ログ JSON の直列化（設計書§7）。net8/net10 は in-box のため net48 のみパッケージ -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
+    <PackageReference Include="System.Text.Json" Version="$(SystemTextJsonVersion)" />
+  </ItemGroup>
+
+</Project>

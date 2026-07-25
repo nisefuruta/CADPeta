@@ -1,0 +1,3 @@
+(load "C:/Users/wk/repo/CADPeta/tests/tools/pdf-emf/locate_transparency.lsp")
+LOCTR
+_.QUIT _Y
