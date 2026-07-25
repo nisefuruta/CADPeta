@@ -81,3 +81,5 @@ CAD 図面をドキュメントの説明図として使う方法として、2000
 ## ライセンス
 
 MIT ライセンス（[LICENSE](LICENSE)）。同梱ライブラリの著作権表示は [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) を参照してください。
+
+個人開発のため、Issue・Pull Request への対応は不定期です。返信やマージまで時間がかかるか、対応できない場合があります。
