@@ -1,5 +1,8 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Diagnostics;
-using System.Text;
 using CadPeta.Acquire.Pdf;
 using CadPeta.Ir;
 using CadPeta.Out.Emf;
@@ -54,7 +57,7 @@ public static class PdfPetaPipeline
             {
                 case PdfPetaOutputKind.Svg:
                     ArtifactFile.WriteAtomically(output.Path, ArtifactKind.Svg,
-                        temp => File.WriteAllText(temp, SvgWriter.Write(ir), new UTF8Encoding(false)));
+                        temp => File.WriteAllText(temp, SvgWriter.Write(ir), TextEncodings.Utf8NoBom));
                     log.WriteLine($"SVG出力: {output.Path}"); break;
                 case PdfPetaOutputKind.Emf:
                 case PdfPetaOutputKind.Clipboard:

@@ -1,6 +1,9 @@
 // IRノードの保守的な外接矩形（純幾何、内核）。
 // クロップ変換の範囲外間引きと EMF出力のクリップ交差判定が共用する。
 // 「保守的」= 実描画範囲を必ず含む（広めに出る分には間引き・交差判定は安全側に倒れる）。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Ir;
 
 namespace CadPeta.Geometry;

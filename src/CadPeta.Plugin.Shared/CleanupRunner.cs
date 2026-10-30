@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
 
 namespace CadPeta.Plugin.Shared;

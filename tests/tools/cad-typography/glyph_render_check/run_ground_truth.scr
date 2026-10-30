@@ -1,13 +1,12 @@
-(setvar "SECURELOAD" 0)
 (setvar "CMDECHO" 1)
-(load "C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/glyph_render_check/build_glyph_chart.lsp")
+(load "C:/Tools/ACAD/lisp/build_glyph_chart.lsp")
 (c:BUILDGLYPHCHART "C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/glyph_render_check/placement.tsv")
 _.SAVEAS 2018 C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/glyph_render_check/glyph_chart.dwg
 -PLOT
 Y
 Model
 AutoCAD PDF (High Quality Print).pc3
-ISO ï¿½tï¿½ï¿½ï¿½uï¿½ï¿½ï¿½[ï¿½h A3 (420.00 x 297.00 ï¿½~ï¿½ï¿½)
+ISO ƒtƒ‹ƒuƒŠ[ƒh A3 (420.00 x 297.00 ƒ~ƒŠ)
 M
 L
 N

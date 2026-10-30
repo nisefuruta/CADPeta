@@ -1,7 +1,4 @@
-(setvar "SECURELOAD" 0)
-NETLOAD
-C:\Users\wk\repo\CADPeta\src\CadPeta.Plugin.Acad\bin\Debug\net8.0-windows\CadPeta.Plugin.Acad.dll
-(setvar "SECURELOAD" 1)
+(command "_.NETLOAD" "C:/Tools/ACAD/dotnet/CadPeta.Plugin.Acad.dll")
 PETADATA
 ALL
 

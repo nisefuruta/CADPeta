@@ -1,4 +1,5 @@
-﻿param(
+﻿[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
+param(
   [Parameter(Mandatory = $true)]
   [ValidateSet("Ares2020", "Ares2023", "Ares2024", "Ares2027", "Ijcad2026", "BricscadV26")]
   [string]$Product,
@@ -16,6 +17,11 @@
   [switch]$AllowForceStop
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-CompatE2ePlan 'gradient_compat_e2e.ps1' $Product $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 
 $GuiStartupTimeoutSeconds = 120
 $CommandCompletionTimeoutSeconds = 300
@@ -40,11 +46,12 @@ $products = @{
     StartArguments = @()
     ProgId = "PCAD_AC_X.AcadApplication.4.4"
     ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\ares2020\Debug\net48\CadPeta.Plugin.Ares.dll"
+    Plugin = "src\CadPeta.Plugin.Ares\bin\ares2020\Release\net48\CadPeta.Plugin.Ares.dll"
     LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
-    GradientRepresentation = "VectorPaths"
-    MinGradientPathCount = 3000
+    # ARES 2020 の PDF の印刷は、9 形状のグラデーションを 9 枚の画像で出す（2026-10-25 実測。画像 9 件・パス 1 件）。
+    # 前の期待（パス 3000 件以上）は 2024 の実測を写したもので、2020 では確かめていなかった
+    GradientRepresentation = "Images"
     # 2020 は (command) 引数渡しの読込が入力待ちで止まる（2026-07-21 実測）。生テキスト＋CR で
     # 送り、そのためファイル名プロンプトをコマンド行へ出す FILEDIA=0（保存→0→復元）にする
     RawTextLoad = $true
@@ -57,11 +64,12 @@ $products = @{
     StartArguments = @()
     ProgId = "PCAD_AC_X.AcadApplication.4.6"
     ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\ares2023\Debug\net48\CadPeta.Plugin.Ares.dll"
+    Plugin = "src\CadPeta.Plugin.Ares\bin\ares2023\Release\net48\CadPeta.Plugin.Ares.dll"
     LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
-    GradientRepresentation = "VectorPaths"
-    MinGradientPathCount = 3000
+    # ARES 2023 の PDF の印刷は、9 形状のグラデーションを 9 枚の画像で出す（2026-10-25 実測。画像 9 件・パス 1 件）。
+    # 前の期待（パス 3000 件以上）は 2024 の実測を写したもので、2023 では確かめていなかった
+    GradientRepresentation = "Images"
     # 2020 と同じく (command) 引数渡しが止まるため生テキスト＋CR＋FILEDIA=0 で読み込む
     RawTextLoad = $true
     SetFileDia = $true
@@ -73,7 +81,7 @@ $products = @{
     StartArguments = @()
     ProgId = "PCAD_AC_X.AcadApplication.23.1"
     ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\Debug\net48\CadPeta.Plugin.Ares.dll"
+    Plugin = "src\CadPeta.Plugin.Ares\bin\Release\net48\CadPeta.Plugin.Ares.dll"
     LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
     GradientRepresentation = "VectorPaths"
@@ -87,11 +95,13 @@ $products = @{
     StartArguments = @()
     ProgId = "PCAD_AC_X.AcadApplication.26.8"
     ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\Debug\net8.0-windows\CadPeta.Plugin.Ares.dll"
+    Plugin = "src\CadPeta.Plugin.Ares\bin\Release\net8.0-windows\CadPeta.Plugin.Ares.dll"
     LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
-    GradientRepresentation = "VectorPaths"
-    MinGradientPathCount = 3000
+    # ARES 2027（27.1.1.2150、ODA PDF Export 26.8）の PDF の印刷は、9 形状のグラデーションを 9 枚の画像で出す
+    # （2026-10-25 実測。2026-07-15 には、作り直す前の ARES 2027 でパス 3050 件だった。2026-07-15 のコミット 3d894b7 の
+    # プラグインでも今の ARES 2027 では画像になり、ARES の側の変化と確かめた）。PETA は印刷と同じ仕上がりなので、画像 9 件を期待する
+    GradientRepresentation = "Images"
     SetFileDia = $false
     DiscoverProgId = $true
     ComActivate = $false
@@ -101,7 +111,7 @@ $products = @{
     StartArguments = @()
     ProgId = "Gcad.Application"
     ProcessName = "gcad"
-    Plugin = "src\CadPeta.Plugin.Ijcad\bin\Debug\net8.0-windows\CadPeta.Plugin.Ijcad.dll"
+    Plugin = "src\CadPeta.Plugin.Ijcad\bin\Release\net8.0-windows\CadPeta.Plugin.Ijcad.dll"
     LoadKind = "DirectNetload"
     CommandStartKind = "SingleBatch"
     GradientRepresentation = "VectorPaths"
@@ -114,7 +124,7 @@ $products = @{
     StartArguments = @("/Automation")
     ProgId = "BricscadApp.AcadApplication.26.0"
     ProcessName = "bricscad"
-    Plugin = "src\CadPeta.Plugin.Bricscad\bin\Debug\net8.0-windows\CadPeta.Plugin.Bricscad.dll"
+    Plugin = "src\CadPeta.Plugin.Bricscad\bin\Release\net8.0-windows\CadPeta.Plugin.Bricscad.dll"
     LoadKind = "DirectNetload"
     CommandStartKind = "SingleBatch"
     GradientRepresentation = "VectorPaths"
@@ -132,6 +142,9 @@ $requiresEmf = ($Mode -ne "DataExport")
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 $exe = [IO.Path]::GetFullPath($config.Exe)
 $plugin = [IO.Path]::GetFullPath((Join-Path $repo $config.Plugin))
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+# 配布物と同じビルド（tests/tools/build_e2e.ps1）の DLL であることを、CAD を起動する前に確かめる
+Assert-E2ePluginBuild $plugin
 $source = (Resolve-Path $SourceDwg).Path
 $evidenceLog = Join-Path $OutRoot "gradient_compat_e2e.log"
 
@@ -143,11 +156,7 @@ if (Test-Path -LiteralPath $evidenceLog) { Remove-Item -LiteralPath $evidenceLog
 $dwg = Join-Path $OutRoot "gradient_e2e.dwg"
 Copy-Item -LiteralPath $source -Destination $dwg -Force
 
-function Write-Evidence([string]$message) {
-  $line = "{0:o} {1}" -f (Get-Date), $message
-  [IO.File]::AppendAllText($evidenceLog, $line + [Environment]::NewLine, [Text.Encoding]::UTF8)
-  Write-Output $line
-}
+. "$PSScriptRoot\..\common\compat_cad_com.ps1"
 
 if (-not ("CadPeta.CompatNativeWindow" -as [type])) {
   Add-Type -TypeDefinition @'
@@ -238,57 +247,8 @@ function Wait-CommandStarted($document, [string]$commandName, [string]$evidenceK
   throw "CAD コマンド '$commandName' は $timeoutSeconds 秒以内に開始証拠 '$evidenceKind' を示しませんでした"
 }
 
-function Wait-FileExists([string]$path, [string]$phase, [int]$timeoutSeconds) {
-  $deadline = (Get-Date).AddSeconds($timeoutSeconds)
-  while ((Get-Date) -lt $deadline) {
-    if (Test-Path -LiteralPath $path -PathType Leaf) {
-      Write-Evidence "FILE_READY phase=$phase path=$path"
-      return
-    }
-    Start-Sleep -Milliseconds $PollMilliseconds
-  }
-  throw "処理 '$phase' の期待ファイルが $timeoutSeconds 秒以内に作成されませんでした: $path"
-}
 
-function Get-RegisteredProgIdsForExe([string]$expectedExe) {
-  $result = @()
-  foreach ($key in Get-ChildItem "HKLM:\SOFTWARE\Classes" | Where-Object {
-    $_.PSChildName -like "PCAD_AC_X.AcadApplication.*"
-  }) {
-    $clsid = (Get-ItemProperty -LiteralPath (Join-Path $key.PSPath "CLSID") -ErrorAction SilentlyContinue).'(default)'
-    if (-not $clsid) { continue }
-    $server = (Get-ItemProperty -LiteralPath "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\$clsid\LocalServer32" -ErrorAction SilentlyContinue).'(default)'
-    if (-not $server) { continue }
-    $serverText = $server.Trim()
-    $serverExe = if ($serverText -match '^"([^"]+\.exe)"') {
-      $Matches[1]
-    } elseif ($serverText -match '^([^\s]+\.exe)') {
-      $Matches[1]
-    } else {
-      continue
-    }
-    if ([string]::Equals([IO.Path]::GetFullPath($serverExe), $expectedExe, [StringComparison]::OrdinalIgnoreCase)) {
-      $result += $key.PSChildName
-    }
-  }
-  return @($result | Sort-Object -Unique)
-}
 
-function Send-AresPromptInput($shell, [int]$processId, [string[]]$inputs) {
-  $deadline = (Get-Date).AddSeconds($CommandStartTimeoutSeconds)
-  while ((Get-Date) -lt $deadline -and -not $shell.AppActivate($processId)) {
-    Start-Sleep -Milliseconds $PollMilliseconds
-  }
-  if (-not $shell.AppActivate($processId)) { throw "ARES プロセスをアクティブ化できませんでした: PID=$processId" }
-  Start-Sleep -Milliseconds 750
-  foreach ($input in $inputs) {
-    if ($input.Length -gt 0) { $shell.SendKeys($input) }
-    $shell.SendKeys("{ENTER}")
-    Start-Sleep -Milliseconds 500
-  }
-  $described = ($inputs | ForEach-Object { if ($_.Length -gt 0) { $_ } else { "ENTER" } }) -join ","
-  Write-Evidence "ARES_UI_INPUT sent PID=$processId sequence=$described"
-}
 
 function Write-CommandStateEvidence($document, [string]$phase) {
   foreach ($variableName in @("CMDNAMES", "LASTPROMPT", "ERRNO")) {
@@ -301,33 +261,8 @@ function Write-CommandStateEvidence($document, [string]$phase) {
   }
 }
 
-function Find-AndActivateDocument($application, [string]$expectedPath, [int]$timeoutSeconds) {
-  $expectedFullPath = [IO.Path]::GetFullPath($expectedPath)
-  $deadline = (Get-Date).AddSeconds($timeoutSeconds)
-  while ((Get-Date) -lt $deadline) {
-    $documents = $application.Documents
-    for ($index = 0; $index -lt $documents.Count; $index++) {
-      $candidate = $documents.Item($index)
-      $candidatePath = [string]$candidate.FullName
-      if ($candidatePath -and [string]::Equals([IO.Path]::GetFullPath($candidatePath), $expectedFullPath,
-        [StringComparison]::OrdinalIgnoreCase)) {
-        $candidate.Activate()
-        Write-Evidence "DOCUMENT activated Name=$($candidate.Name) FullName=$candidatePath Count=$($documents.Count)" | Out-Null
-        return $candidate
-      }
-    }
-    Start-Sleep -Milliseconds $PollMilliseconds
-  }
-  $visibleDocuments = @()
-  $documents = $application.Documents
-  for ($index = 0; $index -lt $documents.Count; $index++) {
-    $candidate = $documents.Item($index)
-    $visibleDocuments += "Name=$($candidate.Name),FullName=$($candidate.FullName)"
-  }
-  throw "開いた図面 '$expectedFullPath' が $timeoutSeconds 秒以内に見つかりませんでした。図面一覧=$($visibleDocuments -join '; ')"
-}
 
-function Wait-Artifacts($document, [datetime]$startedAt, [string]$commandStartKind) {
+function Wait-GradientArtifacts($document, [datetime]$startedAt, [string]$commandStartKind) {
   $deadline = (Get-Date).AddSeconds($CommandCompletionTimeoutSeconds)
   $unregisteredDeadline = $startedAt.AddSeconds($UnregisteredCommandTimeoutSeconds)
   $stable = 0
@@ -335,9 +270,7 @@ function Wait-Artifacts($document, [datetime]$startedAt, [string]$commandStartKi
   while ((Get-Date) -lt $deadline) {
     # ARES の .NET コマンド実行中は COM が拒否される。成果物の安定生成だけを待つ。
     $commands = if ($commandStartKind -eq "AresUi") { "" } else { [string]$document.GetVariable("CMDNAMES") }
-    $svg = @(Get-ChildItem -LiteralPath $OutRoot -Filter "*.svg" | Where-Object {
-      $_.Name -notlike "*.stage*.svg" -and $_.LastWriteTime -ge $startedAt
-    } | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+    $svg = @(Get-NewestSvgSince $OutRoot $startedAt)
     if ($svg.Count -eq 1) {
       $emfPath = [IO.Path]::ChangeExtension($svg[0].FullName, ".emf")
       $diagPath = $svg[0].FullName + ".diag.json"
@@ -364,16 +297,16 @@ $application = $null
 $candidateApplication = $null
 $document = $null
 $acadState = $null
-$uiShell = $null
 $startedProcess = $null
 $connectedProgId = $null
 $comActivatedPid = 0
 $ownedPid = 0
 $messageFilterRegistered = $false
-$oldSecureLoad = $null
 $oldFileDia = $null
 $completed = $false
 $cleanupFailures = @()
+$pluginStage = $null
+$autoloadState = $null
 try {
   Write-Evidence "START Product=$Product Exe=$exe Plugin=$plugin Source=$source"
   $windowStation = [CadPeta.CompatNativeWindow]::WindowStationName()
@@ -386,11 +319,6 @@ try {
     throw "Marshal.GetActiveObject のため Windows PowerShell 5.1 が必要です。実際の PSEdition=$($PSVersionTable.PSEdition)、Version=$($PSVersionTable.PSVersion)"
   }
   if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne [Threading.ApartmentState]::STA) { throw "STA スレッドが必要です" }
-  if ($config.CommandStartKind -eq "AresUi") {
-    # .NETコマンド開始後はARESがCOM呼出しを拒否するため、UI入力用COMは先に生成する。
-    $uiShell = New-Object -ComObject WScript.Shell
-    if ($null -eq $uiShell) { throw "ARES 起動前に WScript.Shell を作成できませんでした" }
-  }
   [CadPeta.CompatMessageFilter]::RetryWindowMilliseconds = $ComRetryWindowMilliseconds
   [CadPeta.CompatMessageFilter]::RetryDelayMilliseconds = $ComRetryDelayMilliseconds
   [CadPeta.CompatMessageFilter]::Register()
@@ -400,6 +328,8 @@ try {
   if ($existingProcesses.Count -gt 0) {
     throw "既存の $($config.ProcessName) プロセスがあり、起動プロセスを一意に所有できません: PID=$($existingProcesses.Id -join ',')"
   }
+  # インストール済みの CADPeta が自動で読み込まれると、ビルドした DLL を試験できない。試験の間だけ登録を外す
+  Suspend-CompatProductAutoload $Product ([ref]$autoloadState)
   if ($config.DiscoverProgId) {
     $progIds = @(Get-RegisteredProgIdsForExe $exe)
     if ($progIds.Count -eq 0) { throw "'$exe' を指す登録済み ARES ProgID がありません" }
@@ -435,16 +365,9 @@ try {
     if ($comActivatedPid -eq 0) { throw "COM 起動で $GuiStartupTimeoutSeconds 秒以内に $($config.ProcessName) が開始されませんでした" }
     Write-Evidence "COM activation process PID=$comActivatedPid"
   } else {
-    $startedProcess = if ($config.StartArguments.Count -gt 0) {
-      Start-Process -FilePath $exe -ArgumentList $config.StartArguments -PassThru -WindowStyle Hidden
-    } else {
-      Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
-    }
+    $startedProcess = Start-CadProcessHidden $exe $config.StartArguments
     Write-Evidence "PROCESS started PID=$($startedProcess.Id)"
-    $deadline = (Get-Date).AddSeconds($GuiStartupTimeoutSeconds)
-    while ((Get-Date) -lt $deadline -and $null -eq $candidateApplication) {
-      try { $candidateApplication = [Runtime.InteropServices.Marshal]::GetActiveObject($config.ProgId) } catch { Start-Sleep -Milliseconds $PollMilliseconds }
-    }
+    $candidateApplication = Wait-ActiveObject $config.ProgId $GuiStartupTimeoutSeconds
     if ($null -eq $candidateApplication) {
       $hint = if ($Product -like "Ares*") {
         " Verify that one floating license is free; a hidden read-only/license modal prevents ROT registration. Diagnose with visible startup."
@@ -452,23 +375,14 @@ try {
       throw "COM オブジェクト $($config.ProgId) が $GuiStartupTimeoutSeconds 秒以内に ROT 登録されませんでした。$hint"
     }
   }
-  $deadline = (Get-Date).AddSeconds($GuiStartupTimeoutSeconds)
-  $hwnd = 0
-  while ((Get-Date) -lt $deadline -and $hwnd -eq 0) {
-    try { $candidateApplication.Visible = $true; $hwnd = [int64]$candidateApplication.HWND }
-    catch { Start-Sleep -Milliseconds $PollMilliseconds }
-  }
-  if ($hwnd -eq 0) { throw "COM アプリケーションが $GuiStartupTimeoutSeconds 秒以内に自動操作可能になりませんでした" }
+  $hwnd = Get-CadWindowHandle $candidateApplication $GuiStartupTimeoutSeconds $exe
   [uint32]$pidValue = 0
   [void][CadPeta.CompatNativeWindow]::GetWindowThreadProcessId([IntPtr]$hwnd, [ref]$pidValue)
   $candidatePid = [int]$pidValue
   if ($null -ne $startedProcess -and $candidatePid -ne $startedProcess.Id) {
     throw "今回開始していないプロセスへ COM 接続しました。開始 PID=$($startedProcess.Id)、接続 PID=$candidatePid"
   }
-  $actualExe = (Get-Process -Id $candidatePid).Path
-  if (-not [string]::Equals([IO.Path]::GetFullPath($actualExe), $exe, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "COM が想定外の実行ファイルへ接続しました。期待='$exe'、実際='$actualExe'"
-  }
+  Assert-ConnectedExecutable $candidatePid $exe
   $application = $candidateApplication
   $candidateApplication = $null
   $ownedPid = $candidatePid
@@ -482,28 +396,17 @@ try {
   }
 
   [void]$application.Documents.Open($dwg)
-  $document = Find-AndActivateDocument $application $dwg $GuiStartupTimeoutSeconds
+  $document = Find-AndActivateDocument $application $dwg $GuiStartupTimeoutSeconds -IncludeDocumentList
   try { $acadState = $application.GetAcadState(); Write-Evidence "ACADSTATE available" }
   catch { Write-Evidence "ACADSTATE unavailable=$($_.Exception.Message); fallback=CMDNAMES" }
-  $secureLoadEvidence = "unavailable"
-  try {
-    $oldSecureLoad = $document.GetVariable("SECURELOAD")
-    $document.SetVariable("SECURELOAD", [int16]0)
-    $secureLoadEvidence = "$oldSecureLoad->0"
-  } catch {
-    $oldSecureLoad = $null
-    Write-Evidence "SYSVAR SECURELOAD unavailable=$($_.Exception.Message)"
-  }
-  if ($config.SetFileDia) {
-    $oldFileDia = $document.GetVariable("FILEDIA")
-    $document.SetVariable("FILEDIA", [int16]0)
-    Write-Evidence "SYSVARS SECURELOAD=$secureLoadEvidence FILEDIA=$oldFileDia->0"
-  } else {
-    Write-Evidence "SYSVARS SECURELOAD=$secureLoadEvidence FILEDIA=unchanged"
-  }
+  Disable-CadFileDia $document $config.SetFileDia ([ref]$oldFileDia)
   Wait-CadIdle $acadState $document "before plugin load" $GuiStartupTimeoutSeconds
 
-  $pluginForCommand = $plugin -replace '\\','/'
+  # 信頼するフォルダへコピーした DLL を読み込み、確認の画面を出さずに無人で進める
+  $pluginStage = New-CompatPluginStage $Product $plugin
+  Assert-CadPluginFolderTrusted $document $pluginStage
+  Write-Evidence "PLUGIN_STAGE plugin=$($pluginStage.Plugin)"
+  $pluginForCommand = $pluginStage.Plugin -replace '\\','/'
   # 既定は (command "._LOADDOTNETAPPLICATION" "<path>") の引数渡し（2024/2027 で実績のある形。
   # 挙動を変えない）。ただし ARES 2020/2023 はこの引数渡しではファイル名プロンプトが引数を
   # 受け取らず入力待ちのまま止まる（2026-07-21 2020 実測）。該当版だけ RawTextLoad で
@@ -532,8 +435,12 @@ try {
   $promptBatch = ($promptInputs -join "`r") + "`r"
   Write-Evidence "$commandName begin selection=ALL scale=default mode=$Mode"
   if ($config.CommandStartKind -eq "AresUi") {
-    $document.SendCommand("_.$commandName`r")
-    Send-AresPromptInput $uiShell $ownedPid $promptInputs
+    # ARES は .NET のコマンドの実行中に COM を拒否するので、応答を含めた LISP の (command ...) を 1 回で送る。
+    # キー入力（SendKeys）は、前面のウィンドウと日本語入力・Shift の状態で別の文字として届き、
+    # 「_ALL」が「\all」で届いて止まった（2026-10-25）。peta_option_smoke_compat.ps1 と同じ方式にする
+    $lispArgs = ($promptInputs | ForEach-Object { "`"$_`"" }) -join " "
+    $document.SendCommand("(command `"_.$commandName`" $lispArgs)`r")
+    Write-Evidence "ARES_COMMAND_LISP sent name=$commandName args=$($promptInputs -join ',')"
   } elseif ($config.CommandStartKind -eq "SingleBatch") {
     $document.SendCommand("_.$commandName`r" + $promptBatch)
     Write-Evidence "COMMAND_BATCH_COMPLETED name=$commandName terminator=CR"
@@ -542,7 +449,7 @@ try {
     Wait-CommandStarted $document $commandName $config.CommandStartKind $CommandStartTimeoutSeconds
     $document.SendCommand($promptBatch)
   }
-  $artifacts = Wait-Artifacts $document $artifactStart $config.CommandStartKind
+  $artifacts = Wait-GradientArtifacts $document $artifactStart $config.CommandStartKind
   if ($config.CommandStartKind -eq "AresUi") {
     Write-Evidence "IDLE phase=after $commandName evidence=stable-artifacts"
   } else {
@@ -584,69 +491,18 @@ try {
 } finally {
   if ($null -ne $document) {
     # sysvar 復元は読み戻しで確認し、失敗は $cleanupFailures 経由で最終 throw へ集約する
-    foreach ($restore in @(
-      @{ Name = "SECURELOAD"; Value = $oldSecureLoad },
-      @{ Name = "FILEDIA"; Value = $oldFileDia })) {
-      if ($null -eq $restore.Value) { continue }
-      try {
-        $document.SetVariable($restore.Name, $restore.Value)
-        $readBack = $document.GetVariable($restore.Name)
-        if ("$readBack" -ne "$($restore.Value)") { throw "再読値=$readBack" }
-        Write-Evidence "RESTORE $($restore.Name)=[$($restore.Value)] verified"
-      } catch {
-        $cleanupFailures += "$($restore.Name) 復元失敗: $($_.Exception.Message)"
-        Write-Evidence "RESTORE $($restore.Name) error=$($_.Exception.Message)"
-      }
-    }
+    Restore-CadSystemVariables $document @(
+      @{ Name = "FILEDIA"; Value = $oldFileDia }) ([ref]$cleanupFailures)
   }
-  if ($null -ne $application) {
-    try {
-      while ($application.Documents.Count -gt 0) {
-        $closingDocument = $application.Documents.Item($application.Documents.Count - 1)
-        $closingName = [string]$closingDocument.Name
-        $closingDocument.Close($false)
-        Write-Evidence "CLOSE ok Name=$closingName SaveChanges=false"
-        if ([Runtime.InteropServices.Marshal]::IsComObject($closingDocument)) {
-          [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($closingDocument)
-        }
-      }
-    } catch { Write-Evidence "CLOSE error=$($_.Exception.Message)" }
+  if ($null -ne $application) { Close-CadApplication $application $ownedPid ([ref]$cleanupFailures) }
+  Release-CadComResources $messageFilterRegistered @($acadState, $document, $application, $candidateApplication)
+  Stop-OwnedCadProcess $ownedPid $ProcessExitTimeoutSeconds ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop
+  if ($null -ne $startedProcess) {
+    Stop-LeftoverCadProcess $startedProcess.Id "started" $ownedPid ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop
   }
-  if ($null -ne $application) { try { $application.Quit(); Write-Evidence "QUIT ok" } catch { Write-Evidence "QUIT error=$($_.Exception.Message)" } }
-  if ($messageFilterRegistered) { try { [CadPeta.CompatMessageFilter]::Revoke(); Write-Evidence "MSGFILTER revoked" } catch { Write-Evidence "MSGFILTER revoke error=$($_.Exception.Message)" } }
-  foreach ($comObject in @($uiShell, $acadState, $document, $application, $candidateApplication)) {
-    if ($null -ne $comObject -and [Runtime.InteropServices.Marshal]::IsComObject($comObject)) {
-      try { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($comObject) } catch {}
-    }
-  }
-  [GC]::Collect(); [GC]::WaitForPendingFinalizers()
-  if ($ownedPid -gt 0) {
-    $deadline = (Get-Date).AddSeconds($ProcessExitTimeoutSeconds)
-    while ((Get-Process -Id $ownedPid -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds $PollMilliseconds }
-    if (Get-Process -Id $ownedPid -ErrorAction SilentlyContinue) {
-      if ($AllowForceStop) { Write-Evidence "FORCE_STOP explicitly-allowed owned PID=$ownedPid"; Stop-Process -Id $ownedPid -Force }
-      else {
-        $cleanupFailures += "owned PID=$ownedPid remained after Quit"
-        Write-Evidence "RESIDUAL owned PID=$ownedPid force-stop=disabled"
-      }
-    }
-  }
-  if ($null -ne $startedProcess -and $startedProcess.Id -ne $ownedPid -and
-      (Get-Process -Id $startedProcess.Id -ErrorAction SilentlyContinue)) {
-    if ($AllowForceStop) { Write-Evidence "FORCE_STOP explicitly-allowed started PID=$($startedProcess.Id)"; Stop-Process -Id $startedProcess.Id -Force }
-    else {
-      $cleanupFailures += "started PID=$($startedProcess.Id) remained"
-      Write-Evidence "RESIDUAL started PID=$($startedProcess.Id) force-stop=disabled"
-    }
-  }
-  if ($comActivatedPid -gt 0 -and $comActivatedPid -ne $ownedPid -and
-      (Get-Process -Id $comActivatedPid -ErrorAction SilentlyContinue)) {
-    if ($AllowForceStop) { Write-Evidence "FORCE_STOP explicitly-allowed COM-activated PID=$comActivatedPid"; Stop-Process -Id $comActivatedPid -Force }
-    else {
-      $cleanupFailures += "COM-activated PID=$comActivatedPid remained"
-      Write-Evidence "RESIDUAL COM-activated PID=$comActivatedPid force-stop=disabled"
-    }
-  }
+  Stop-LeftoverCadProcess $comActivatedPid "COM-activated" $ownedPid ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop
+  Remove-CompatPluginStage $pluginStage ([ref]$cleanupFailures)
+  Resume-CompatProductAutoload $autoloadState $exe ([ref]$cleanupFailures)
   Write-Evidence "END completed=$completed"
   if ($completed -and $cleanupFailures.Count -gt 0) {
     throw "強制停止を使わない CAD 後始末に失敗しました: $($cleanupFailures -join '; ')"

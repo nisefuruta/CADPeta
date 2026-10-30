@@ -2,6 +2,9 @@
 // unifont・bigfont のバイト配置は本機実物6ファイル・27,373グリフの全走査で実測したものに従う。
 // shapes 形式のバイト配置は本機実物 ltypeshp.shx（複雑線種の記号シェイプ集）の実測で確定した
 // （実測ツール: tests/tools/cad-typography/shx_binary_survey.py、本ファイルは製品コードとして独立実装）。
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text;
 
 namespace CadPeta.Glyphs.Shx;

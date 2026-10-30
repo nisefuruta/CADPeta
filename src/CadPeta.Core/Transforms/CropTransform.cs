@@ -8,7 +8,9 @@
 //   非可逆性はないが、切り分けの助けとして件数と対象を診断ログに記録する
 // - 境界と交差するノードは全体を保持する（SVG は viewBox が視覚的に切り、
 //   EMF は出力側の事前クリップが切断する）
-using System.Globalization;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Geometry;
 using CadPeta.Ir;
 
@@ -55,7 +57,7 @@ public static class CropTransform
                 continue;
             }
             diag.Add("クロップ: 範囲外ノードの間引き",
-                     $"{Kind(node)} seq={seq} {BboxText(bbox)}");
+                     $"{Kind(node)} seq={seq} {GeoClip.BboxText(bbox)}");
             dropped++;
         }
         ir.Nodes = kept;
@@ -80,9 +82,4 @@ public static class CropTransform
         IrGroup g => $"g ({g.Children.Count}子要素)",
         _ => n.GetType().Name,
     };
-
-    static string BboxText(double[] b) =>
-        // string.Create(IFormatProvider,…) は netstandard2.0 に無いため等価の Invariant で書く
-        FormattableString.Invariant(
-            $"bbox_mm=({b[0]:F1},{b[1]:F1})-({b[2]:F1},{b[3]:F1})");
 }

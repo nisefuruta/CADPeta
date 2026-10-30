@@ -3,6 +3,9 @@
 // この直列化にファイル書き出しを足すだけで成立する。外部ライブラリ参照ゼロ。
 // 通常出力と診断ダンプの唯一の差は出所メタデータ（data-*）の有無で、includeProvenance が
 // 決める（既定 false=通常出力は除去、診断ダンプのみ true で保持）。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Globalization;
 using System.Text;
 
@@ -10,16 +13,9 @@ namespace CadPeta.Ir;
 
 public static class SvgWriter
 {
-    // 0.03pt（コンテンツ量子）= 0.0106mm。小数4桁（0.1µm）で量子を十分下回る。
-    // 丸め結果の「-0」は「0」に畳む: 負の極小値（Y反転の三角関数誤差等）の文字列化が
-    // .NET Framework では「0」、.NET Core 系では「-0」に割れ、同一図面の出力が
-    // 実行基盤間でバイト不一致になる（実測）
-    static string N(double v) => Fold(v.ToString("0.####", CultureInfo.InvariantCulture));
+    static string N(double v) => IrNumber.Coordinate(v);
 
-    // 変換行列成分用（小数6桁）。回転成分の丸め誤差は座標の大きさ倍で効くため座標より細かく書く
-    static string T(double v) => Fold(v.ToString("0.######", CultureInfo.InvariantCulture));
-
-    static string Fold(string formatted) => formatted == "-0" ? "0" : formatted;
+    static string T(double v) => IrNumber.Matrix(v);
 
     static string Esc(string s) => s.Replace("&", "&amp;").Replace("<", "&lt;")
                                     .Replace(">", "&gt;").Replace("\"", "&quot;");

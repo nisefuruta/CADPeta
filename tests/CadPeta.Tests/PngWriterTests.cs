@@ -1,5 +1,8 @@
 // PngWriter（GDI+直接ラスタライズ）の単体検証。寸法・DPIメタデータと、
 // 図形・文字・画像・クリップ・グループ変換を例外なく描画できることを検査する。
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Drawing;
 using CadPeta.Ir;
 using CadPeta.Out.Png;
@@ -7,10 +10,13 @@ using Xunit;
 
 namespace CadPeta.Tests;
 
-public class PngWriterTests
+public class PngWriterTests : IDisposable
 {
-    static string TempPath() => Path.Combine(Path.GetTempPath(), "cadpeta_p3b_pdfpng",
-        "unit_" + Guid.NewGuid().ToString("N") + ".png");
+    readonly TempFolder _temp = new();
+
+    public void Dispose() => _temp.Dispose();
+
+    string TempPath() => _temp.File("unit.png");
 
     [Fact]
     public void 出力ピクセル寸法はDPIから正しく算出する()
@@ -20,8 +26,8 @@ public class PngWriterTests
         new PngWriter(96).Write(ir, path, new IrDiagnostics());
 
         using var img = Image.FromFile(path);
-        int expectedW = (int)Math.Round(50 * 96 / 25.4);
-        int expectedH = (int)Math.Round(20 * 96 / 25.4);
+        int expectedW = TestUnits.PixelsAt(50, 96);
+        int expectedH = TestUnits.PixelsAt(20, 96);
         Assert.Equal(expectedW, img.Width);
         Assert.Equal(expectedH, img.Height);
     }

@@ -5,6 +5,9 @@
 // ビット深度1・2・4（グレースケール／パレット。OLE 貼付由来の CCITT G4 画像は取得層が
 // 1bit Indexed PNG のまま IR へ保持するため、ここで受けられないと PDF 出力だけが落ちる）。
 // それ以外（インターレース・16bit）はこのデコーダの対応範囲外として明示エラーにする。
+using System;
+using System.IO;
+using System.Linq;
 using System.IO.Compression;
 
 namespace CadPeta.Out.Pdf;

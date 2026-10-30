@@ -1,7 +1,12 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using CadPeta.Geometry;
 using CadPeta.Ir;
 
 namespace CadPeta.Acquire.Raster;
@@ -18,9 +23,9 @@ public static class GradientRasterizer
         if (!GradientSemantics.IsKnown(request.GradientName))
             return Fallback(representative, GradientFallbackKind.UnknownShape,
                 $"未知のGradientName: {request.GradientName}");
-        if (!Finite(request.AngleRadians) || !Finite(request.Shift) || request.Shift < 0 || request.Shift > 1)
+        if (!Numbers.IsFinite(request.AngleRadians) || !Numbers.IsFinite(request.Shift) || request.Shift < 0 || request.Shift > 1)
             return Fallback(representative, GradientFallbackKind.InvalidDefinition, "角度またはShiftが不正");
-        if (!Finite(request.Opacity) || request.Opacity < 0 || request.Opacity > 1)
+        if (!Numbers.IsFinite(request.Opacity) || request.Opacity < 0 || request.Opacity > 1)
             return Invalid("不透明度は0..1の有限値が必要");
         if (!(request.RequestedDpi > 0) || !(request.MinimumDpi > 0)
             || request.MaxDimensionPx <= 0 || request.AvailablePixels <= 0)
@@ -42,8 +47,8 @@ public static class GradientRasterizer
             reduction = $"画素予算 {available}px";
         }
         double dimensionScale = Math.Min(1.0, Math.Min(
-            request.MaxDimensionPx / Math.Max(1.0, document.Width * dpi / 25.4),
-            request.MaxDimensionPx / Math.Max(1.0, document.Height * dpi / 25.4)));
+            request.MaxDimensionPx / Math.Max(1.0, document.Width * dpi / Units.MmPerInch),
+            request.MaxDimensionPx / Math.Max(1.0, document.Height * dpi / Units.MmPerInch)));
         if (dimensionScale < 1)
         {
             dpi *= dimensionScale;
@@ -118,11 +123,11 @@ public static class GradientRasterizer
                         double t = GradientSemantics.Evaluate(request.GradientName, lp.X, lp.Y,
                             local.MinX, local.MinY, local.MaxX, local.MaxY,
                             request.AngleRadians, request.Shift);
-                        IrRgb rgb = Interpolate(stops, Finite(t) ? t : .5);
-                        op[0] = ToByte(rgb.B);
-                        op[1] = ToByte(rgb.G);
-                        op[2] = ToByte(rgb.R);
-                        op[3] = ToByte((mp[3] / 255.0) * request.Opacity);
+                        IrRgb rgb = Interpolate(stops, Numbers.IsFinite(t) ? t : .5);
+                        op[0] = IrRgb.ToByte(rgb.B);
+                        op[1] = IrRgb.ToByte(rgb.G);
+                        op[2] = IrRgb.ToByte(rgb.R);
+                        op[3] = IrRgb.ToByte((mp[3] / 255.0) * request.Opacity);
                     }
                 }
             }
@@ -174,8 +179,8 @@ public static class GradientRasterizer
         foreach (var item in indexed)
         {
             GradientStop s = item.stop;
-            if (!Finite(s.Position) || s.Position < 0 || s.Position > 1
-                || !Finite(s.Color.R) || !Finite(s.Color.G) || !Finite(s.Color.B))
+            if (!Numbers.IsFinite(s.Position) || s.Position < 0 || s.Position > 1
+                || !Numbers.IsFinite(s.Color.R) || !Numbers.IsFinite(s.Color.G) || !Numbers.IsFinite(s.Color.B))
                 throw new ArgumentException("色ストップに非有限値または範囲外値がある");
         }
         return indexed.OrderBy(x => x.stop.Position).ThenBy(x => x.index).Select(x => x.stop).ToArray();
@@ -205,7 +210,7 @@ public static class GradientRasterizer
         void Add(double x, double y)
         {
             var p = transform.Apply(x, y);
-            if (!Finite(p.X) || !Finite(p.Y)) { valid = false; return; }
+            if (!Numbers.IsFinite(p.X) || !Numbers.IsFinite(p.Y)) { valid = false; return; }
             minX = Math.Min(minX, p.X); minY = Math.Min(minY, p.Y);
             maxX = Math.Max(maxX, p.X); maxY = Math.Max(maxY, p.Y);
         }
@@ -226,8 +231,8 @@ public static class GradientRasterizer
                               out int width, out int height, out long pixels)
     {
         width = height = 0; pixels = 0;
-        double wd = Math.Ceiling(widthMm * dpi / 25.4), hd = Math.Ceiling(heightMm * dpi / 25.4);
-        if (!Finite(wd) || !Finite(hd) || wd < 1 || hd < 1 || wd > int.MaxValue || hd > int.MaxValue)
+        double wd = Math.Ceiling(widthMm * dpi / Units.MmPerInch), hd = Math.Ceiling(heightMm * dpi / Units.MmPerInch);
+        if (!Numbers.IsFinite(wd) || !Numbers.IsFinite(hd) || wd < 1 || hd < 1 || wd > int.MaxValue || hd > int.MaxValue)
             return false;
         width = (int)wd; height = (int)hd;
         try { pixels = checked((long)width * height); }
@@ -244,8 +249,6 @@ public static class GradientRasterizer
     static IrRgb Clamp(IrRgb c) => new(Math.Max(0, Math.Min(1, c.R)),
                                        Math.Max(0, Math.Min(1, c.G)),
                                        Math.Max(0, Math.Min(1, c.B)));
-    static byte ToByte(double value) => (byte)Math.Max(0, Math.Min(255, Math.Round(value * 255)));
-    static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
     readonly record struct Bounds(double MinX, double MinY, double MaxX, double MaxY)
     {
         public double Width => MaxX - MinX;

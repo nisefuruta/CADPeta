@@ -10,6 +10,69 @@
 | `cad-typography/` | 互換CAD API、SHX、複雑線種、文字配置、Office分解限界 |
 | `distribution/` | 配布ZIP、署名、PowerPoint分解限界 |
 
+## 試験の DLL のビルドと AutoCAD の起動の回数
+
+CAD を起動する試験（E2E・画面の確認）は、配布物と同じビルド（`dist/dist_build.ps1`。構成は Release、`-p:ContinuousIntegrationBuild=true --no-incremental`）で作った DLL を読み込む。
+試験の前に次を実行する。
+
+```powershell
+pwsh -File tests/tools/build_e2e.ps1                  # Acad・Ares（2020・2023・2024・2027）・Ijcad・Bricscad
+pwsh -File tests/tools/build_e2e.ps1 -Products Acad    # AutoCAD 版だけ
+pwsh -Command "& ./tests/tools/build_e2e.ps1 -Products Acad,Ares"   # 複数の製品（-File は Acad,Ares を 1 つの文字列として渡す）
+```
+
+試験のスクリプトは `Get-E2ePluginPath`・`Assert-E2ePluginBuild`（`common/test_helpers.ps1`）で DLL を確かめる。
+DLL に開発機のパスが残っている（普段の `dotnet build` の DLL）と、CAD を起動する前に何も変えずに止まる。
+build_e2e.ps1 は、ビルドの入力（`src` と `dist/dist_build.ps1`）の作業ツリーの内容から求めた値を出力のフォルダ（`e2e-build-source.txt`）に書く。
+試験は同じ値を求め直し、記録が無いか、DLL を作った後にビルドの入力が変わっていれば（コミットしていない変更と新しいファイルを含む）、
+CAD を起動する前に何も変えずに止まる。この約束は `common/e2e_build_record_selftest.ps1` が確かめる。
+単体試験は普段のビルドのままでよい。
+
+## 実行の確認（-WhatIf と -Confirm）
+
+AutoCAD・互換 CAD を起動する試験と、その記録から戻すだけのスクリプト（`cad_reg_restore.ps1`・`compat_autoload_restore.ps1`）は、
+PowerShell の標準の `-WhatIf` と `-Confirm` に従う。引数なしで実行すると、変える内容（計画）を表示してから確認を求める。
+`-WhatIf` は計画を表示するだけで、何も変えない。確認の画面を出せない実行（`-NonInteractive`、エージェント、ほかのスクリプトからの呼び出し）は、
+確認を求めた時点で失敗して何も変えないので、`-Confirm:$false` を付けて呼ぶ。
+
+```powershell
+pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Standard -WhatIf          # 計画だけを表示する
+pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Standard -Confirm:$false  # 確認せずに実行する
+```
+
+Windows PowerShell 5.1 で動く互換 CAD の試験は、`-File` に `-Confirm:$false` を渡せない（値が文字列として渡り、
+SwitchParameter に変換できずに止まる）。自動で実行するときは `-Command` で呼ぶ。
+
+```powershell
+powershell -STA -Command "& 'tests\tools\regression\peta_option_smoke_compat.ps1' -Product Ares2027 -Confirm:`$false"
+```
+
+確認の形（先頭の `[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]`、直後の `$ErrorActionPreference = 'Stop'`、
+本体から 1 回だけ呼ぶ `ShouldProcess`）は `dist/script_confirm.ps1` に書いてある。単体試験の `ScriptConfirmTests` が、対象のスクリプトごとに、
+確認なしの非対話の実行で失敗して何も変えないことと、`-WhatIf` で何も残さないことを、AutoCAD を起動せずに確かめる。
+`-Confirm:$false` で確認の後まで進むことは、確認の後の処理が試験のフォルダの中で終わるスクリプト（記録から戻すだけの 2 本と sign_dist）で確かめる。
+AutoCAD・互換 CAD を起動するスクリプトは、確認の後に CAD を起動するので単体試験では実行せず、構文木の検査と、`-Confirm:$false` で実行する実機の試験で確かめる。
+環境を変えるスクリプトを足したら、`ScriptConfirmTests` の一覧にも足す（一覧から漏れると試験が失敗する）。
+
+accoreconsole を使う試験は、1 回の起動で複数のケースを続けて実行する（`common/accore_batch.ps1` の `Invoke-AccoreBatch`）。
+各ケースの前後に区切りのマーカーを置き、ケースの終わりで LISP が完了のファイルを書いて合図を待つ。その間にハーネスが成果物をケースのフォルダへ移す。
+標準出力が 90 秒増えないか、1 ケースの上限を超えたら止まったと判定し、そのケースを不合格にして次のケースから起動し直す。
+ケースの最初に図面の全図形の数を出力し、起動の最初のケースと数が違えば不合格にする（前のケースが図面に図形を残すと、後のケースの出力に入るため）。
+
+| 試験 | 起動の回数（1 ケース 1 起動 → まとめた実行） | 所要（AutoCAD 2026、2026-10-25） |
+|---|---|---|
+| `peta_option_matrix.ps1 -Set PetaFull` | 256 → 2 | 864 秒 → 214 秒 |
+| `peta_option_matrix.ps1 -Set PetaEdge` | 16 → 2 | 23 秒 |
+| `window_ucs_regression.ps1` | 7 → 1 | 8 秒 |
+| `window_fit_scale_matrix.ps1` | 5 → 1 | 7 秒 |
+| `crop_regression.ps1` | 3 → 1 | 5 秒 |
+| `plugin_regression_matrix.ps1` | 4 → 2 | 10 秒 |
+| `plot_transparency_matrix.ps1` | 7 → 2 | 10 秒 |
+
+まとめた実行で見つかったこと: ペーパー空間の O の試験が作った長方形を消していなかった（後のケースの出力に入った）。
+モデル空間で O を使った PETA の直後の 1 回だけ、TrueType の文字が別のフォントで印刷された（製品を直した。PetaEdge の `edge11-window-after-object` が確かめる）。
+`window_ucs_regression.ps1` は、UCS とビューをコマンドで初期値へ戻すと、ねじれた画面の塗りつぶしの頂点の順番が変わったので、UNDO のマークで戻す。
+
 ## 窓の座標契約の計測
 
 `regression/window_contract/` は、窓プロットへ渡す矩形がどの座標系かを実機で確定する。
@@ -54,8 +117,9 @@ BricsCAD・AutoCAD 2026 とも実測。AutoCAD は2点目＝GetCorner／右上�
 ARES はさらに次の癖がある（2024 実測。ハーネスは対応済み）。
 
 - 未署名 DLL の読み込みは信頼確認ダイアログに黙って阻まれる。SECURELOAD=0 でも
-  TRUSTEDPATHS の一時設定でも出る。GUI のオプションで計測器のフォルダを「信頼できる場所」へ
-  事前登録してから実行する。
+  TRUSTEDPATHS の一時設定でも出る。ハーネスは DLL のフォルダを、ARES が暗黙に信頼する
+  `%AppData%\ARES Standard Edition x64` の下の実行ごとのフォルダへコピーして読み込み、終了後に削除する
+  （common/compat_cad_com.ps1 の New-CompatPluginStage）。
 - -PLOT は -PRINT の別名で、プロンプト列が AutoCAD 型と全く違う（範囲キーワードは `_Specify`、
   プリンタ既定値は DWG 保存名のままだと「見つかりません」を繰り返す）。応答列は製品表の
   `OracleResponses` に分離してある。
@@ -150,17 +214,54 @@ pwsh -File tests/tools/regression/peta_option_matrix.ps1 -Set Smoke -Ver 2027 -C
 （CADPETA_CASE_END）も全ケースで確認する。キャンペーン記録（campaign.json）に実行時 HEAD・
 差分・untracked の SHA256 を残す。
 
-前提を2つハーネス自身が守る。(1) FILEDIA／OSMODE／SECURELOAD／TRUSTEDPATHS／
-PLOTTRANSPARENCYOVERRIDE は開始時にレジストリから記録し、エラー終了を含む finally で復元・
-検証する（共有実装は `regression/CadRegGuard.ps1`。accoreconsole の強制終了が FileDialog=0 を
-永続化する実測、scr の setvar がプロファイルへ保存される実測に対応）。(2) OSMODE は scr 内でも
+前提を2つハーネス自身が守る。(1) AutoCAD のプロファイルは、開始時に `HKCU\Software\Autodesk\AutoCAD` と
+`DWGCommon` の全部のキーと値、各バージョンの `Support\Profiles` の .aws を記録し、エラー終了を含む finally で
+開始時の状態へ戻して、もう一度読んで一致を確かめる（共有実装は `regression/CadRegGuard.ps1`）。
+accoreconsole の強制終了が FileDialog=0 を残し、scr の setvar がプロファイルへ保存され、accoreconsole が
+起動時の作業ディレクトリを `Editor Configuration\LogFilePath` に残す（2024・2026・2027、2026-10-25）ためである。
+記録は `%LOCALAPPDATA%\CadPeta-e2e\reg-backup\autocad.reg.txt` にも書き、戻して一致したときだけ消す。
+記録が残っていれば次の試験は始まらないので、`pwsh -File tests/tools/regression/cad_reg_restore.ps1` で戻す（`-WhatIf` を付けると、戻す違いを表示するだけ）。
+終了時にほかの AutoCAD が動いていれば、戻さずに記録を残して失敗にする。
+開始時にあったキーが試験中に消えていれば、記録から戻したうえで失敗にして記録を残す（試験も AutoCAD もキーを消すことは確かめられていないので、
+原因を調べるため）。原因を調べたら `cad_reg_restore.ps1` をもう一度実行すると、一致を確かめて記録を消す。
+CADPeta のインストール先（`%APPDATA%\Autodesk\ApplicationPlugins\CADPeta.bundle` と .old・.new、ARES の `%AppData%\ARES Standard Edition x64\CADPeta`）は、
+ファイルの名前と内容の SHA256 を試験の前に記録し、試験の後に比べる。更新時刻とサイズは比べない（利用者の AutoCAD やほかのセッションが
+bundle を移しただけでも変わる）。インストール先は戻さず、違いがあれば失敗にする（互換 CAD の試験も同じ）。
+記録と前後の比較は 1 系統にしてある（`common/test_helpers.ps1`）。ハッシュは `Get-FileSha256Shared` だけで求め、一覧は `Get-FolderListing`（ファイルとフォルダの名前と、
+ハッシュと失敗の欄）、比較は `Compare-FolderListing`（どちらかの側で読めなければ必ず違いにする）。記録する対象は表の行（`New-RecordRow`）に並べ、
+行ごとに扱いを決める: `.aws` は戻して照合し（Restore）、インストール先と信頼済みのフォルダは戻さずに違えば失敗にする（Verify）。
+実行前の記録は `Save-RecordBaseline` の 1 か所でまとめて取り、読めないファイルがあれば環境を変える前に止まる。環境を変えた後（戻す前）に
+実行前の記録を取ろうとすると止まる。レジストリは値の形が違うので、`regression/CadRegGuard.ps1` の別の系統で記録して戻す。
+accoreconsole は、作業ディレクトリを試験の作業フォルダにして起動する（`CadPeta.Tests` の TestScriptRulesTests が検査する）。
+(2) OSMODE は scr 内でも
 保存→0→復元する。accoreconsole のスクリプト座標入力は2点目（GetCorner／-PLOT の右上コーナー）が
 定常オブジェクトスナップで近傍ジオメトリへ吸着し、窓が入力値からずれる（AutoCAD 2026 実測。
 ネイティブ -PLOT の格納値も同値になるため製品の欠陥ではなく入力経路の性質。BricsCAD でも実測済み）。
 
 互換CAD（ARES 2027／IJCAD 2026／BricsCAD V26）は `regression/peta_option_smoke_compat.ps1` で実測する。
-既定実行は出力オプション2ケースに加え、裸`O`、`_Object`、先選択、後選択、空Enterを確認する。
+既定実行は出力オプション2ケースに加え、裸`O`、`_Object`、先選択、後選択、空Enter、画層 0 と現在の画層の図形の後選択を確認する。
+既定実行は、レイアウトで PETA を実行した後にモデル空間へ切り替えて O を実行する。ARES はレイアウトで印刷した後に
+一部の図形の範囲を違う値で返すので、この順番はその条件を確かめるために残している。
 選択経路だけを検証するときは `-ObjectCasesOnly` を指定し、モデル空間で保存済みの`TESTCHART2.dwg`から開始する。
+
+互換CADの COM 駆動の 4 本（`peta_option_smoke_compat.ps1`、`pdf-emf/gradient_compat_e2e.ps1`、
+`peta_window_rotation_compat.ps1`、`window_contract/window_contract_compat.ps1`）は、人の操作なしで次のように実行する。
+
+- 読み込む DLL は、製品が暗黙に信頼するフォルダ（ARES は `%AppData%\ARES Standard Edition x64`）の下に
+  実行ごとのフォルダを作ってコピーし、終了時に削除する。これで「信頼できるフォルダにありません」の確認の画面が出ない。
+- ARES 2024 以降は、インストール済みの CADPeta の自動読み込みの登録（`HKCU\Software\Graebert GmbH\ARES Standard <版>\Applications\CADPeta`）を
+  起動の前に `%LOCALAPPDATA%\CadPeta-e2e\autoload-backup\<製品>.reg` へ書き出して外し、終了時（エラー・中断を含む）に戻して一致を確かめる。
+  登録が残っていると、試験はビルドした DLL ではなくインストール済みの DLL を試験してしまう。
+  ARES 2023 以前は、profile.xml のスタートアップ（applications の `load_cadpeta.lsp`）に登録がある。
+  ARES は終了時に profile.xml を書き直し、最後に読み込んだ DLL のフォルダ（`lastapploadfolder`）などを残すので、全部の版で、起動の前に
+  profile.xml の全体を `%LOCALAPPDATA%\CadPeta-e2e\autoload-backup\<製品>.profile` へコピーし（2023 以前はそのあとで登録の項目を外し）、
+  終了時にコピーのバイト列へ戻して一致を確かめる。登録を外す処理は、配布物の unregister.ps1 と同じ関数（dist/compat/compat_common.ps1）を使う。
+  前回のバックアップが残っていれば実行を中止するので、`powershell -File tests\tools\common\compat_autoload_restore.ps1 -Product Ares2027` で戻してから実行する（`-WhatIf` を付けると、戻すものを表示するだけ）。
+  ARES が動いている間は、試験の終了時も `compat_autoload_restore.ps1` も戻さずにバックアップを残す（ARES は終了時にメモリ上の設定で profile.xml とレジストリを書き直すため）。ARES を終了してから戻す。
+  バックアップは一時の名前（`.partial`）で作り終えてから正式の名前に変えるので、作る途中で失敗しても、次の実行を止めるバックアップは残らない。
+  この処理の約束は `common/compat_autoload_selftest.ps1` で CAD を使わずに確かめる。
+- `peta_option_smoke_compat.ps1` は、PromptTrace の `Plugin.Load` で読み込まれた DLL がコピーした DLL だけであることを確かめ、
+  失敗したケースでは `Message`（プラグインがコマンドラインへ出した行）を証跡へ書き出す。
 各選択ケースは先選択を解除してから準備し、SDK生値と選択件数を`PromptTrace`で判定する。
 選択SVG／EMFが空Enterの全体出力と異なることも負の対照として要求する。
 ARESでは準備式の完了マーカーを確認してからPETAを送り、成果物なしの`Command.End`を検出したら15秒で後続ケースを打ち切る。
@@ -217,7 +318,7 @@ powershell -Sta -File tests/tools/regression/peta_window_rotation_compat.ps1 -Pr
 
 GUI COM 駆動のため実行条件は window_contract_compat.ps1 と同じ。AutoCAD も `-Product Acad2026` で
 同観点を測れる。あわせて CVPORT の意味（ペーパー空間=1・ビューポート内≠1）を読み取って記録する。
-IJCAD は PlotRotation=180 のとき PDF に像が逆さまに描かれるため、IjcadPlotPort が発行時に
+IJCAD は PlotRotation=180 のとき PDF に像が逆さまに描かれるため、CadPlotPort が IJCAD（と ARES）では発行時に
 180→0・270→90 へ正規化する（このハーネスで実測・是正確認済み）。
 
 ## Officeの図形変換での位置回帰
@@ -285,6 +386,23 @@ TRUSTEDPATHS / PLOTTRANSPARENCYOVERRIDE を `setvar` または COM `SetVariable`
 例外にも読み戻し検証付きの in-session 復元が実装されていることまで検査する。
 ハーネスを追加・変更したら、この lint と自己試験を通してからコミットする。
 
+`lint/trusted_paths_lint.ps1` は、tests/tools の .ps1 と .scr に、TRUSTEDPATHS と SECURELOAD を書き換える行
+（LISP の setvar、COM の SetVariable、レジストリへの書き込み、.scr のコマンドの入力）が無いことを確かめる（単体試験から実行する）。
+試験はこの 2 つの値を一時的に変えて戻す形も使わない。読み込む DLL のフォルダ（依存の DLL と lang を含む）と LISP は、
+利用者のプロファイルで信頼済みのフォルダ（`C:\Tools\ACAD\dotnet`・`C:\Tools\ACAD\lisp`）の直下へコピーして読み込み、
+終了時にコピーしたものだけを削除する（`regression/CadRegGuard.ps1` の `Get-CadRegSnapshot -StageToTrusted`。
+`.scr` の行は `Get-AccoreNetloadLines`・`Get-AccoreLoadLispLines` が作る）。始める前に、その版の現在のプロファイルの TRUSTEDPATHS に
+このフォルダがあることを読むだけで確かめ、無ければ、またはコピー先に同じ名前のファイルがあれば、何も変えずに止まる。
+コピー先は記録のファイルにも書くので、中断したときは `cad_reg_restore.ps1` がコピーしたものだけを削除する。
+信頼済みのフォルダは前後の比較の対象で、コピーを削除した後に、元からあるファイルの名前と内容が同じことを確かめる。
+`cad-typography` と `pdf-emf` の手で実行する .scr（probe*.scr、gen_*.scr、survey_realworld.scr など）は、`C:\Tools\ACAD\lisp` の LISP と `C:\Tools\ACAD\dotnet` の DLL を読み込むので、
+使う LISP と DLL をそのフォルダへコピーしてから実行し、終わったら削除する（`lint/trusted_paths_lint.ps1` が、.scr の読み込み先がこの 2 つのフォルダであることも確かめる）。
+
+`lint/reg_restore_report_lint.ps1` は、finally で AutoCAD のプロファイルを戻す（`Restore-CadRegState`・`Restore-CadRegStateAndReport`）try が、
+本体の例外を `catch { $runError = $_ }` で受け、その後で `Assert-CadRunAndRegRestore` を呼ぶことを確かめる（単体試験から実行する）。
+本体が例外を投げると finally の後の文は実行されないので、finally の後で復元の結果を判定するだけでは、戻せなかった設定と残した記録が報告されない。
+`Assert-CadRunAndRegRestore` は、本体の例外と復元の失敗の両方があれば、両方の理由を 1 つの例外の文に入れて投げる。
+
 ```powershell
 pwsh -File tests/tools/lint/sysvar_guard_lint.ps1
 pwsh -File tests/tools/lint/sysvar_guard_lint.ps1 -SelfTest
@@ -313,7 +431,7 @@ pwsh -File dist/build_dist.ps1 -Only all -Version 1.0.0
 先にプラグインをビルドし、`-ProbeOnly` で12ケースのスクリプトを CP932 で往復検証してから実機計測を実行する。
 
 ```powershell
-dotnet build CadPeta.sln -m:1
+pwsh -File tests/tools/build_e2e.ps1 -Products Acad
 pwsh -File tests/tools/regression/object_keyword_probe.ps1 -Ver 2026 -ProbeOnly
 pwsh -File tests/tools/regression/object_keyword_probe.ps1 -Ver 2026
 ```
@@ -327,6 +445,8 @@ pwsh -File tests/tools/regression/object_keyword_probe.ps1 -Ver 2026
 
 プロンプトtraceの各行は、`runId`、`caseId`、`pid`、`command`、`operation`、SDKの生の`status`と`stringResult`、`valueIsNull`、選択`count`を持つ。
 各コマンドの完了は `operation=Command.End` の行で確認する。
+プラグインが読み込まれたときは `operation=Plugin.Load`（`stringResult` はアセンブリの場所）、
+コマンドラインへ 1 行出すたびに `operation=Message`（`stringResult` はその行）を書く。
 側DBの計測ケースは `<stem>.raw.json` と `<stem>.ready.json` を出力し、複製直後とプロット準備後の図形件数、型別件数、有効範囲、ビュー、レイアウト、プロット設定を比較する。
 
 traceの欠落、不正なJSON、実行IDの不一致、コマンド終了行の欠落、選択件数の不一致、側DBメタデータの欠落や不整合は失敗になる。
@@ -338,22 +458,15 @@ traceの欠落、不正なJSON、実行IDの不一致、コマンド終了行の
 
 `regression/selection_plot_matrix.ps1` は、ビルド済みのAutoCADプラグインを `accoreconsole` で読み込み、選択絞り込み（範囲内のオブジェクト絞り込み）と構造SVG書き出しを検査する。
 PETA は「_Object → 選択 → Enter（範囲=全体）」の対話列で駆動する。
-先に `dotnet build CadPeta.sln -m:1` を実行する。
+先に `pwsh -File tests/tools/build_e2e.ps1 -Products Acad` を実行する。
 
 ```powershell
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETA -Space Model
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETA -Space Paper
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETA -Space PaperMixed
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETA -Space LayoutModel
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETADATA -Space Model
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETA -Space Model -ForceCloneFallback
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETA -Space Paper -ForceCloneFallback
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETA -Space Model -NamedPlotStyles
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETA -Space Model -NamedPlotStyles -ForceCloneFallback
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETADATA -Space Paper
-pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETADATADIAG -Space Model
+pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Standard
+pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command PETA -Space Model -CurrentLayerObjects
 ```
 
+`-Standard` は次の 12 シナリオを、図面と環境変数の組み合わせごとに 1 回の起動で続けて実行する（5 回の起動）: PETA の Model・Paper・PaperMixed・LayoutModel、PETADATA の Model・Paper、PETADATADIAG の Model、PETA の Model に `-ForceCloneFallback`・`-CurrentLayerObjects`（単独と `-ForceCloneFallback` 併用）・`-NamedPlotStyles`（単独と `-ForceCloneFallback` 併用）。
+各シナリオの前に UNDO のマークを置き、後でマークまで戻す。スイッチでシナリオを 1 つ指定すると、そのシナリオだけを 1 回の起動で実行する。
 `Model` はモデル空間、`Paper` はレイアウト上の20×10mm矩形、`PaperMixed` は同じ矩形、通常Viewport、制御Viewportを同時に選択し、制御Viewportだけを除外する。
 `LayoutModel` はレイアウト内でMSPACEへ入り、モデル空間のページ設定と選択対象を取り違えないことを検査する。
 ペーパー空間のシナリオは `TESTCHART2_layout.dwg` の `PETA_A3` レイアウトを明示し、絞り込みサマリ（選択件数と対象件数）、ビューポート除外、部分出力確認、入力DWG不変、成果物数を自動照合する。
@@ -361,6 +474,10 @@ pwsh -File tests/tools/regression/selection_plot_matrix.ps1 -Ver 2026 -Command P
 `-ForceCloneFallback` は環境変数 `CADPETA_FORCE_SELECTION_CLONE_FALLBACK=1` で Wblock を飛ばし、
 オブジェクト複製フォールバック（`WblockCloneObjects`）の実走をログ照合で確認する。互換CADでも
 同じ環境変数を設定して `gradient_compat_e2e.ps1` を流せばフォールバック経路で実走できる。
+ペーパー空間の側DBは元図面全体の Wblock から作り、複製の経路を持たないため、`-ForceCloneFallback` は `Model` だけで受け付ける。
+`-CurrentLayerObjects` は、画層 0 の矩形と、元図面の現在の画層の矩形の 2 つだけを選び、
+両方が出力されることを確かめる。側DB は元図面の現在の画層を引き継ぎ、作業中の図面を側DB に切り替えた状態では
+その画層の凍結状態を書くと AutoCAD が eInvalidLayer を返すため、この組み合わせを固定する。
 `-NamedPlotStyles` は STB 図面 `STB_RECT.dwg` を使う。通常経路は Wblock が STB モードを引き継いで
 成功し、`-ForceCloneFallback` 併用時は側DB既定（CTB）とのモード不一致で成果物なしの中止になる
 ことを固定する（既知の制限）。
@@ -389,11 +506,12 @@ SVGのバイト一致まで比較できる。コミット済みのスナップ�
   Windows PowerShell 5.1 Desktop/STAで可視起動し、対象exeに登録されたProgIDを動的列挙してROTを探す。
   まず `-ProbeOnly` でCOM接続を確認する。ROTタイムアウト時は画面上のライセンス／版拒否モーダルを
   確認する。読み取り専用は本試験不可。
-- ARESは.NETコマンド中にCOMを拒否するため、PETADIAG開始後はUI入力`O, _ALL, Enter, Enter`
-  （`-Mode DataExport`のPETADATADIAGは範囲プロンプトを持たないため`_ALL, Enter, Enter`）を送り、
-  成果物の安定生成までCOMを呼ばない。ARES PDFのグラデーションは画像9件ではなく3000以上の
-  ベクターパスとして検査する。
-- `FILEDIA`等の変更値を必ず復元する。IJCADでは未対応の`SECURELOAD`を必須扱いしない。
+- ARESは.NETコマンド中にCOMを拒否するため、PETADIAGと応答（`O, _ALL, Enter, Enter`。`-Mode DataExport`のPETADATADIAGは範囲プロンプトを持たないため`_ALL, Enter, Enter`）を、
+  LISPの`(command ...)`で1回のSendCommandにまとめて送り、成果物の安定生成までCOMを呼ばない。ARES 2024 の PDF のグラデーションは画像9件ではなく3000以上の
+  ベクターパスとして検査する。ARES 2020・2023・2027 の PDF は画像 9 件を出すので、画像 9 件を検査する（docs/validation/compatible-cad.md）。
+- `FILEDIA`等の変更値を必ず復元する。`SECURELOAD`と`TRUSTEDPATHS`は変えない。DLL は、ARES では信頼するフォルダへのコピーから読み込む。
+  ほかの製品では、DLL のフォルダが`TRUSTEDPATHS`にあることを読むだけで確かめ、無ければ何も変えずに止まる
+  （common/compat_cad_com.ps1 の Assert-CadPluginFolderTrusted。IJCAD・BricsCAD は、この PC に製品が無く確かめていない）。
 - 起動時の未保存図面を含め、全図面を`Close(false)`してから`Quit`する。保存確認を残さない。
 - 自分が起動し、実行ファイルまで照合したPIDだけを終了対象にする。既定では強制終了せず、残留を失敗証跡にする。
 - 成功条件はコマンド終了だけでなく、SVG内画像数、EMF、診断JSON、縮退件数、残留プロセス0で判定する。

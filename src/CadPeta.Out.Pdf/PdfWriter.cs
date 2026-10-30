@@ -21,6 +21,10 @@
 // ただし image だけは注意が要る: PDF の画像空間は「データ先頭行が単位正方形の上辺」に写る
 // 規約のため、ページ先頭のY反転 cm の下で素直に幅高さ正の cm を書くと上下鏡像になる
 // （非対称画像の実レンダで確認済み）。画像の cm は高さを負にして Y+H を原点に取る。
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
 using CadPeta.Geometry;
 using CadPeta.Ir;
@@ -41,9 +45,7 @@ public sealed class PdfWriter : IIrOutput
         _log = log;
     }
 
-    // PDF32000-1 §7.9.5: デフォルトユーザー空間は 1/72 インチ = 1pt。1インチ = 25.4mm（定義、Units.MmPerInch）
-    const double PtPerInch = 72.0;
-    internal const double PtPerMm = PtPerInch / Units.MmPerInch;
+    internal const double PtPerMm = Units.PtPerInch / Units.MmPerInch;
 
     public void Write(IrDocument ir, string outputPath, IrDiagnostics diag)
     {
@@ -78,15 +80,15 @@ public sealed class PdfWriter : IIrOutput
                 switch (s)
                 {
                     case IrMove m:
-                        content.Append(PdfNum.N(m.X)).Append(' ').Append(PdfNum.N(m.Y)).Append(" m\n");
+                        content.Append(IrNumber.Coordinate(m.X)).Append(' ').Append(IrNumber.Coordinate(m.Y)).Append(" m\n");
                         break;
                     case IrLine l:
-                        content.Append(PdfNum.N(l.X)).Append(' ').Append(PdfNum.N(l.Y)).Append(" l\n");
+                        content.Append(IrNumber.Coordinate(l.X)).Append(' ').Append(IrNumber.Coordinate(l.Y)).Append(" l\n");
                         break;
                     case IrCubic c:
-                        content.Append(PdfNum.N(c.X1)).Append(' ').Append(PdfNum.N(c.Y1)).Append(' ')
-                               .Append(PdfNum.N(c.X2)).Append(' ').Append(PdfNum.N(c.Y2)).Append(' ')
-                               .Append(PdfNum.N(c.X)).Append(' ').Append(PdfNum.N(c.Y)).Append(" c\n");
+                        content.Append(IrNumber.Coordinate(c.X1)).Append(' ').Append(IrNumber.Coordinate(c.Y1)).Append(' ')
+                               .Append(IrNumber.Coordinate(c.X2)).Append(' ').Append(IrNumber.Coordinate(c.Y2)).Append(' ')
+                               .Append(IrNumber.Coordinate(c.X)).Append(' ').Append(IrNumber.Coordinate(c.Y)).Append(" c\n");
                         break;
                     case IrClose:
                         content.Append("h\n");
@@ -112,7 +114,7 @@ public sealed class PdfWriter : IIrOutput
             content.Append("Q\n");
         }
 
-        static string Rgb(IrRgb c) => $"{PdfNum.N(c.R)} {PdfNum.N(c.G)} {PdfNum.N(c.B)}";
+        static string Rgb(IrRgb c) => $"{IrNumber.Coordinate(c.R)} {IrNumber.Coordinate(c.G)} {IrNumber.Coordinate(c.B)}";
 
         void WriteNode(IrNode node)
         {
@@ -124,8 +126,8 @@ public sealed class PdfWriter : IIrOutput
                         if (!g.Transform.IsIdentity)
                         {
                             var m = g.Transform;
-                            content.Append($"{PdfNum.M(m.A)} {PdfNum.M(m.B)} {PdfNum.M(m.C)} " +
-                                           $"{PdfNum.M(m.D)} {PdfNum.M(m.E)} {PdfNum.M(m.F)} cm\n");
+                            content.Append($"{IrNumber.Matrix(m.A)} {IrNumber.Matrix(m.B)} {IrNumber.Matrix(m.C)} " +
+                                           $"{IrNumber.Matrix(m.D)} {IrNumber.Matrix(m.E)} {IrNumber.Matrix(m.F)} cm\n");
                         }
                         foreach (var child in g.Children)
                             WriteNode(child);
@@ -148,10 +150,10 @@ public sealed class PdfWriter : IIrOutput
                         if (p.Stroke != null)
                         {
                             content.Append(Rgb(p.Stroke.Value)).Append(" RG\n");
-                            content.Append(PdfNum.N(p.StrokeWidthMm)).Append(" w\n");
+                            content.Append(IrNumber.Coordinate(p.StrokeWidthMm)).Append(" w\n");
                             if (p.StrokeDashMm is { Length: > 0 } dash)
-                                content.Append('[').Append(string.Join(" ", dash.Select(PdfNum.N)))
-                                       .Append("] ").Append(PdfNum.N(p.StrokeDashOffsetMm)).Append(" d\n");
+                                content.Append('[').Append(string.Join(" ", dash.Select(IrNumber.Coordinate)))
+                                       .Append("] ").Append(IrNumber.Coordinate(p.StrokeDashOffsetMm)).Append(" d\n");
                         }
                         EmitPathOps(p.Segments);
                         string op = (p.Fill != null, p.Stroke != null) switch
@@ -205,8 +207,8 @@ public sealed class PdfWriter : IIrOutput
                     {
                         // 画像空間はデータ先頭行が単位正方形の上辺に写る。ページ先頭のY反転 cm の
                         // 下では高さを負にし原点を Y+H に取らないと上下鏡像になる（冒頭コメント参照）
-                        content.Append($"{PdfNum.M(im.WidthMm)} 0 0 {PdfNum.M(-im.HeightMm)} " +
-                                       $"{PdfNum.M(im.XMm)} {PdfNum.M(im.YMm + im.HeightMm)} cm\n");
+                        content.Append($"{IrNumber.Matrix(im.WidthMm)} 0 0 {IrNumber.Matrix(-im.HeightMm)} " +
+                                       $"{IrNumber.Matrix(im.XMm)} {IrNumber.Matrix(im.YMm + im.HeightMm)} cm\n");
                         content.Append('/').Append(name).Append(" Do\n");
                     });
                     nImages++;
@@ -225,12 +227,12 @@ public sealed class PdfWriter : IIrOutput
         // 導出: 望む写像は x'=(x-ox)*PtPerMm, y'=Hpt-(y-oy)*PtPerMm。
         // cm の行列 (a b c d e f) は (x,y)→(a·x+c·y+e, b·x+d·y+f) なので
         // a=PtPerMm, d=-PtPerMm, e=-ox·PtPerMm, f=Hpt+oy·PtPerMm となる
-        content.Append($"{PdfNum.M(PtPerMm)} 0 0 {PdfNum.M(-PtPerMm)} " +
-                       $"{PdfNum.M(-ir.ViewMinXMm * PtPerMm)} {PdfNum.M(heightPt + ir.ViewMinYMm * PtPerMm)} cm\n");
+        content.Append($"{IrNumber.Matrix(PtPerMm)} 0 0 {IrNumber.Matrix(-PtPerMm)} " +
+                       $"{IrNumber.Matrix(-ir.ViewMinXMm * PtPerMm)} {IrNumber.Matrix(heightPt + ir.ViewMinYMm * PtPerMm)} cm\n");
         // ページ全体（viewBox）の恒常クリップ。ノード個別のクリップとは別に、
         // クロップ範囲を常に効かせる（EMF出力の page rect と同じ考え方）
-        content.Append($"{PdfNum.N(ir.ViewMinXMm)} {PdfNum.N(ir.ViewMinYMm)} " +
-                       $"{PdfNum.N(ir.WidthMm)} {PdfNum.N(ir.HeightMm)} re W n\n");
+        content.Append($"{IrNumber.Coordinate(ir.ViewMinXMm)} {IrNumber.Coordinate(ir.ViewMinYMm)} " +
+                       $"{IrNumber.Coordinate(ir.WidthMm)} {IrNumber.Coordinate(ir.HeightMm)} re W n\n");
         foreach (var node in ir.Nodes)
             WriteNode(node);
         content.Append("Q\n");
@@ -247,7 +249,7 @@ public sealed class PdfWriter : IIrOutput
         var gsIds = new Dictionary<string, int>();
         foreach (var kv in gsNames)
             gsIds[kv.Value] = file.AddDict(
-                $"/Type /ExtGState /ca {PdfNum.N(kv.Key.ca)} /CA {PdfNum.N(kv.Key.CA)}");
+                $"/Type /ExtGState /ca {IrNumber.Coordinate(kv.Key.ca)} /CA {IrNumber.Coordinate(kv.Key.CA)}");
 
         var imgIds = new Dictionary<string, int>();
         foreach (var (name, rgb, alphaGray, w, h) in imageObjs)
@@ -280,7 +282,7 @@ public sealed class PdfWriter : IIrOutput
         {
             Id = pageId,
             Dict = $"/Type /Page /Parent {pagesId} 0 R " +
-                   $"/MediaBox [0 0 {PdfNum.N(widthPt)} {PdfNum.N(heightPt)}] " +
+                   $"/MediaBox [0 0 {IrNumber.Coordinate(widthPt)} {IrNumber.Coordinate(heightPt)}] " +
                    $"/Contents {contentId} 0 R {resources}",
         });
         file.Add(new PdfObject { Id = pagesId, Dict = $"/Type /Pages /Kids [{pageId} 0 R] /Count 1" });

@@ -4,6 +4,8 @@
 stdout はファイルへ捕捉、脚本は `_.QUIT _Y` 終端・FILEDIA を書かない）で実行した。
 作業ディレクトリは `%TEMP%\cadpeta_p3b_ltsym\` に隔離した（.scr 内の絶対パスはそのまま）。
 .lsp は UTF-8 BOM 付き、.scr は ASCII/CP932。
+.scr は SECURELOAD を変えず、読み込む .lsp と DLL のフォルダだけを TRUSTEDPATHS へ一時追加して、読み込んだ後に元の値へ戻す。
+NETLOAD する DLL は `pwsh -File tests/tools/build_e2e.ps1 -Products Acad` が作る Release の出力（配布物と同じビルド）。
 
 ## 意味論の実測（entget プローブ）
 

@@ -17,11 +17,6 @@ $RECYCLE.BIN/
 # 共有すると各チェックアウトが破壊的コマンドの無確認実行を継承してしまうため除外する。
 .claude/settings.local.json
 
-# コーディングエージェント用ファイル（開発ガイド・作業メモ）。ローカル専用で、リポジトリには含めない
-tasks/
-CLAUDE.md
-AGENTS.md
-
 # エディタ一時ファイル
 *~
 *.swp
@@ -84,3 +79,12 @@ phase0/testchart/*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*.emf
 phase0/testchart/*.svg.diag.json
 phase0/testchart/*.stage*.svg
 .pytest_cache/
+# 開発用のリポジトリだけで管理するファイル(dist/public-exclude.txt)
+CLAUDE.md
+AGENTS.md
+tasks/
+.claude/
+dist/publish_public.ps1
+tests/tools/distribution/check_publish_public.ps1
+tests/CadPeta.Tests/Distribution/PublishPublicTests.cs
+dist/public-exclude.txt

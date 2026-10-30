@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.ExceptionServices;
 
 namespace CadPeta.Plugin.Shared;

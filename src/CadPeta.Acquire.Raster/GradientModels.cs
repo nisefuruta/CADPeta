@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using CadPeta.Ir;
 
 namespace CadPeta.Acquire.Raster;

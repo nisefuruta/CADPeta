@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using CadPeta.Acquire.Common;
 using CadPeta.Acquire.Raster;
 using CadPeta.Ir;
@@ -18,7 +20,7 @@ public class GradientEmitterTests
         var budget = new GradientRasterBudget(1_000_000);
         bool fallbackCalled = false;
 
-        GradientEmitter.Emit(BasicRequest(), budget,
+        GradientEmitter.Emit(GradientTestRequests.Basic(), budget,
             new GradientEmitter.Metadata("0", "HATCH", "aci", 3),
             "AutoCAD HATCH 1A layer=0 LINEAR 要求=10dpi", diag, sink, _ => fallbackCalled = true);
 
@@ -43,7 +45,7 @@ public class GradientEmitterTests
         var sink = new List<IrNode>();
         var budget = new GradientRasterBudget(1_000_000);
 
-        GradientEmitter.Emit(BasicRequest() with { DocumentFromLocal = new IrMatrix(2, 0, 0, 2, 5, 5) },
+        GradientEmitter.Emit(GradientTestRequests.Basic() with { DocumentFromLocal = new IrMatrix(2, 0, 0, 2, 5, 5) },
             budget, new GradientEmitter.Metadata("L", "HATCH", "truecolor", null),
             "target", diag, sink, _ => { });
 
@@ -62,7 +64,7 @@ public class GradientEmitterTests
         var budget = new GradientRasterBudget(1_000_000);
         IrRgb? fallbackColor = null;
 
-        GradientEmitter.Emit(BasicRequest() with { GradientName = "UNKNOWN" }, budget,
+        GradientEmitter.Emit(GradientTestRequests.Basic() with { GradientName = "UNKNOWN" }, budget,
             new GradientEmitter.Metadata("0", "HATCH", "aci", 1),
             "AutoCAD HATCH 1A layer=0 UNKNOWN 要求=10dpi", diag, sink, color => fallbackColor = color);
 
@@ -82,7 +84,7 @@ public class GradientEmitterTests
         var budget = new GradientRasterBudget(1_000_000);
         bool fallbackCalled = false;
 
-        GradientEmitter.Emit(BasicRequest() with { RequestedDpi = 100, AvailablePixels = 4, MinimumDpi = 10 },
+        GradientEmitter.Emit(GradientTestRequests.Basic() with { RequestedDpi = 100, AvailablePixels = 4, MinimumDpi = 10 },
             budget, new GradientEmitter.Metadata(null, null, null, null),
             "target", diag, sink, _ => fallbackCalled = true);
 
@@ -107,7 +109,7 @@ public class GradientEmitterTests
         var budget = new GradientRasterBudget(50); // 100px必要だが50pxしか残っていない
         bool fallbackCalled = false;
 
-        GradientEmitter.Emit(BasicRequest(), budget,
+        GradientEmitter.Emit(GradientTestRequests.Basic(), budget,
             new GradientEmitter.Metadata("0", "HATCH", "aci", 1),
             "AutoCAD HATCH 1A layer=0 LINEAR 要求=10dpi", diag, sink, _ => fallbackCalled = true);
 
@@ -127,7 +129,7 @@ public class GradientEmitterTests
         var budget = new GradientRasterBudget(1_000_000);
         bool fallbackCalled = false;
 
-        GradientEmitter.Emit(BasicRequest() with { Stops = Array.Empty<GradientStop>() }, budget,
+        GradientEmitter.Emit(GradientTestRequests.Basic() with { Stops = Array.Empty<GradientStop>() }, budget,
             new GradientEmitter.Metadata("0", "HATCH", "aci", 1),
             "AutoCAD HATCH 1A layer=0 LINEAR 要求=10dpi", diag, sink, _ => fallbackCalled = true);
 
@@ -140,18 +142,4 @@ public class GradientEmitterTests
         Assert.Contains("色ストップ", entry.Target);
     }
 
-    static GradientHatchRequest BasicRequest() => new()
-    {
-        GradientName = "LINEAR",
-        Stops = new[] { new GradientStop(0, new IrRgb(0, 0, 0)), new GradientStop(1, new IrRgb(1, 1, 1)) },
-        Boundary = new IrSegment[]
-        {
-            new IrMove(0, 0), new IrLine(25.4, 0), new IrLine(25.4, 25.4), new IrLine(0, 25.4), new IrClose(),
-        },
-        DocumentFromLocal = IrMatrix.Identity,
-        RequestedDpi = 10,
-        MinimumDpi = 1,
-        MaxDimensionPx = 32767,
-        AvailablePixels = 1_000_000,
-    };
 }

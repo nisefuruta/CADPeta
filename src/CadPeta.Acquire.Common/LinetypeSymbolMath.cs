@@ -7,6 +7,8 @@
 // - R= はビットを立てない。ShapeRotationAt の値は常に生の指定角（ラジアン）で、
 //   相対/絶対/正立のどれで解釈するかを上記2フラグが決める
 // - 群44=X（接線方向オフセット）・群45=Y（左法線方向オフセット）・群46=尺度・群50=回転角
+using System;
+
 namespace CadPeta.Acquire.Common;
 
 public static class LinetypeSymbolMath

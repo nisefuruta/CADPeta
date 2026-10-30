@@ -115,7 +115,13 @@ plotport.busy=Another plot is in progress; cannot start (ProcessPlotState={0})
 plotport.layout_info=Layout: {0} (device={1}, paper={2}, style={3})
 plotport.style_none=none
 plotport.device_failed=Cannot set the PDF device {0} (not installed or broken PC3. ErrorStatus={1})
-plotport.media_missing=Paper size {0} does not exist on {1} and no paper matches its dimensions; continuing with the default paper (output size will differ)
+plotport.media_missing=Paper size {0} cannot be used on {1} and no paper matching its dimensions was found; continuing with the default paper (output size will differ). Reason: {2}
+plotport.media_list_failed=could not get the paper list ({0})
+plotport.media_not_found=none of the {2} of {1} papers on {0} whose dimensions could be read has the same name and dimensions (first paper whose dimensions could not be read: {3}, ErrorStatus={4})
+plotport.media_not_found_all=none of the {1} papers on {0} has the same name and dimensions
+plotport.media_list_empty={0} returns no paper list
+plotport.media_sizes_unavailable=the dimensions of none of the {1} papers on {0} could be read (first paper: {3}, ErrorStatus={4})
+plotport.media_size_unverified=Paper size {0} is used without checking its dimensions ({1}); the output size may differ from the page setup
 plotport.media_matched_by_size=Paper size {0} does not exist on the output device; using {1}, which matches its dimensions ({2:F2}x{3:F2} mm)
 plotport.media_fallback=Paper fallback. Temporarily mapping {0} ({1:F2}x{2:F2} mm) to A4-class media {3}
 plotport.paper_units_restored=The device override changed the paper unit to {0}; restoring the page setup value {1}

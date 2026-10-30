@@ -3,6 +3,9 @@
 // 生成した DWG を -PLOT→CLI で SVG 化し、破線片の端点座標を実測）に基づく。
 // JP15=dash10/gap5（P=15）・JP24=dash12/gap5/dash6/gap1（P=24）は導出専用の単純パターン。
 // 許容誤差 0.05mm は実測ノイズ（PDF数値精度・浮動小数）の範囲を包含する。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Acquire.Common;
 using Xunit;
 
@@ -36,10 +39,19 @@ public class LinetypeJustifyMathTests
     [InlineData(142, 8.5)]
     public void JP15_導出セットの先頭半端片が実測と一致する(double lengthDu, double? expectedHalf)
     {
-        var result = LinetypeJustifyMath.JustifyOpen(Jp15, lengthDu);
+        AssertFirstPiece(Jp15, lengthDu, expectedHalf);
+    }
+
+    /// <summary>
+    /// 曲線長 <paramref name="lengthDu"/> の開いた曲線を端部整列した結果が、<paramref name="expectedHalf"/> の半端片を両端に持ち、
+    /// 総和が曲線長と一致する。<paramref name="expectedHalf"/> が null なら 1 周期未満で実線(null)になる。
+    /// </summary>
+    static void AssertFirstPiece(double[] pattern, double lengthDu, double? expectedHalf)
+    {
+        var result = LinetypeJustifyMath.JustifyOpen(pattern, lengthDu);
         if (expectedHalf == null)
         {
-            Assert.Null(result); // 1周期未満は実線
+            Assert.Null(result);
             return;
         }
         Assert.NotNull(result);
@@ -60,16 +72,7 @@ public class LinetypeJustifyMathTests
     [InlineData(118, 11.5)]
     public void JP15_ホールドアウトの先頭半端片が予測と一致する(double lengthDu, double? expectedHalf)
     {
-        var result = LinetypeJustifyMath.JustifyOpen(Jp15, lengthDu);
-        if (expectedHalf == null)
-        {
-            Assert.Null(result);
-            return;
-        }
-        Assert.NotNull(result);
-        Assert.Equal(expectedHalf.Value, result![0], TolDu);
-        Assert.Equal(expectedHalf.Value, result[result.Length - 1], TolDu);
-        Assert.Equal(lengthDu, result.Sum(Math.Abs), TolDu);
+        AssertFirstPiece(Jp15, lengthDu, expectedHalf);
     }
 
     // ---------- JustifyOpen: 非対称パターン（JP24、複数実線要素） ----------

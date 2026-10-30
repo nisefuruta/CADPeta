@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using CadPeta.Plugin.Shared;
 using CadPeta.UseCases;
 using Xunit;

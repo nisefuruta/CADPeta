@@ -18,6 +18,9 @@
        in-box 参照を運ばないため、テスト側にも明示する -->
   <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
     <Reference Include="System.Drawing" />
+    <!-- 試験はプラグインが書いた JSON を、書く側（DataContractJsonSerializer）とは別の部品で読み直して確かめる。
+         net8/net10 は in-box。net48 は試験のプロセスだけが使い（配布物には入らない）、試験のホストが bindingRedirect を作る -->
+    <PackageReference Include="System.Text.Json" Version="10.0.14" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' != '$(CadPetaNet48Tfm)'">
     <PackageReference Include="System.Drawing.Common" Version="$(SystemDrawingCommonVersion)" />
@@ -60,6 +63,18 @@
        対応するテストは #if NET10_0_OR_GREATER で同じ条件にガードする -->
   <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet10Tfm)'">
     <ProjectReference Include="..\..\src\CadPeta.App\CadPeta.App.csproj" />
+  </ItemGroup>
+
+  <!-- 同じ目的のコードの重複の検査（Microsoft.CodeAnalysis.CSharp: MIT。試験だけで使い、配布物には含まない）。
+       ソースを文字列として読む検査で、実行基盤による違いが無いため net10 ビルドでだけ実行する -->
+  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet10Tfm)'">
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != '$(CadPetaNet10Tfm)'">
+    <Compile Remove="Duplication\**" />
+    <!-- 配布物の bat を cmd で実行する試験と、外部のプログラムを起動する補助も、実行基盤による違いが無いので net10 だけで実行する -->
+    <Compile Remove="Distribution\**" />
+    <Compile Remove="ProcessRunner.cs" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' != '$(CadPetaNet48Tfm)'">

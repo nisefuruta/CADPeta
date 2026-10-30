@@ -16,7 +16,7 @@
     <TargetFramework>$(CadPetaNet8Tfm)</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>WindowContractProbe.Ijcad</AssemblyName>
     <RootNamespace>CadPeta.Probe.Ijcad</RootNamespace>
     <!-- NETLOAD されるためホストが deps.json を読まない。本計測器は外部パッケージ依存を
@@ -24,9 +24,16 @@
          src/CadPeta.Plugin.Ijcad と同じ配備前提を明示しておく -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <DefineConstants>$(DefineConstants);CADPETA_IJCAD</DefineConstants>
+    <!-- ソースは ..\Shared\WindowContractProbe.cs を 4 製品で共有する。既定の **/*.cs の取り込みを止め、
+         このフォルダの WindowContractProbe.cs（共有化前の旧ソース）をコンパイルしない -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!-- IJCAD 本体のインストール先。既定は src/Directory.Build.props の $(IjcadBinDir)
          （lib/vendor-refs 優先・無ければ既定インストール先）を使う。ここでは上書きしない -->
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\WindowContractProbe.cs" Link="WindowContractProbe.cs" />
+  </ItemGroup>
 
   <!-- IJCAD 参照アセンブリ: src/CadPeta.Plugin.Ijcad.csproj と同一の参照方法（HintPath＋
        Private=false のコンパイル専用参照、実行時はホスト IJCAD が同名アセンブリを提供）。

@@ -1,7 +1,9 @@
+using System;
+using System.IO;
 using System.Diagnostics;
-using System.Text;
-using System.Text.Json;
+using System.Runtime.Serialization;
 using System.Threading;
+using CadPeta.UseCases;
 
 namespace CadPeta.Plugin.Shared;
 
@@ -14,12 +16,6 @@ public static class PromptTrace
 
     static readonly object WriteLock = new();
     static readonly AsyncLocal<string?> Command = new();
-    static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
-    static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     /// <summary>コマンド種別を現在の実行文脈へ設定し、破棄時に終了行を記録する。</summary>
     public static IDisposable BeginCommand(string command)
     {
@@ -36,13 +32,20 @@ public static class PromptTrace
         {
             var path = Environment.GetEnvironmentVariable(PathEnvironmentVariable);
             TryWriteCore(path, operation, status, stringResult, valueIsNull, count,
-                (file, line) => File.AppendAllText(file, line + Environment.NewLine, Utf8NoBom));
+                (file, line) => File.AppendAllText(file, line + Environment.NewLine, TextEncodings.Utf8NoBom));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
             // 環境変数の読取自体が拒否された場合も、製品コマンドは中断しない。
         }
     }
+
+    /// <summary>
+    /// コマンドラインへ出した 1 行を記録する。ARES などは COM でコマンドの履歴を読めないため、
+    /// E2E が中止の理由を確かめるのに使う。
+    /// </summary>
+    public static void WriteMessage(string line) =>
+        Write("Message", "Line", line, valueIsNull: false, count: null);
 
     /// <summary>計測フックの失敗を本処理へ逆流させない。低層WriteCoreは試験可能なthrow契約を保つ。</summary>
     internal static void TryWriteCore(string? path, string operation, string status,
@@ -79,7 +82,7 @@ public static class PromptTrace
             ValueIsNull = valueIsNull,
             Count = count,
         };
-        var json = JsonSerializer.Serialize(record, JsonOptions);
+        var json = PluginJson.Serialize(record, indented: false);
         lock (WriteLock)
             appendLine(tracePath, json);
     }
@@ -117,16 +120,18 @@ public static class PromptTrace
         }
     }
 
+    // 1 行の JSON の項目。名前と順番は試験のスクリプト（Get-JsonLines で読む）との約束
+    [DataContract]
     sealed class PromptTraceRecord
     {
-        public string? RunId { get; set; }
-        public string? CaseId { get; set; }
-        public int Pid { get; set; }
-        public string? Command { get; set; }
-        public string Operation { get; set; } = string.Empty;
-        public string Status { get; set; } = string.Empty;
-        public string? StringResult { get; set; }
-        public bool ValueIsNull { get; set; }
-        public int? Count { get; set; }
+        [DataMember(Name = "runId", Order = 1)] public string? RunId { get; set; }
+        [DataMember(Name = "caseId", Order = 2)] public string? CaseId { get; set; }
+        [DataMember(Name = "pid", Order = 3)] public int Pid { get; set; }
+        [DataMember(Name = "command", Order = 4)] public string? Command { get; set; }
+        [DataMember(Name = "operation", Order = 5)] public string Operation { get; set; } = string.Empty;
+        [DataMember(Name = "status", Order = 6)] public string Status { get; set; } = string.Empty;
+        [DataMember(Name = "stringResult", Order = 7)] public string? StringResult { get; set; }
+        [DataMember(Name = "valueIsNull", Order = 8)] public bool ValueIsNull { get; set; }
+        [DataMember(Name = "count", Order = 9)] public int? Count { get; set; }
     }
 }

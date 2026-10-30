@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using CadPeta.Acquire.Common;
 using CadPeta.Ir;
 using CadPeta.Plugin.Shared;
@@ -79,81 +82,67 @@ public class SvgExportRunnerTests
     [Fact]
     public void 診断モードは変換各段のSVGダンプとdiag_jsonを書き出す()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPetaDataDiag_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        var env = new SvgExportEnvironment
         {
-            var env = new SvgExportEnvironment
+            Editor = new DataExportEditor(Path.Combine(dir, "data.dwg")),
+            AcquireSelection = (handle, choice, diag) =>
             {
-                Editor = new DataExportEditor(Path.Combine(dir, "data.dwg")),
-                AcquireSelection = (handle, choice, diag) =>
+                var ir = new IrDocument { WidthMm = 50, HeightMm = 50 };
+                ir.Nodes.Add(new IrPath
                 {
-                    var ir = new IrDocument { WidthMm = 50, HeightMm = 50 };
-                    ir.Nodes.Add(new IrPath
+                    Segments = new List<IrSegment>
                     {
-                        Segments = new List<IrSegment>
-                        {
-                            new IrMove(0, 0), new IrLine(10, 0), new IrLine(10, 10), new IrClose(),
-                        },
-                        Fill = new IrRgb(0, 0, 0),
-                    });
-                    return ir;
-                },
-                TrueTypeOutlinerFactory = () => new NoopOutliner(),
-            };
-            var log = new StringWriter();
+                        new IrMove(0, 0), new IrLine(10, 0), new IrLine(10, 10), new IrClose(),
+                    },
+                    Fill = new IrRgb(0, 0, 0),
+                });
+                return ir;
+            },
+            TrueTypeOutlinerFactory = () => new NoopOutliner(),
+        };
+        var log = new StringWriter();
 
-            SvgExportRunner.Run(env, log, TextWriter.Null, diagnostic: true);
+        SvgExportRunner.Run(env, log, TextWriter.Null, diagnostic: true);
 
-            var stageFiles = Directory.GetFiles(dir, "*.stage00.acquired.svg", SearchOption.AllDirectories);
-            Assert.Single(stageFiles);
-            var diagFiles = Directory.GetFiles(dir, "*.diag.json", SearchOption.AllDirectories);
-            Assert.Single(diagFiles);
-            Assert.Contains("PETADATA 完了", log.ToString());
-            Assert.Contains("診断ログ出力", log.ToString());
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        var stageFiles = Directory.GetFiles(dir, "*.stage00.acquired.svg", SearchOption.AllDirectories);
+        Assert.Single(stageFiles);
+        var diagFiles = Directory.GetFiles(dir, "*.diag.json", SearchOption.AllDirectories);
+        Assert.Single(diagFiles);
+        Assert.Contains("PETADATA 完了", log.ToString());
+        Assert.Contains("診断ログ出力", log.ToString());
     }
 
     [Fact]
     public void 診断オフの既定呼び出しはdiag_jsonを書き出さない()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPetaDataNoDiag_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        var env = new SvgExportEnvironment
         {
-            var env = new SvgExportEnvironment
+            Editor = new DataExportEditor(Path.Combine(dir, "data.dwg")),
+            AcquireSelection = (handle, choice, diag) =>
             {
-                Editor = new DataExportEditor(Path.Combine(dir, "data.dwg")),
-                AcquireSelection = (handle, choice, diag) =>
+                var ir = new IrDocument { WidthMm = 50, HeightMm = 50 };
+                ir.Nodes.Add(new IrPath
                 {
-                    var ir = new IrDocument { WidthMm = 50, HeightMm = 50 };
-                    ir.Nodes.Add(new IrPath
+                    Segments = new List<IrSegment>
                     {
-                        Segments = new List<IrSegment>
-                        {
-                            new IrMove(0, 0), new IrLine(10, 0), new IrLine(10, 10), new IrClose(),
-                        },
-                        Fill = new IrRgb(0, 0, 0),
-                    });
-                    return ir;
-                },
-                TrueTypeOutlinerFactory = () => new NoopOutliner(),
-            };
-            var log = new StringWriter();
+                        new IrMove(0, 0), new IrLine(10, 0), new IrLine(10, 10), new IrClose(),
+                    },
+                    Fill = new IrRgb(0, 0, 0),
+                });
+                return ir;
+            },
+            TrueTypeOutlinerFactory = () => new NoopOutliner(),
+        };
+        var log = new StringWriter();
 
-            // 診断引数を省略した既存呼び出し（4製品のPetaCommand.cs）と同じ形。既定はfalseで無回帰
-            SvgExportRunner.Run(env, log, TextWriter.Null);
+        // 診断引数を省略した既存呼び出し（4製品のPetaCommand.cs）と同じ形。既定はfalseで無回帰
+        SvgExportRunner.Run(env, log, TextWriter.Null);
 
-            Assert.Empty(Directory.GetFiles(dir, "*.diag.json", SearchOption.AllDirectories));
-            Assert.Empty(Directory.GetFiles(dir, "*.stage*.svg", SearchOption.AllDirectories));
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        Assert.Empty(Directory.GetFiles(dir, "*.diag.json", SearchOption.AllDirectories));
+        Assert.Empty(Directory.GetFiles(dir, "*.stage*.svg", SearchOption.AllDirectories));
     }
 }

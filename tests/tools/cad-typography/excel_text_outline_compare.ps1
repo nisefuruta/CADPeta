@@ -21,38 +21,15 @@ New-Item -ItemType Directory -Force $OutDir | Out-Null
 $jsonPath = Join-Path $OutDir "excel_text_outline_compare.json"
 $logPath = Join-Path $OutDir "excel_text_outline_compare.log"
 "" | Set-Content $logPath
-function Log($msg) { $msg | Add-Content $logPath; Write-Host $msg }
-function PtToMm($pt) { return [Math]::Round($pt * 25.4 / 72, 2) }
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+. "$PSScriptRoot\..\common\office_com.ps1"
 
 if (-not (Test-Path $NormalEmf)) { throw "通常 EMF がない: $NormalEmf" }
 if (-not (Test-Path $OutlineEmf)) { throw "アウトライン EMF がない: $OutlineEmf" }
 
 Add-Type -AssemblyName System.Drawing
 
-function Recurse-Ungroup($shape) {
-    $queue = New-Object System.Collections.ArrayList
-    $queue.Add($shape) | Out-Null
-    $leaves = New-Object System.Collections.ArrayList
-    $firstError = $null
-    $anySuccess = $false
-    while ($queue.Count -gt 0) {
-        $s = $queue[0]; $queue.RemoveAt(0)
-        try {
-            $range = $s.Ungroup()
-            $anySuccess = $true
-            for ($i = 1; $i -le $range.Count; $i++) { $queue.Add($range.Item($i)) | Out-Null }
-        } catch {
-            if ($null -eq $firstError) { $firstError = $_.Exception.Message }
-            $leaves.Add($s) | Out-Null
-        }
-    }
-    if (-not $anySuccess) { return @{ success = $false; error = $firstError; leafCount = 0; leaves = @() } }
-    return @{ success = $true; error = $null; leafCount = $leaves.Count; leaves = @($leaves) }
-}
 
-function Get-ShapeText($s) {
-    try { return $s.TextFrame.Characters().Text } catch { return $null }
-}
 
 # 画面/クリップボードを介さない直接ラスタライズ（分解後の見た目の代替材料）
 function Export-EmfDirectRender($emfPath, $pngPath, $dpi = 150.0) {
@@ -91,8 +68,8 @@ try {
             $wb = $excel.Workbooks.Add()
             $ws = $wb.Worksheets.Item(1)
             $shape = $ws.Shapes.AddPicture($case.emf, 0, -1, 10, 10, -1, -1)
-            $r.widthMm = PtToMm $shape.Width
-            $r.heightMm = PtToMm $shape.Height
+            $r.widthMm = PtToMm $shape.Width -Digits 2
+            $r.heightMm = PtToMm $shape.Height -Digits 2
             Log "  実寸: $($r.widthMm) x $($r.heightMm) mm"
 
             $ug = Recurse-Ungroup $shape

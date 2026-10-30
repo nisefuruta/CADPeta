@@ -3,6 +3,8 @@
 // 判定（ヒント列の言語ファミリ写像）と、コマンド開始時の初期化（言語選択・フォールバック
 // 通知先の設定・lang ファイル異常の報告）だけを担う。未対応言語・判定不能は 1033（en）へ
 // 倒し、その事実をログへ残す（黙って落とさない）。
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using CadPeta.UseCases;
@@ -95,10 +97,6 @@ public static class Msg
     internal static IDisposable AttachFormatFallbackObserver(MessageCatalogSlot slot, TextWriter log) =>
         MessageCatalog.BeginFormatFallbackScope((catalogName, key, error) =>
             log.WriteLine(slot.Catalog.Format("lang.format_fallback", catalogName, key, error)));
-
-    /// <summary>lang フォルダを指定した読込（テスト用の委譲。実体は MessageCatalogs）。</summary>
-    internal static MessageCatalogSlot LoadFromDir(string? langDir, string lcid, MessageCatalog? fallback) =>
-        MessageCatalogs.LoadFromDir(langDir, lcid, fallback);
 
     /// <summary>最初に言語ファミリへ写像できたヒントで LCID を決める。全滅は en（1033）。</summary>
     internal static string ChooseLcid(IEnumerable<string?> hints, out bool resolved)

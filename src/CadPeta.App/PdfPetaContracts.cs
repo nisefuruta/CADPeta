@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using CadPeta.Geometry;
 using CadPeta.Ir;
 using CadPeta.Transforms;

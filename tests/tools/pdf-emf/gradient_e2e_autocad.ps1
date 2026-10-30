@@ -1,3 +1,4 @@
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
   [string]$Accore = "C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe",
   [string]$Dwt = "C:\Program Files\Autodesk\AutoCAD 2026\UserDataCache\ja-jp\Template\acadiso.dwt",
@@ -17,8 +18,14 @@ param(
 # - Kill は FixedProfile\General Configuration\FileDialog=0 をレジストリへ永続化
 #   するため、終了時に必ず点検・復元する。
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'gradient_e2e_autocad.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-if (-not $Plugin) { $Plugin = Join-Path $repo "src\CadPeta.Plugin.Acad\bin\Debug\net8.0-windows\CadPeta.Plugin.Acad.dll" }
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+if (-not $Plugin) { $Plugin = Get-E2ePluginPath Acad 'net8.0-windows' }
 if (-not $OutRoot) { $OutRoot = Join-Path $env:TEMP "CADPeta_gradient_e2e_autocad" }
 New-Item -ItemType Directory -Force $OutRoot | Out-Null
 $dwg = (Join-Path $OutRoot "gradient_e2e.dwg") -replace '\\','/'
@@ -32,12 +39,11 @@ if (Test-Path $dwg) { Remove-Item -LiteralPath $dwg -Force }
 
 $lines = @(
   '(setvar "FILEDIA" 0)',
-  '(setvar "CMDDIA" 0)',
-  '(setvar "SECURELOAD" 0)',
-  "(load `"$lsp`")",
+  '(setvar "CMDDIA" 0)'
+) + (Get-AccoreLoadLispLines $lsp) + @(
   "GRADIENTE2E",
-  "_.SAVEAS", "2018", $dwg,
-  "NETLOAD", $pluginPath,
+  "_.SAVEAS", "2018", $dwg
+) + (Get-AccoreNetloadLines $pluginPath) + @(
   "(sssetfirst nil (ssget `"_X`" '((0 . `"HATCH`"))))",
   "PETADATA", "",
   "_.QUIT", "_Y"
@@ -46,11 +52,11 @@ $lines = @(
 
 # CAD のタイムアウト・強制終了でも永続 sysvar（FILEDIA/SECURELOAD/OSMODE 等）を利用者プロファイルへ残さない包括ガード
 . "$PSScriptRoot\..\regression\CadRegGuard.ps1"
-$regGuard = Get-CadRegSnapshot
+$regGuard = Get-CadRegSnapshot -StageToTrusted @($lsp, $Plugin) -AcadVersion (Get-AcadVersionFromPath $Accore)
 $runError = $null
 try {
-  $proc = Start-Process -FilePath $Accore `
-            -ArgumentList "/i","`"$Dwt`"","/s","`"$scr`"","/l","ja-JP" `
+  $proc = Start-Process -WorkingDirectory (Split-Path -Parent $scr) -FilePath $Accore `
+            -ArgumentList (ConvertTo-NativeArgString @('/i', $Dwt, '/s', $scr, '/l', 'ja-JP')) `
             -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout
   if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
     try { $proc.Kill() } catch {}
@@ -71,16 +77,10 @@ try {
 }
 catch { $runError = $_ }
 finally {
-  $regReport = Restore-CadRegState $regGuard
-  if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
+  $regReport = $null # [ref] で受け取る変数を先に作る
+  Restore-CadRegStateAndReport $regGuard ([ref]$regReport)
 }
-if ($runError -and -not $regReport.ok) {
-  throw [AggregateException]::new(
-    'CAD実行失敗に加えてレジストリ復元にも失敗した',
-    [Exception[]]@($runError.Exception, [InvalidOperationException]::new($regReport.mismatch -join '; ')))
-}
-if ($runError) { throw $runError }
-if (-not $regReport.ok) { throw "レジストリ保全の復元検証に失敗: $($regReport.mismatch -join '; ')" }
+Assert-CadRunAndRegRestore $runError $regReport
 
 $svg = Get-ChildItem $OutRoot -Filter "gradient_e2e*.svg" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $svg) { throw "PETADATA の出力が見つかりません（$stdout）" }

@@ -1,26 +1,11 @@
 // PDF ファイルの最小の低レベル組み立て（オブジェクト表・xref・trailer）。
 // クラシックxref（オブジェクトストリームは使わない）で、あらゆるPDFビューアが読める
 // 最も枯れた形式に寄せる。ストリームは常に無圧縮（呼び出し側がそのまま渡したバイト列）。
-using System.Globalization;
+using System.Collections.Generic;
+using System.IO;
 using System.Text;
 
 namespace CadPeta.Out.Pdf;
-
-/// <summary>数値の文字列化（座標・行列成分に共用）。SvgWriter.N/T と同じ理由
-/// （.NET Framework と .NET Core 系で "-0" の文字列化が割れるため "0" へ畳む）で
-/// 決定的にする。</summary>
-internal static class PdfNum
-{
-    // 4桁: mm量子として十分（SvgWriter.N と同一桁数）。この PDF ライタは座標を
-    // mm のまま書き、ページ先頭の cm 一回だけで pt へ変換する（PdfWriter 参照）
-    public static string N(double v) => Fold(v.ToString("0.####", CultureInfo.InvariantCulture));
-
-    // 6桁: 変換行列成分用。回転成分の丸め誤差は座標の大きさ倍で効くため座標より細かく書く
-    // （SvgWriter.T と同一桁数・同一理由）
-    public static string M(double v) => Fold(v.ToString("0.######", CultureInfo.InvariantCulture));
-
-    static string Fold(string s) => s == "-0" ? "0" : s;
-}
 
 /// <summary>間接オブジェクト1件。Stream が非nullならストリームオブジェクト（/Length は自動付与）。</summary>
 internal sealed class PdfObject

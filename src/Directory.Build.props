@@ -50,12 +50,19 @@
     <AcadNetVersionNet48>24.3.0</AcadNetVersionNet48>
     <AcadNetVersionNet8>25.0.0</AcadNetVersionNet8>
     <AcadNetVersionNet10>26.0.0</AcadNetVersionNet10>
-    <!-- System.Text.Json: MIT。診断ログ JSON の直列化（Cli は in-box、net48 プラグインのみパッケージ） -->
-    <SystemTextJsonVersion>9.0.0</SystemTextJsonVersion>
+    <!-- プラグインは System.Text.Json を使わない（JSON は .NET 標準の DataContractJsonSerializer。
+         Plugin.Shared の PluginJson）。net48 では System.Text.Json の依存（System.Memory など）が参照する版が
+         PdfPig の依存と食い違い、bindingRedirect を持てないプラグインは読み込みに失敗した（2026-10-28） -->
+
+    <!-- 版番号の原本は dist/bundle/CADPeta.bundle/PackageContents.xml の AppVersion の 1 か所。自作の DLL の版
+         （AssemblyVersion・FileVersion・読み込んだときに表示する InformationalVersion）は、ビルドのときにその値を読んで決める。
+         配布スクリプト（build_dist・sign_dist）と公開用の切り出し（publish_public）も同じ値を読む -->
+    <CadPetaManifestPath>$(MSBuildThisFileDirectory)..\dist\bundle\CADPeta.bundle\PackageContents.xml</CadPetaManifestPath>
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(CadPetaManifestPath)')), 'AppVersion="(\d+\.\d+\.\d+)"').Groups[1].Value)</Version>
 
     <!-- netstandard2.0 の既定 LangVersion は 7.3 のため明示必須（record/init 等を使う） -->
     <LangVersion>latest</LangVersion>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
@@ -111,6 +118,11 @@
   <Target Name="CadPetaVerifyAresSdkYear" BeforeTargets="ResolveAssemblyReferences"
           Condition="'$(CadPetaUsesAresSdk)' == 'true' And '$(TargetFramework)' == '$(CadPetaNet48Tfm)' And '$(AresNet48DllVer)' == ''">
     <Error Text="AresSdkYearNet48='$(AresSdkYearNet48)' は未対応のARES年式です。対応年式とDLL版サフィックスは src/Directory.Build.props の表へ追加してください。" />
+  </Target>
+
+  <!-- 版番号の原本から版を読めなければ、SDK の既定の 1.0.0 で黙ってビルドせずに止める -->
+  <Target Name="CadPetaVerifyVersion" BeforeTargets="BeforeBuild" Condition="'$(Version)' == ''">
+    <Error Text="版番号を $(CadPetaManifestPath) の AppVersion（X.Y.Z）から読めません。" />
   </Target>
 
   <!-- init アクセサ・record が要求する IsExternalInit 型は .NET 5 以降の BCL にのみ存在する。

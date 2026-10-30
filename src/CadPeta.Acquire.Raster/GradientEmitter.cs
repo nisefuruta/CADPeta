@@ -8,6 +8,8 @@
 // 呼び出し側のデリゲート（emitFallbackPath）へ委ねる。それ以外（ラスタ化呼び出し・画素予算
 // 消費・IrImage/IrGroup 組み立て・FallbackKind から診断カテゴリへの写像・診断記録）は
 // 4製品で完全に同一の意味論のため、ここへ一本化する。
+using System;
+using System.Collections.Generic;
 using CadPeta.Acquire.Common;
 using CadPeta.Ir;
 

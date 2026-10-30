@@ -6,6 +6,8 @@
 // (b) 固定 fixture interleave_ptx.pdf: 実 BT/Tj/ET を含む Path/Text/Image 交錯。
 // (c) 固定 fixture subtype_form_*.pdf: XObject Subtype 判別と Form 再帰描画順の検証。
 //     fixture は tests/tools/pdf-emf/gen_fixtures.py が決定的に生成し commit 済み。
+using System.Collections.Generic;
+using System.Linq;
 using System.Drawing;
 using System.Drawing.Imaging;
 using CadPeta.Acquire.Pdf;
@@ -27,7 +29,7 @@ public class PdfDrawOrderTests
         _ => "other",
     };
 
-    // 連続同一 kind を1つに畳む（dissect と acquirer の per-op 分割粒度差を吸収する compare_draworder と同規則）。
+    // 連続同一 kind を1つに畳む（dissect と acquirer の per-op 分割粒度差を吸収する）。
     static List<string> Collapse(IEnumerable<IrNode> nodes)
     {
         var outSeq = new List<string>();
@@ -43,9 +45,7 @@ public class PdfDrawOrderTests
     {
         using var bmp = new Bitmap(2, 2, PixelFormat.Format32bppArgb);
         using (var gr = Graphics.FromImage(bmp)) gr.Clear(Color.FromArgb(255, r, g, b));
-        using var ms = new MemoryStream();
-        bmp.Save(ms, ImageFormat.Png);
-        return ms.ToArray();
+        return TestImages.EncodePng(bmp);
     }
 
     static List<IrSegment> Rect(double x, double y, double w, double h) => new()
@@ -53,16 +53,6 @@ public class PdfDrawOrderTests
         new IrMove(x, y), new IrLine(x + w, y), new IrLine(x + w, y + h),
         new IrLine(x, y + h), new IrClose(),
     };
-
-    static string FindRepositoryRoot()
-    {
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
-            if (File.Exists(Path.Combine(d.FullName, "CadPeta.sln"))) return d.FullName;
-        throw new DirectoryNotFoundException("CadPeta.sln を親ディレクトリから発見できない");
-    }
-
-    static string Fixture(string name) =>
-        Path.Combine(FindRepositoryRoot(), "tests", "assets", "pdf-fixtures", name);
 
     // (a) PdfWriter 往復: [塗りパス, 画像, 線パス, 画像] が交錯順のまま復元される。
     [Fact]
@@ -84,9 +74,8 @@ public class PdfDrawOrderTests
             XMm = 50, YMm = 50, WidthMm = 20, HeightMm = 20, PngBytes = SolidPng(240, 240, 0),
         });
 
-        string dir = Path.Combine(Path.GetTempPath(), "cadpeta_draworder");
-        Directory.CreateDirectory(dir);
-        string pdf = Path.Combine(dir, "rt_" + Guid.NewGuid().ToString("N") + ".pdf");
+        using var temp = new TempFolder();
+        string pdf = temp.File("rt.pdf");
         new PdfWriter(new GdiGlyphOutliner()).Write(ir, pdf, new IrDiagnostics());
 
         var back = new PdfIrAcquirer().Acquire(pdf, new IrDiagnostics());
@@ -101,7 +90,7 @@ public class PdfDrawOrderTests
     [Fact]
     public void 固定PDF_文字を含む型交錯のz順が保存される()
     {
-        var back = new PdfIrAcquirer().Acquire(Fixture("interleave_ptx.pdf"), new IrDiagnostics());
+        var back = new PdfIrAcquirer().Acquire(RepositoryPaths.PdfFixture("interleave_ptx.pdf"), new IrDiagnostics());
         // 旧実装なら [path, path, text, image]（全パス→全文字→全画像）へ化ける。
         Assert.Equal(new[] { "path", "text", "image", "path" }, Collapse(back.Nodes));
     }
@@ -111,7 +100,7 @@ public class PdfDrawOrderTests
     public void Form_Doは画像の順序と属性対応を汚さない()
     {
         var diag = new IrDiagnostics();
-        var back = new PdfIrAcquirer().Acquire(Fixture("subtype_form_noimg.pdf"), diag);
+        var back = new PdfIrAcquirer().Acquire(RepositoryPaths.PdfFixture("subtype_form_noimg.pdf"), diag);
         var imgs = back.Nodes.OfType<IrImage>().ToList();
         Assert.Equal(2, imgs.Count);
         Assert.Equal("LayerA", imgs[0].DataLayer);
@@ -125,7 +114,7 @@ public class PdfDrawOrderTests
     public void Form内のパス文字画像と後続パスのz順が保存される()
     {
         var diag = new IrDiagnostics();
-        var back = new PdfIrAcquirer().Acquire(Fixture("subtype_form_withimg.pdf"), diag);
+        var back = new PdfIrAcquirer().Acquire(RepositoryPaths.PdfFixture("subtype_form_withimg.pdf"), diag);
         Assert.Equal(new[] { "path", "text", "image", "path" }, Collapse(back.Nodes));
         Assert.DoesNotContain(diag.Entries, e => e.Type.Contains("確定不能"));
     }

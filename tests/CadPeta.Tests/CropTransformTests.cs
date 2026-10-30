@@ -1,36 +1,23 @@
 // クロップ変換の単体テスト。
 // 範囲外ノードの間引きと余白・viewBox 更新を検査する。
+using System.Collections.Generic;
 using CadPeta.Geometry;
 using CadPeta.Ir;
 using CadPeta.Transforms;
 using Xunit;
+using static CadPeta.Tests.IrTestBuilders;
 
 namespace CadPeta.Tests;
 
 public class CropTransformTests
 {
-    static IrPath Line(double x0, double y0, double x1, double y1, double widthMm = 0.5)
-        => new()
-        {
-            Segments = new List<IrSegment> { new IrMove(x0, y0), new IrLine(x1, y1) },
-            Stroke = new IrRgb(0, 0, 0),
-            StrokeWidthMm = widthMm,
-        };
-
-    static IrDocument Page(params IrNode[] nodes)
-    {
-        var ir = new IrDocument { WidthMm = 420, HeightMm = 297 };
-        ir.Nodes.AddRange(nodes);
-        return ir;
-    }
-
     [Fact]
     public void 範囲外ノードを間引き範囲内と境界交差を保持する()
     {
         var inside = Line(20, 20, 80, 80);
         var crossing = Line(90, 50, 150, 50);   // 境界 x=100 をまたぐ → 全体保持
         var outside = Line(200, 200, 300, 250);
-        var ir = Page(inside, crossing, outside);
+        var ir = A3Page(inside, crossing, outside);
         var diag = new IrDiagnostics();
 
         int dropped = CropTransform.Apply(ir, new RectMm(0, 0, 100, 100), 0, diag);
@@ -47,7 +34,7 @@ public class CropTransformTests
         var thick = Line(101, 10, 101, 90, widthMm: 4);
         // 細線は同じ位置でも範囲外 → 間引き
         var thin = Line(101, 10, 101, 90, widthMm: 0.5);
-        var ir = Page(thick, thin);
+        var ir = A3Page(thick, thin);
 
         CropTransform.Apply(ir, new RectMm(0, 0, 100, 100), 0, new IrDiagnostics());
 
@@ -59,7 +46,7 @@ public class CropTransformTests
     {
         var inside = new IrText { Value = "A", XMm = 50, YMm = 50, FontSizeMm = 5 };
         var outside = new IrText { Value = "B", XMm = 200, YMm = 200, FontSizeMm = 5 };
-        var ir = Page(inside, outside);
+        var ir = A3Page(inside, outside);
 
         CropTransform.Apply(ir, new RectMm(0, 0, 100, 100), 0, new IrDiagnostics());
 
@@ -69,7 +56,7 @@ public class CropTransformTests
     [Fact]
     public void 余白込みでviewBoxと物理寸法を更新する()
     {
-        var ir = Page(Line(20, 25, 50, 45));
+        var ir = A3Page(Line(20, 25, 50, 45));
 
         CropTransform.Apply(ir, new RectMm(10, 20, 60, 50), 5, new IrDiagnostics());
 
@@ -94,7 +81,7 @@ public class CropTransformTests
         // ノード幾何は切り出し範囲と重なるが、クリップ窓が範囲外 → 不可視
         var clipped = Line(10, 10, 290, 290);
         clipped.ClipId = "clip0";
-        var ir = Page(clipped);
+        var ir = A3Page(clipped);
         ir.ClipDefs.Add(clip);
 
         int dropped = CropTransform.Apply(ir, new RectMm(0, 0, 100, 100), 0, new IrDiagnostics());
@@ -118,7 +105,7 @@ public class CropTransformTests
         };
         var node = Line(10, 10, 90, 90);
         node.ClipId = "clip0";
-        var ir = Page(node);
+        var ir = A3Page(node);
         ir.ClipDefs.Add(clip);
 
         CropTransform.Apply(ir, new RectMm(0, 0, 100, 100), 0, new IrDiagnostics());

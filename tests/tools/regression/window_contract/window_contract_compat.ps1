@@ -18,9 +18,10 @@
 #   powershell -Sta -File window_contract_compat.ps1 -Product BricscadV26 -Cases G,J,M
 #
 # 規律（破ると環境が壊れる。tests/tools/README.md を基準とする）:
-# - SECURELOAD／FILEDIA は変更したら必ず復元する。
+# - SECURELOAD と TRUSTEDPATHS は変えない。FILEDIA は変更したら必ず復元する。
 # - 起動時の未保存図面を含め、全図面を Close(false) してから Quit する。保存確認を残さない。
 # - 自分が起動し実行ファイルまで照合した PID だけを終了対象にする。既定では強制終了しない。
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
   [Parameter(Mandatory = $true)]
   [ValidateSet("Ares2024", "Ares2027", "Ijcad2026", "BricscadV26")]
@@ -34,6 +35,11 @@ param(
   [switch]$AllowForceStop
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\..\common\test_helpers.ps1"
+$changePlan = New-CompatE2ePlan 'window_contract_compat.ps1' $Product $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 
 $GuiStartupTimeoutSeconds = 120
 # ARES 2027 は単独起動だとメインウィンドウ非表示のままスピンし ROT 登録されないことがある
@@ -197,11 +203,7 @@ Copy-Item -LiteralPath $source -Destination $dwgCopy -Force
 $dwgHash = (Get-FileHash -LiteralPath $dwgCopy -Algorithm SHA256).Hash
 $paramsFile = Join-Path $productRoot "cpwin_params.txt"
 
-function Write-Evidence([string]$message) {
-  $line = "{0:o} {1}" -f (Get-Date), $message
-  [IO.File]::AppendAllText($evidenceLog, $line + [Environment]::NewLine, [Text.Encoding]::UTF8)
-  Write-Output $line
-}
+. "$PSScriptRoot\..\..\common\compat_cad_com.ps1"
 
 if (-not ("CadPeta.CompatNativeWindow" -as [type])) {
   Add-Type -TypeDefinition @'
@@ -255,41 +257,7 @@ namespace CadPeta {
 '@
 }
 
-function Get-RegisteredProgIdsForExe([string]$expectedExe) {
-  $result = @()
-  foreach ($key in Get-ChildItem "HKLM:\SOFTWARE\Classes" | Where-Object {
-    $_.PSChildName -like "PCAD_AC_X.AcadApplication.*"
-  }) {
-    $clsid = (Get-ItemProperty -LiteralPath (Join-Path $key.PSPath "CLSID") -ErrorAction SilentlyContinue).'(default)'
-    if (-not $clsid) { continue }
-    $server = (Get-ItemProperty -LiteralPath "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\$clsid\LocalServer32" -ErrorAction SilentlyContinue).'(default)'
-    if (-not $server) { continue }
-    $serverText = $server.Trim()
-    $serverExe = if ($serverText -match '^"([^"]+\.exe)"') {
-      $Matches[1]
-    } elseif ($serverText -match '^([^\s]+\.exe)') {
-      $Matches[1]
-    } else {
-      continue
-    }
-    if ([string]::Equals([IO.Path]::GetFullPath($serverExe), $expectedExe, [StringComparison]::OrdinalIgnoreCase)) {
-      $result += $key.PSChildName
-    }
-  }
-  return @($result | Sort-Object -Unique)
-}
 
-function Wait-FileExists([string]$path, [string]$phase, [int]$timeoutSeconds) {
-  $deadline = (Get-Date).AddSeconds($timeoutSeconds)
-  while ((Get-Date) -lt $deadline) {
-    if (Test-Path -LiteralPath $path -PathType Leaf) {
-      Write-Evidence "FILE_READY phase=$phase path=$path"
-      return
-    }
-    Start-Sleep -Milliseconds $PollMilliseconds
-  }
-  throw "処理 '$phase' の期待ファイルが $timeoutSeconds 秒以内に作成されませんでした: $path"
-}
 
 function Assert-CompletePdf([string]$path, [string]$label) {
   [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
@@ -306,61 +274,9 @@ function Assert-CompletePdf([string]$path, [string]$label) {
   }
 }
 
-function Find-AndActivateDocument($application, [string]$expectedPath, [int]$timeoutSeconds) {
-  $expectedFullPath = [IO.Path]::GetFullPath($expectedPath)
-  $deadline = (Get-Date).AddSeconds($timeoutSeconds)
-  while ((Get-Date) -lt $deadline) {
-    $documents = $application.Documents
-    for ($index = 0; $index -lt $documents.Count; $index++) {
-      $candidate = $documents.Item($index)
-      $candidatePath = [string]$candidate.FullName
-      if ($candidatePath -and [string]::Equals([IO.Path]::GetFullPath($candidatePath), $expectedFullPath,
-        [StringComparison]::OrdinalIgnoreCase)) {
-        $candidate.Activate()
-        Write-Evidence "DOCUMENT activated Name=$($candidate.Name) FullName=$candidatePath Count=$($documents.Count)" | Out-Null
-        return $candidate
-      }
-    }
-    Start-Sleep -Milliseconds $PollMilliseconds
-  }
-  throw "開いた図面 '$expectedFullPath' が $timeoutSeconds 秒以内に見つかりませんでした"
-}
 
-# ARES は .NET コマンドのプロンプト待ち中に COM を拒否するため、pick 点は UI キー入力で与える
-# （gradient_compat_e2e.ps1 で実測済みの作法）。
-function Send-UiPromptInput($shell, [int]$processId, [string[]]$inputs) {
-  $deadline = (Get-Date).AddSeconds(10)
-  while ((Get-Date) -lt $deadline -and -not $shell.AppActivate($processId)) {
-    Start-Sleep -Milliseconds $PollMilliseconds
-  }
-  if (-not $shell.AppActivate($processId)) { throw "CAD プロセスをアクティブ化できませんでした: PID=$processId" }
-  Start-Sleep -Milliseconds 750
-  foreach ($input in $inputs) {
-    if ($input.Length -gt 0) { $shell.SendKeys($input) }
-    $shell.SendKeys("{ENTER}")
-    Start-Sleep -Milliseconds 500
-  }
-  $described = ($inputs | ForEach-Object { if ($_.Length -gt 0) { $_ } else { "ENTER" } }) -join ","
-  Write-Evidence "UI_INPUT sent PID=$processId sequence=$described"
-}
 
-function Read-VariableSafe($document, [string]$name) {
-  try { return [string]$document.GetVariable($name) } catch { return "<取得失敗: $($_.Exception.Message)>" }
-}
 
-function Wait-CommandIdle($document, [string]$phase, [int]$timeoutSeconds) {
-  $deadline = (Get-Date).AddSeconds($timeoutSeconds)
-  while ((Get-Date) -lt $deadline) {
-    $commands = Read-VariableSafe $document "CMDNAMES"
-    if (-not $commands.StartsWith("<取得失敗") -and [string]::IsNullOrWhiteSpace($commands)) {
-      Write-Evidence "IDLE phase=$phase"
-      return $true
-    }
-    Start-Sleep -Milliseconds $PollMilliseconds
-  }
-  Write-Evidence "IDLE_TIMEOUT phase=$phase CMDNAMES=$(Read-VariableSafe $document 'CMDNAMES') LASTPROMPT=$(Read-VariableSafe $document 'LASTPROMPT')"
-  return $false
-}
 
 # パラメータファイル（KEY=VALUE）: 計測器がコマンド実行のたびに読み直す。
 # プロセス環境変数は CAD 起動時に固定されるため、ケースごとの条件はここで渡す。
@@ -532,13 +448,14 @@ $document = $null
 $uiShell = $null
 $startedProcess = $null
 $secondaryProcess = $null
+$pluginStage = $null
+$autoloadState = $null
 $connectedProgId = $null
+$progIds = $null
 $ownedPid = 0
 $messageFilterRegistered = $false
-$oldSecureLoad = $null
 $oldFileDia = $null
 $oldOsMode = $null
-$oldTrustedPaths = $null
 $savedParamsEnv = $env:CPWIN_PARAMS
 $completed = $false
 $cleanupFailures = @()
@@ -551,10 +468,7 @@ try {
   if ($windowStation -ne $ExpectedWindowStation -or $desktop -ne $ExpectedDesktop) {
     throw "対話デスクトップが必要です。期待=$ExpectedWindowStation\$ExpectedDesktop、実際=$windowStation\$desktop"
   }
-  if ($PSVersionTable.PSEdition -ne "Desktop") {
-    throw "Marshal.GetActiveObject のため Windows PowerShell 5.1 が必要です。実際の PSEdition=$($PSVersionTable.PSEdition)"
-  }
-  if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne [Threading.ApartmentState]::STA) { throw "STA スレッドが必要です" }
+  Assert-WindowsPowerShellSta
   # pick 点の UI 入力と、詰まったプロンプトの ESC 解除に使う。CAD 起動前に生成する
   $uiShell = New-Object -ComObject WScript.Shell
   [CadPeta.CompatMessageFilter]::RetryWindowMilliseconds = $ComRetryWindowMilliseconds
@@ -566,61 +480,23 @@ try {
   if ($existingProcesses.Count -gt 0) {
     throw "既存の $($config.ProcessName) プロセスがあり、起動プロセスを一意に所有できません: PID=$($existingProcesses.Id -join ',')"
   }
+  # インストール済みの CADPeta が自動で読み込まれると、ビルドした DLL を試験できない。試験の間だけ登録を外す
+  Suspend-CompatProductAutoload $Product ([ref]$autoloadState)
 
   # 計測器はパラメータファイルをコマンド実行のたびに読み直す。パスは起動前に環境変数で固定する
   $env:CPWIN_PARAMS = $paramsFile
 
   if ($config.DiscoverProgId) {
-    $progIds = @(Get-RegisteredProgIdsForExe $exe)
-    if ($progIds.Count -eq 0) { throw "'$exe' を指す登録済み ProgID がありません" }
-    Write-Evidence "PROGID candidates=$($progIds -join ',') source=HKLM"
-    $startedProcess = Start-Process -FilePath $exe -WorkingDirectory ([IO.Path]::GetDirectoryName($exe)) -PassThru
-    Write-Evidence "PROCESS visible-start PID=$($startedProcess.Id)"
-    # 単独起動で ROT 未登録が続くとき2つ目を起動して1つ目の起動を促す（ARES 2027 対策）。
-    # 2つ目も所有プロセスとして終了時に停止対象へ含める（自分が起動し exe を照合したもの）
-    $secondaryLaunchAt = (Get-Date).AddSeconds($SecondaryLaunchDelaySeconds)
-    $deadline = (Get-Date).AddSeconds($GuiStartupTimeoutSeconds)
-    while ((Get-Date) -lt $deadline -and $null -eq $candidateApplication) {
-      foreach ($progId in $progIds) {
-        try {
-          $candidateApplication = [Runtime.InteropServices.Marshal]::GetActiveObject($progId)
-          $connectedProgId = $progId
-          break
-        } catch {}
-      }
-      if ($null -eq $candidateApplication) {
-        if ($null -eq $secondaryProcess -and (Get-Date) -gt $secondaryLaunchAt) {
-          $secondaryProcess = Start-Process -FilePath $exe -WorkingDirectory ([IO.Path]::GetDirectoryName($exe)) -PassThru
-          Write-Evidence "PROCESS secondary-start PID=$($secondaryProcess.Id)（単独起動不全の回避。1つ目の ROT 登録を促す）"
-        }
-        Start-Sleep -Milliseconds $PollMilliseconds
-      }
-    }
-    if ($null -eq $candidateApplication) {
-      throw "CAD が $GuiStartupTimeoutSeconds 秒以内に ROT 登録されませんでした。候補=$($progIds -join ',')。表示中のライセンス／版ダイアログを確認してください"
-    }
+    Start-CadVisibleAndConnect $exe $SecondaryLaunchDelaySeconds $GuiStartupTimeoutSeconds ([ref]$startedProcess) ([ref]$candidateApplication) ([ref]$connectedProgId) ([ref]$secondaryProcess) ([ref]$progIds) -failureHint "。表示中のライセンス／版ダイアログを確認してください"
   } else {
-    $startedProcess = if ($config.StartArguments.Count -gt 0) {
-      Start-Process -FilePath $exe -ArgumentList $config.StartArguments -PassThru -WindowStyle Hidden
-    } else {
-      Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
-    }
+    $startedProcess = Start-CadProcessHidden $exe $config.StartArguments
     Write-Evidence "PROCESS started PID=$($startedProcess.Id)"
-    $deadline = (Get-Date).AddSeconds($GuiStartupTimeoutSeconds)
-    while ((Get-Date) -lt $deadline -and $null -eq $candidateApplication) {
-      try { $candidateApplication = [Runtime.InteropServices.Marshal]::GetActiveObject($config.ProgId) } catch { Start-Sleep -Milliseconds $PollMilliseconds }
-    }
+    $candidateApplication = Wait-ActiveObject $config.ProgId $GuiStartupTimeoutSeconds
     if ($null -eq $candidateApplication) {
       throw "COM オブジェクト $($config.ProgId) が $GuiStartupTimeoutSeconds 秒以内に ROT 登録されませんでした"
     }
   }
-  $deadline = (Get-Date).AddSeconds($GuiStartupTimeoutSeconds)
-  $hwnd = 0
-  while ((Get-Date) -lt $deadline -and $hwnd -eq 0) {
-    try { $candidateApplication.Visible = $true; $hwnd = [int64]$candidateApplication.HWND }
-    catch { Start-Sleep -Milliseconds $PollMilliseconds }
-  }
-  if ($hwnd -eq 0) { throw "COM アプリケーションが $GuiStartupTimeoutSeconds 秒以内に自動操作可能になりませんでした" }
+  $hwnd = Get-CadWindowHandle $candidateApplication $GuiStartupTimeoutSeconds $exe
   [uint32]$pidValue = 0
   [void][CadPeta.CompatNativeWindow]::GetWindowThreadProcessId([IntPtr]$hwnd, [ref]$pidValue)
   $candidatePid = [int]$pidValue
@@ -629,10 +505,7 @@ try {
   if ($null -ne $startedProcess -and $candidatePid -notin $ownedStartIds) {
     throw "今回開始していないプロセスへ COM 接続しました。開始 PID=$($ownedStartIds -join ',')、接続 PID=$candidatePid"
   }
-  $actualExe = (Get-Process -Id $candidatePid).Path
-  if (-not [string]::Equals([IO.Path]::GetFullPath($actualExe), $exe, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "COM が想定外の実行ファイルへ接続しました。期待='$exe'、実際='$actualExe'"
-  }
+  Assert-ConnectedExecutable $candidatePid $exe
   $application = $candidateApplication
   $candidateApplication = $null
   $ownedPid = $candidatePid
@@ -647,59 +520,22 @@ try {
 
   [void]$application.Documents.Open($dwgCopy)
   $document = Find-AndActivateDocument $application $dwgCopy $GuiStartupTimeoutSeconds
-  $secureLoadEvidence = "unavailable"
-  try {
-    $oldSecureLoad = $document.GetVariable("SECURELOAD")
-    $document.SetVariable("SECURELOAD", [int16]0)
-    $secureLoadEvidence = "$oldSecureLoad->0"
-  } catch {
-    $oldSecureLoad = $null
-    Write-Evidence "SYSVAR SECURELOAD unavailable=$($_.Exception.Message)"
-  }
-  if ($config.SetFileDia) {
-    $oldFileDia = $document.GetVariable("FILEDIA")
-    $document.SetVariable("FILEDIA", [int16]0)
-    Write-Evidence "SYSVARS SECURELOAD=$secureLoadEvidence FILEDIA=$oldFileDia->0"
-  } else {
-    Write-Evidence "SYSVARS SECURELOAD=$secureLoadEvidence FILEDIA=unchanged"
-  }
-  # 定常オブジェクトスナップを外す。スクリプト・(command) 経由の座標入力は定常スナップに
-  # 吸着し得る（BricsCAD 実測: -PLOT の窓コーナーが近傍の図形頂点へ吸着し、格納値が入力と
-  # ずれた）。計測は入力座標そのものを評価するため、実行中だけ 0 にして復元する
-  try {
-    $oldOsMode = $document.GetVariable("OSMODE")
-    $document.SetVariable("OSMODE", [int16]0)
-    Write-Evidence "SYSVAR OSMODE=$oldOsMode->0"
-  } catch {
-    $oldOsMode = $null
-    Write-Evidence "SYSVAR OSMODE unavailable=$($_.Exception.Message)"
-  }
-  # 計測器のフォルダを信頼できる場所へ一時追加する（未署名 DLL の信頼確認ダイアログが
-  # 読み込みを黙って阻む。ARES 2024 実機で利用者が確認）。必ず復元する
-  try {
-    $oldTrustedPaths = $document.GetVariable("TRUSTEDPATHS")
-    $probeDir = [IO.Path]::GetDirectoryName($probe)
-    $newTrustedPaths = if ([string]::IsNullOrEmpty($oldTrustedPaths)) { $probeDir } else { "$oldTrustedPaths;$probeDir" }
-    $document.SetVariable("TRUSTEDPATHS", $newTrustedPaths)
-    Write-Evidence "SYSVAR TRUSTEDPATHS=[$oldTrustedPaths]->[$newTrustedPaths]"
-  } catch {
-    $oldTrustedPaths = $null
-    Write-Evidence "SYSVAR TRUSTEDPATHS unavailable=$($_.Exception.Message)"
-  }
+  Disable-CadFileDia $document $config.SetFileDia ([ref]$oldFileDia)
+  # 定常オブジェクトスナップを外す。計測は入力座標そのものを評価するため、実行中だけ 0 にして復元する
+  Disable-CadOsMode $document ([ref]$oldOsMode)
 
   # 図面を開いた直後は再描画等でコマンドを受け付けないことがある。待機状態を確認してから読み込む
   # （実測済みの作法は gradient_compat_e2e.ps1 と同じ。ARES は GetAcadState を持たない版があるため
   # CMDNAMES の空を待機の証拠にする）
-  $idleDeadline = (Get-Date).AddSeconds($GuiStartupTimeoutSeconds)
-  while ((Get-Date) -lt $idleDeadline) {
-    $commands = Read-VariableSafe $document "CMDNAMES"
-    if (-not $commands.StartsWith("<取得失敗") -and [string]::IsNullOrWhiteSpace($commands)) { break }
-    Start-Sleep -Milliseconds $PollMilliseconds
-  }
+  Wait-CommandNamesEmpty $document $GuiStartupTimeoutSeconds
   Write-Evidence "IDLE phase=before probe load CMDNAMES=$(Read-VariableSafe $document 'CMDNAMES')"
 
   # 計測器の読み込み。完了はマーカーファイルで判定する（読込コマンド自体は結果を返さない）
-  $probeForCommand = $probe -replace '\\', '/'
+  # 信頼するフォルダへコピーした DLL を読み込み、確認の画面を出さずに無人で進める
+  $pluginStage = New-CompatPluginStage $Product $probe
+  Assert-CadPluginFolderTrusted $document $pluginStage
+  Write-Evidence "PLUGIN_STAGE plugin=$($pluginStage.Plugin)"
+  $probeForCommand = $pluginStage.Plugin -replace '\\', '/'
   # ARES の LOADDOTNETAPPLICATION は、ファイル名の後に明示の Enter が届かないと読み込まない
   # （(command "._LOADDOTNETAPPLICATION" "<path>") の引数渡しではファイル名プロンプトに
   # 表示されたまま入力待ちで止まる。2027 実測）。生テキストで CR を付けて送る
@@ -774,7 +610,7 @@ try {
       $oracleMarker = Join-Path $caseWork "oracle_command_done.txt"
       Send-LispLines $document (Build-OracleLisp $caseWork $cfg $null) "case $caseName oracle"
       Wait-FileExists $oracleMarker "case $caseName oracle command" $OracleIdleTimeoutSeconds
-      if (-not (Wait-CommandIdle $document "case $caseName after oracle" 30)) {
+      if (-not (Wait-CommandIdle $document "case $caseName after oracle" 30 -IncludeLastPrompt)) {
         # 応答列がずれてプロンプトに残っている。ESC で解除して証跡を残す（成果物は不採用）
         if ($uiShell.AppActivate($ownedPid)) {
           Start-Sleep -Milliseconds 500
@@ -814,7 +650,7 @@ try {
         }
         Wait-FileExists $probeJson "case $caseName probe json" $ProbeJsonTimeoutSeconds
         # JSON は計測器の finally で最後に書かれるため、存在すれば PDF 発行も終わっている
-        [void](Wait-CommandIdle $document "case $caseName after probe" $OracleIdleTimeoutSeconds)
+        [void](Wait-CommandIdle $document "case $caseName after probe" $OracleIdleTimeoutSeconds -IncludeLastPrompt)
         # pick 点が意図した絶対座標で API から返ったことの検証（入力の解釈は製品で違い得る）
         try {
           $probeData = Get-Content -LiteralPath $probeJson -Raw | ConvertFrom-Json
@@ -897,71 +733,20 @@ try {
   throw
 } finally {
   if ($null -ne $document) {
-    foreach ($restore in @(
-      @{ Name='SECURELOAD'; Value=$oldSecureLoad },
+    Restore-CadSystemVariables $document @(
       @{ Name='FILEDIA'; Value=$(if ($null -eq $oldFileDia) { $null } else { [int16]1 }) },
-      @{ Name='OSMODE'; Value=$oldOsMode }, @{ Name='TRUSTEDPATHS'; Value=$oldTrustedPaths })) {
-      if ($null -eq $restore.Value) { continue }
-      try {
-        $document.SetVariable($restore.Name, $restore.Value)
-        $readBack = $document.GetVariable($restore.Name)
-        if ("$readBack" -ne "$($restore.Value)") { throw "再読値=$readBack" }
-        Write-Evidence "RESTORE $($restore.Name)=[$($restore.Value)] verified"
-      } catch {
-        $cleanupFailures += "$($restore.Name) 復元失敗: $($_.Exception.Message)"
-        Write-Evidence "RESTORE $($restore.Name) error=$($_.Exception.Message)"
-      }
-    }
+      @{ Name='OSMODE'; Value=$oldOsMode }) ([ref]$cleanupFailures)
   }
   $env:CPWIN_PARAMS = $savedParamsEnv
   if ($null -ne $application) {
-    try {
-      while ($application.Documents.Count -gt 0) {
-        $closingDocument = $application.Documents.Item($application.Documents.Count - 1)
-        $closingName = [string]$closingDocument.Name
-        $closingDocument.Close($false)
-        Write-Evidence "CLOSE ok Name=$closingName SaveChanges=false"
-        if ([Runtime.InteropServices.Marshal]::IsComObject($closingDocument)) {
-          [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($closingDocument)
-        }
-      }
-    } catch { $cleanupFailures += "CLOSE失敗: $($_.Exception.Message)"; Write-Evidence "CLOSE error=$($_.Exception.Message)" }
+    Close-CadApplication $application $ownedPid ([ref]$cleanupFailures) -CloseFailurePrefix "CLOSE失敗" -QuitFailurePrefix "QUIT失敗"
   }
-  if ($null -ne $application) { try { $application.Quit(); Write-Evidence "QUIT ok" } catch { $cleanupFailures += "QUIT失敗: $($_.Exception.Message)"; Write-Evidence "QUIT error=$($_.Exception.Message)" } }
-  if ($messageFilterRegistered) { try { [CadPeta.CompatMessageFilter]::Revoke(); Write-Evidence "MSGFILTER revoked" } catch { Write-Evidence "MSGFILTER revoke error=$($_.Exception.Message)" } }
-  foreach ($comObject in @($uiShell, $document, $application, $candidateApplication)) {
-    if ($null -ne $comObject -and [Runtime.InteropServices.Marshal]::IsComObject($comObject)) {
-      try { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($comObject) } catch {}
-    }
-  }
-  [GC]::Collect(); [GC]::WaitForPendingFinalizers()
-  if ($ownedPid -gt 0) {
-    $deadline = (Get-Date).AddSeconds($ProcessExitTimeoutSeconds)
-    while ((Get-Process -Id $ownedPid -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds $PollMilliseconds }
-    if (Get-Process -Id $ownedPid -ErrorAction SilentlyContinue) {
-      if ($AllowForceStop) { Write-Evidence "FORCE_STOP explicitly-allowed owned PID=$ownedPid"; Stop-Process -Id $ownedPid -Force }
-      else {
-        $cleanupFailures += "owned PID=$ownedPid remained after Quit"
-        Write-Evidence "RESIDUAL owned PID=$ownedPid force-stop=disabled"
-      }
-    }
-  }
+  Release-CadComResources $messageFilterRegistered @($uiShell, $document, $application, $candidateApplication)
   # 起動したが ROT 接続先にならなかったプロセス（1つ目・2つ目のうち捨てになった方）の後始末。
   # 自分が起動し exe で起動した所有プロセスのみが対象
-  foreach ($extra in @($startedProcess, $secondaryProcess)) {
-    if ($null -ne $extra -and $extra.Id -ne $ownedPid -and
-        (Get-Process -Id $extra.Id -ErrorAction SilentlyContinue)) {
-      if ($AllowForceStop) { Write-Evidence "FORCE_STOP explicitly-allowed extra PID=$($extra.Id)"; Stop-Process -Id $extra.Id -Force }
-      else {
-        $cleanupFailures += "extra PID=$($extra.Id) remained"
-        Write-Evidence "RESIDUAL extra PID=$($extra.Id) force-stop=disabled"
-      }
-    }
-  }
-  if (Test-Path -LiteralPath $dwgCopy) {
-    $hashAfter = (Get-FileHash -LiteralPath $dwgCopy -Algorithm SHA256).Hash
-    Write-Evidence "DWG_HASH before=$dwgHash after=$hashAfter unchanged=$($hashAfter -eq $dwgHash)"
-  }
+  Stop-CadSessionProcesses $ownedPid $ProcessExitTimeoutSeconds @($startedProcess, $secondaryProcess) $dwgCopy $dwgHash ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop
+  Remove-CompatPluginStage $pluginStage ([ref]$cleanupFailures)
+  Resume-CompatProductAutoload $autoloadState $exe ([ref]$cleanupFailures)
   Write-Evidence "END completed=$completed"
   if ($caseSummaries.Count -gt 0) {
     Write-Output ""

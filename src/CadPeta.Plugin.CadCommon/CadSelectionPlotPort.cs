@@ -1,10 +1,14 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using CadPeta.Geometry;
 #if CADPETA_ACAD
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 using CadRuntimeException = Autodesk.AutoCAD.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Acad.AcadPluginDefaults;
-using ProductPlotPort = CadPeta.Plugin.Acad.AcadPlotPort;
 namespace CadPeta.Plugin.Acad;
 #elif CADPETA_ARES
 using Teigha.ApplicationServices;
@@ -12,7 +16,6 @@ using Teigha.DatabaseServices;
 using Teigha.Geometry;
 using CadRuntimeException = Teigha.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Ares.AresPluginDefaults;
-using ProductPlotPort = CadPeta.Plugin.Ares.AresPlotPort;
 namespace CadPeta.Plugin.Ares;
 #elif CADPETA_IJCAD
 using Itjp.Ijcad.ApplicationServices;
@@ -20,7 +23,6 @@ using Itjp.Ijcad.DatabaseServices;
 using Itjp.Ijcad.Geometry;
 using CadRuntimeException = Itjp.Ijcad.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Ijcad.IjcadPluginDefaults;
-using ProductPlotPort = CadPeta.Plugin.Ijcad.IjcadPlotPort;
 namespace CadPeta.Plugin.Ijcad;
 #elif CADPETA_BRICSCAD
 using Bricscad.ApplicationServices;
@@ -28,7 +30,6 @@ using Teigha.DatabaseServices;
 using Teigha.Geometry;
 using CadRuntimeException = Teigha.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Bricscad.BricscadPluginDefaults;
-using ProductPlotPort = CadPeta.Plugin.Bricscad.BricscadPlotPort;
 namespace CadPeta.Plugin.Bricscad;
 #else
 #error CAD product symbol is required
@@ -60,6 +61,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         // SupportedCount==0 で中止する）の下で null 非対応のまま扱ってよい
         Database? _sideDb;
         readonly Database _sourceDb;
+        readonly Document _sourceDoc;
         Transaction? _sourceIsolation;
         IsolationSnapshot? _isolationSnapshot;
         bool _disposed;
@@ -72,6 +74,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         public Session(Document doc, ObjectId[] ids, TextWriter log, TextWriter verbose)
         {
             _sourceDb = doc.Database;
+            _sourceDoc = doc;
             SelectedCount = ids.Length;
             var supported = new ObjectIdCollection();
             var viewportClipIds = new ObjectIdCollection();
@@ -160,7 +163,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                     if (!sourceIsModelSpace && hasSelectedViewport)
                     {
                         // throwし得るPlotPort構築を先に完了し、Transaction取得後は代入だけにする。
-                        var plotter = new ProductPlotPort(doc);
+                        var plotter = new CadPlotPort(doc);
                         _sourceIsolation = BeginPaperViewportIsolation(doc.Database, supported,
                             viewportClipIds, out _isolationSnapshot);
                         Plotter = plotter;
@@ -198,7 +201,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                             throw new InvalidOperationException(Msg.Text("selplot.stb_mismatch"));
 
                         // 複製直後の図形は側DBのモデル空間 BTR にある。ペーパー空間源は
-                        // 側DBの紙レイアウトへ移し、元レイアウトと同じ座標系・用紙で
+                        // 側DBのレイアウトへ移し、元レイアウトと同じ座標系・用紙で
                         // 範囲プロットできるようにする
                         if (sourceIsModelSpace)
                         {
@@ -208,7 +211,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                         }
                         else
                         {
-                            // 紙レイアウトのプロット検証（PlotInfoValidator）は対象レイアウトが
+                            // レイアウトのプロット検証（PlotInfoValidator）は対象レイアウトが
                             // その DB のカレントであることを要求する（eLayoutNotCurrent）
                             MakeLayoutCurrent(_sideDb, targetLayoutId);
                         }
@@ -223,7 +226,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                         if (dumpStem != null)
                             TryDumpSideDatabase(_sideDb, targetBtrId, "ready", creationMethod,
                                 dumpStem, verbose);
-                        Plotter = new ProductPlotPort(doc, _sideDb, targetLayoutId);
+                        Plotter = new CadPlotPort(doc, _sideDb, targetLayoutId);
                     }
                     catch
                     {
@@ -256,8 +259,8 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                 var lt = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
                 var replacementLayers = new Dictionary<ObjectId, ObjectId>();
 
-                // Viewportと同時選択された紙図形も、他経路と同じく非印刷レイヤから一時退避する。
-                // 元レイヤ自体を変更するとViewport内のモデル図形まで変わるため、選択した紙図形だけを移す。
+                // Viewportと同時選択されたペーパー空間の図形も、他経路と同じく非印刷レイヤから一時退避する。
+                // 元レイヤ自体を変更するとViewport内のモデル図形まで変わるため、選択したペーパー空間の図形だけを移す。
                 foreach (ObjectId id in selected)
                 {
                     var entity = (Entity)tr.GetObject(id, OpenMode.ForRead, false, true);
@@ -271,13 +274,10 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                     if (!needsLayer) continue;
                     if (!replacementLayers.TryGetValue(layer.ObjectId, out ObjectId replacementId))
                     {
-                        lt.UpgradeOpen();
                         string baseName = $"CADPETA_SELECTION_{layer.ObjectId.Handle}";
                         string name = baseName;
                         for (int suffix = 1; lt.Has(name); suffix++) name = $"{baseName}_{suffix}";
-                        var replacement = NewPlotEnabledLayerRecord(name, layer);
-                        replacementId = lt.Add(replacement);
-                        tr.AddNewlyCreatedDBObject(replacement, true);
+                        replacementId = AddPlotEnabledLayer(tr, lt, name, layer).ObjectId;
                         replacementLayers[layer.ObjectId] = replacementId;
                         temporaryLayers.Add(replacementId);
                     }
@@ -342,6 +342,19 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                 (Entities, TemporaryLayers) = (entities, temporaryLayers);
         }
 
+        /// <summary>
+        /// 元の画層の色・線の太さ・線種・印刷スタイルを写した、印刷する画層を画層テーブルに足して返す
+        /// （非表示・凍結・印刷しない画層の図形を、印刷のあいだだけ移す先）。
+        /// </summary>
+        static LayerTableRecord AddPlotEnabledLayer(Transaction tr, LayerTable lt, string name, LayerTableRecord source)
+        {
+            lt.UpgradeOpen();
+            var record = NewPlotEnabledLayerRecord(name, source);
+            lt.Add(record);
+            tr.AddNewlyCreatedDBObject(record, true);
+            return record;
+        }
+
         static LayerTableRecord NewPlotEnabledLayerRecord(string name,
             LayerTableRecord source)
         {
@@ -360,7 +373,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         }
 
         /// <summary>
-        /// 紙空間図形はowner/layout/graphics contextを変えずに複製する。Viewportは表示内容を
+        /// ペーパー空間図形はowner/layout/graphics contextを変えずに複製する。Viewportは表示内容を
         /// 所有しないためモデル空間を含むDB全体を複製し、対象レイアウトから未選択図形だけを除く。
         /// </summary>
         static Database CreatePaperSideDatabase(Database source, string sourceLayoutName,
@@ -374,12 +387,10 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                 (targetLayoutId, targetBtrId) = FindPaperLayout(side, sourceLayoutName);
                 MakeLayoutCurrent(side, targetLayoutId);
 
-                Database saved = HostApplicationServices.WorkingDatabase;
-                try
+                var paperId = targetBtrId; // out 引数はラムダの中で使えないので写す
+                InWorkingDatabase(side, tr =>
                 {
-                    HostApplicationServices.WorkingDatabase = side;
-                    using var tr = side.TransactionManager.StartTransaction();
-                    var paper = (BlockTableRecord)tr.GetObject(targetBtrId, OpenMode.ForRead);
+                    var paper = (BlockTableRecord)tr.GetObject(paperId, OpenMode.ForRead);
                     foreach (ObjectId id in paper)
                     {
                         var entity = (Entity)tr.GetObject(id, OpenMode.ForRead);
@@ -390,11 +401,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                         entity.Erase();
                     }
                     tr.Commit();
-                }
-                finally
-                {
-                    HostApplicationServices.WorkingDatabase = saved;
-                }
+                });
 
                 var paperIds = new ObjectIdCollection();
                 foreach (ObjectId id in selected)
@@ -431,7 +438,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                 foreach (ObjectId id in sourceIds)
                 {
                     var entity = tr.GetObject(id, OpenMode.ForRead) as Entity
-                        ?? throw new InvalidOperationException($"紙空間の元IDがEntityではない: {id}");
+                        ?? throw new InvalidOperationException($"ペーパー空間の元IDがEntityではない: {id}");
                     sourceTypes[id] = entity.GetType().Name;
                 }
             }
@@ -445,36 +452,29 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             {
                 if (!map.Contains(sourceId))
                     throw new InvalidOperationException(
-                        $"紙空間複製のID対応がない: {sourceId.Handle}");
+                        $"ペーパー空間複製のID対応がない: {sourceId.Handle}");
                 IdPair pair = map[sourceId];
                 if (!pair.IsCloned || !pair.IsPrimary || pair.Value.IsNull ||
                     !pair.Value.IsValid || pair.Value.IsErased || !targets.Add(pair.Value))
                     throw new InvalidOperationException(
-                        $"紙空間複製のID対応が不正: {sourceId.Handle}");
+                        $"ペーパー空間複製のID対応が不正: {sourceId.Handle}");
                 result[sourceId] = pair.Value;
             }
 
-            Database saved = HostApplicationServices.WorkingDatabase;
-            try
+            InWorkingDatabase(side, tr =>
             {
-                HostApplicationServices.WorkingDatabase = side;
-                using var tr = side.TransactionManager.StartTransaction();
                 foreach (var pair in result)
                 {
                     var entity = tr.GetObject(pair.Value, OpenMode.ForRead) as Entity
                         ?? throw new InvalidOperationException(
-                            $"紙空間複製後のIDがEntityではない: {pair.Key.Handle}");
+                            $"ペーパー空間複製後のIDがEntityではない: {pair.Key.Handle}");
                     if (entity.OwnerId != targetOwnerId ||
                         !string.Equals(entity.GetType().Name, sourceTypes[pair.Key],
                             StringComparison.Ordinal))
                         throw new InvalidOperationException(
-                            $"紙空間複製後のownerまたは型が一致しない: {pair.Key.Handle}");
+                            $"ペーパー空間複製後のownerまたは型が一致しない: {pair.Key.Handle}");
                 }
-            }
-            finally
-            {
-                HostApplicationServices.WorkingDatabase = saved;
-            }
+            });
             return result;
         }
 
@@ -513,7 +513,8 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                             log.WriteLine(Msg.Format("selplot.translation_normalized", displacement));
                             return side;
                         }
-                        log.WriteLine(Msg.Format("selplot.wblock_mismatch", mismatch));
+                        log.WriteLine(Msg.Format("selplot.wblock_mismatch",
+                            SideDatabaseSnapshotComparer.Describe(sourceSnapshot, candidate)));
                         side.Dispose();
                         side = null;
                     }
@@ -558,7 +559,8 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                     return side;
                 }
                 if (cloneMismatch != SideDatabaseSnapshotMismatch.None)
-                    throw new InvalidOperationException(Msg.Format("selplot.clone_mismatch", cloneMismatch));
+                    throw new InvalidOperationException(Msg.Format("selplot.clone_mismatch",
+                        SideDatabaseSnapshotComparer.Describe(sourceSnapshot, cloneSnapshot)));
                 creationMethod = "clone";
                 return side;
             }
@@ -579,11 +581,8 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                 return false;
 
             var vector = new Vector3d(displacement[0], displacement[1], displacement[2]);
-            Database saved = HostApplicationServices.WorkingDatabase;
-            try
+            InWorkingDatabase(side, tr =>
             {
-                HostApplicationServices.WorkingDatabase = side;
-                using var tr = side.TransactionManager.StartTransaction();
                 var model = (BlockTableRecord)tr.GetObject(modelId, OpenMode.ForRead);
                 var matrix = Matrix3d.Displacement(vector);
                 foreach (ObjectId id in model)
@@ -592,11 +591,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                     entity.TransformBy(matrix);
                 }
                 tr.Commit();
-            }
-            finally
-            {
-                HostApplicationServices.WorkingDatabase = saved;
-            }
+            });
             side.UpdateExt(true);
 
             var normalized = CaptureSideDatabaseMetadata(side, modelId,
@@ -628,82 +623,27 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         static SideDatabaseMetadata CaptureSelectionMetadata(Database db,
             ObjectIdCollection ids)
         {
-            var types = new SortedDictionary<string, int>(StringComparer.Ordinal);
-            int count = 0;
-            int extentsUnavailable = 0;
-            bool hasExtents = false;
-            double minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0;
+            var inventory = new EntityInventory();
             using (var tr = db.TransactionManager.StartTransaction())
             {
                 foreach (ObjectId id in ids)
-                {
-                    count++;
-                    Entity? entity = null;
-                    try
-                    {
-                        entity = tr.GetObject(id, OpenMode.ForRead) as Entity;
-                        string type = entity?.GetType().Name ?? "NonEntity";
-                        types[type] = types.TryGetValue(type, out int old) ? old + 1 : 1;
-                        if (entity == null)
-                        {
-                            extentsUnavailable++;
-                            continue;
-                        }
-                        if (!TryGetStableExtents(entity, out Extents3d ext))
-                        {
-                            extentsUnavailable++;
-                            continue;
-                        }
-                        if (!hasExtents)
-                        {
-                            minX = ext.MinPoint.X; minY = ext.MinPoint.Y; minZ = ext.MinPoint.Z;
-                            maxX = ext.MaxPoint.X; maxY = ext.MaxPoint.Y; maxZ = ext.MaxPoint.Z;
-                            hasExtents = true;
-                        }
-                        else
-                        {
-                            minX = Math.Min(minX, ext.MinPoint.X); minY = Math.Min(minY, ext.MinPoint.Y);
-                            minZ = Math.Min(minZ, ext.MinPoint.Z); maxX = Math.Max(maxX, ext.MaxPoint.X);
-                            maxY = Math.Max(maxY, ext.MaxPoint.Y); maxZ = Math.Max(maxZ, ext.MaxPoint.Z);
-                        }
-                    }
-                    catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
-                    {
-                        extentsUnavailable++;
-                        if (entity == null)
-                        {
-                            const string unavailable = "Unavailable";
-                            types[unavailable] = types.TryGetValue(unavailable, out int old)
-                                ? old + 1 : 1;
-                        }
-                    }
-                }
+                    inventory.Add(tr, id);
             }
             return new SideDatabaseMetadata
             {
                 Observation = "source",
                 CreationMethod = "source",
-                EntityCount = count,
-                EntityTypes = types,
-                ExtentsUnavailableCount = extentsUnavailable,
-                Extents = hasExtents
-                    ? new SideDatabaseExtents
-                    {
-                        Min = new[] { minX, minY, minZ },
-                        Max = new[] { maxX, maxY, maxZ },
-                    }
-                    : null,
+                EntityCount = inventory.Count,
+                EntityTypes = inventory.Types,
+                ExtentsUnavailableCount = inventory.ExtentsUnavailable,
+                Extents = inventory.Extents,
             };
         }
 
         static SideDatabaseMetadata CaptureSideDatabaseMetadata(Database db, ObjectId btrId,
             string observation, string creationMethod)
         {
-            var types = new SortedDictionary<string, int>(StringComparer.Ordinal);
-            int count = 0;
-            int extentsUnavailable = 0;
-            bool hasExtents = false;
-            double minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0;
+            var inventory = new EntityInventory();
             var view = new SortedDictionary<string, string?>(StringComparer.Ordinal);
             var layoutValues = new SortedDictionary<string, string?>(StringComparer.Ordinal);
             var plotValues = new SortedDictionary<string, string?>(StringComparer.Ordinal);
@@ -712,48 +652,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             {
                 var space = (BlockTableRecord)tr.GetObject(btrId, OpenMode.ForRead);
                 foreach (ObjectId id in space)
-                {
-                    count++;
-                    Entity? entity = null;
-                    try
-                    {
-                        entity = tr.GetObject(id, OpenMode.ForRead) as Entity;
-                        string type = entity?.GetType().Name ?? "NonEntity";
-                        types[type] = types.TryGetValue(type, out int old) ? old + 1 : 1;
-                        if (entity == null)
-                        {
-                            extentsUnavailable++;
-                            continue;
-                        }
-                        if (!TryGetStableExtents(entity, out Extents3d ext))
-                        {
-                            extentsUnavailable++;
-                            continue;
-                        }
-                        if (!hasExtents)
-                        {
-                            minX = ext.MinPoint.X; minY = ext.MinPoint.Y; minZ = ext.MinPoint.Z;
-                            maxX = ext.MaxPoint.X; maxY = ext.MaxPoint.Y; maxZ = ext.MaxPoint.Z;
-                            hasExtents = true;
-                        }
-                        else
-                        {
-                            minX = Math.Min(minX, ext.MinPoint.X); minY = Math.Min(minY, ext.MinPoint.Y);
-                            minZ = Math.Min(minZ, ext.MinPoint.Z); maxX = Math.Max(maxX, ext.MaxPoint.X);
-                            maxY = Math.Max(maxY, ext.MaxPoint.Y); maxZ = Math.Max(maxZ, ext.MaxPoint.Z);
-                        }
-                    }
-                    catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
-                    {
-                        extentsUnavailable++;
-                        if (entity == null)
-                        {
-                            const string unavailable = "Unavailable";
-                            types[unavailable] = types.TryGetValue(unavailable, out int old) ? old + 1 : 1;
-                        }
-                    }
-                }
-
+                    inventory.Add(tr, id);
                 var layout = (Layout)tr.GetObject(space.LayoutId, OpenMode.ForRead);
                 CaptureProperties(layout, layoutValues, "LayoutName", "ModelType", "TabOrder");
                 CaptureProperties(layout, plotValues,
@@ -783,22 +682,68 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             {
                 Observation = observation,
                 CreationMethod = creationMethod,
-                EntityCount = count,
-                EntityTypes = types,
-                ExtentsUnavailableCount = extentsUnavailable,
-                Extents = hasExtents
-                    ? new SideDatabaseExtents
-                    {
-                        Min = new[] { minX, minY, minZ },
-                        Max = new[] { maxX, maxY, maxZ },
-                    }
-                    : null,
+                EntityCount = inventory.Count,
+                EntityTypes = inventory.Types,
+                ExtentsUnavailableCount = inventory.ExtentsUnavailable,
+                Extents = inventory.Extents,
                 View = view,
                 Layout = layoutValues,
                 PlotSettings = plotValues,
             };
         }
 
+        /// <summary>
+        /// 図形の種類ごとの数と、範囲を取れた図形の範囲の和（元の選択と側DB の計測の記録で共通）。
+        /// 範囲を取れない図形・読めない図形も数え、種類は "NonEntity"・"Unavailable" として残す。
+        /// </summary>
+        sealed class EntityInventory
+        {
+            public SortedDictionary<string, int> Types { get; } = new(StringComparer.Ordinal);
+            public int Count { get; private set; }
+            public int ExtentsUnavailable { get; private set; }
+            bool _hasExtents;
+            double _minX, _minY, _minZ, _maxX, _maxY, _maxZ;
+
+            public SideDatabaseExtents? Extents => _hasExtents
+                ? new SideDatabaseExtents { Min = new[] { _minX, _minY, _minZ }, Max = new[] { _maxX, _maxY, _maxZ } }
+                : null;
+
+            void CountType(string type) => Types[type] = Types.TryGetValue(type, out int old) ? old + 1 : 1;
+
+            public void Add(Transaction tr, ObjectId id)
+            {
+                Count++;
+                Entity? entity = null;
+                try
+                {
+                    entity = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                    CountType(entity?.GetType().Name ?? "NonEntity");
+                    if (entity == null || !TryGetStableExtents(entity, out Extents3d ext))
+                    {
+                        ExtentsUnavailable++;
+                        return;
+                    }
+                    if (!_hasExtents)
+                    {
+                        _minX = ext.MinPoint.X; _minY = ext.MinPoint.Y; _minZ = ext.MinPoint.Z;
+                        _maxX = ext.MaxPoint.X; _maxY = ext.MaxPoint.Y; _maxZ = ext.MaxPoint.Z;
+                        _hasExtents = true;
+                    }
+                    else
+                    {
+                        _minX = Math.Min(_minX, ext.MinPoint.X); _minY = Math.Min(_minY, ext.MinPoint.Y);
+                        _minZ = Math.Min(_minZ, ext.MinPoint.Z); _maxX = Math.Max(_maxX, ext.MaxPoint.X);
+                        _maxY = Math.Max(_maxY, ext.MaxPoint.Y); _maxZ = Math.Max(_maxZ, ext.MaxPoint.Z);
+                    }
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+                {
+                    ExtentsUnavailable++;
+                    if (entity == null)
+                        CountType("Unavailable");
+                }
+            }
+        }
         static void CaptureProperties(object source, IDictionary<string, string?> target,
             params string[] propertyNames)
         {
@@ -819,47 +764,67 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             }
         }
 
+        // 元の選択と側DB の照合に使う範囲。表示の状態で変わる GeometricExtents を避け、図形の定義の点から求める。
+        // ARES 2027 は幅のあるポリラインとスプラインの GeometricExtents を、レイアウトで印刷した後の元図面では
+        // 線の幅などを含めて返し、表示していない側DB では含めずに返した（2026-10-25 実測。幅 0.6 のポリラインで
+        // 元図面 337.905〜390.066、側DB 338〜390）。照合は一様な平行移動と欠落を見つけるためのものなので、
+        // 両方で同じ点から作れば足りる。この 2 種類と OLE 以外は GeometricExtents を使う
         static bool TryGetStableExtents(Entity entity, out Extents3d extents)
         {
-            if (entity is Ole2Frame ole)
+            extents = default;
+            switch (entity)
             {
-                var rectangle = ole.Position3d;
-                Point3d[] points =
-                {
-                    rectangle.LowerLeft,
-                    rectangle.LowerRight,
-                    rectangle.UpperLeft,
-                    rectangle.UpperRight,
-                };
-                double minX = points.Min(p => p.X);
-                double minY = points.Min(p => p.Y);
-                double minZ = points.Min(p => p.Z);
-                double maxX = points.Max(p => p.X);
-                double maxY = points.Max(p => p.Y);
-                double maxZ = points.Max(p => p.Z);
-                extents = new Extents3d(
-                    new Point3d(minX, minY, minZ),
-                    new Point3d(maxX, maxY, maxZ));
+                case Ole2Frame ole:
+                    var rectangle = ole.Position3d;
+                    return TryGetBox(new[]
+                    {
+                        rectangle.LowerLeft,
+                        rectangle.LowerRight,
+                        rectangle.UpperLeft,
+                        rectangle.UpperRight,
+                    }, out extents);
+                case Polyline polyline:
+                    return TryGetBox(Enumerable.Range(0, polyline.NumberOfVertices)
+                        .Select(polyline.GetPoint3dAt), out extents);
+                case Spline spline:
+                    return TryGetBox(Enumerable.Range(0, spline.NumControlPoints)
+                        .Select(spline.GetControlPointAt), out extents);
             }
-            else
-            {
-                extents = entity.GeometricExtents;
-            }
-            return IsFinite(extents.MinPoint.X) && IsFinite(extents.MinPoint.Y) &&
-                IsFinite(extents.MinPoint.Z) && IsFinite(extents.MaxPoint.X) &&
-                IsFinite(extents.MaxPoint.Y) && IsFinite(extents.MaxPoint.Z) &&
+            extents = entity.GeometricExtents;
+            return IsValidExtents(extents);
+        }
+
+        static bool TryGetBox(IEnumerable<Point3d> source, out Extents3d extents)
+        {
+            extents = default;
+            var points = source.ToList();
+            if (points.Count == 0) return false;
+            extents = new Extents3d(
+                new Point3d(points.Min(p => p.X), points.Min(p => p.Y), points.Min(p => p.Z)),
+                new Point3d(points.Max(p => p.X), points.Max(p => p.Y), points.Max(p => p.Z)));
+            return IsValidExtents(extents);
+        }
+
+        static bool IsValidExtents(Extents3d extents)
+        {
+            return Numbers.IsFinite(extents.MinPoint.X) && Numbers.IsFinite(extents.MinPoint.Y) &&
+                Numbers.IsFinite(extents.MinPoint.Z) && Numbers.IsFinite(extents.MaxPoint.X) &&
+                Numbers.IsFinite(extents.MaxPoint.Y) && Numbers.IsFinite(extents.MaxPoint.Z) &&
                 extents.MinPoint.X <= extents.MaxPoint.X &&
                 extents.MinPoint.Y <= extents.MaxPoint.Y &&
                 extents.MinPoint.Z <= extents.MaxPoint.Z;
         }
 
-        static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+        static BlockTableRecord OpenModelSpace(Transaction tr, Database db)
+        {
+            var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+            return (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+        }
 
         static bool ModelSpaceHasEntities(Database db)
         {
             using var tr = db.TransactionManager.StartTransaction();
-            var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
-            var model = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+            var model = OpenModelSpace(tr, db);
             foreach (ObjectId _ in model) return true;
             return false;
         }
@@ -867,33 +832,55 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         static (ObjectId LayoutId, ObjectId BtrId) GetModelLayout(Database db)
         {
             using var tr = db.TransactionManager.StartTransaction();
-            var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
-            var model = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+            var model = OpenModelSpace(tr, db);
             return (model.LayoutId, model.ObjectId);
         }
 
-        static (ObjectId LayoutId, ObjectId BtrId) FindPaperLayout(Database db,
-            string layoutName)
+        /// <summary>
+        /// <paramref name="db"/> を作業中の図面（HostApplicationServices.WorkingDatabase）にして <paramref name="body"/> を実行し、
+        /// 作業中の図面を必ず元へ戻す。LayoutManager や図形の一部の操作は作業中の図面を対象にするため、側DB を扱う間だけ差し替える。
+        /// </summary>
+        static T WithWorkingDatabase<T>(Database db, Func<T> body)
         {
             Database saved = HostApplicationServices.WorkingDatabase;
             try
             {
                 HostApplicationServices.WorkingDatabase = db;
+                return body();
+            }
+            finally
+            {
+                HostApplicationServices.WorkingDatabase = saved;
+            }
+        }
+
+        /// <summary><paramref name="db"/> を作業中の図面にし、そのトランザクションで <paramref name="body"/> を実行する（確定は body が Commit で行う）。</summary>
+        static T InWorkingDatabase<T>(Database db, Func<Transaction, T> body) =>
+            WithWorkingDatabase(db, () =>
+            {
                 using var tr = db.TransactionManager.StartTransaction();
+                return body(tr);
+            });
+
+        static void InWorkingDatabase(Database db, Action<Transaction> body) =>
+            InWorkingDatabase(db, tr => { body(tr); return true; });
+
+        static (ObjectId LayoutId, ObjectId BtrId) FindPaperLayout(Database db,
+            string layoutName)
+        {
+            var found = InWorkingDatabase(db, tr =>
+            {
                 var dict = (DBDictionary)tr.GetObject(db.LayoutDictionaryId, OpenMode.ForRead);
                 foreach (DBDictionaryEntry entry in dict)
                 {
                     var layout = (Layout)tr.GetObject(entry.Value, OpenMode.ForRead);
                     if (!layout.ModelType && string.Equals(layout.LayoutName, layoutName,
                             StringComparison.Ordinal))
-                        return (layout.ObjectId, layout.BlockTableRecordId);
+                        return ((ObjectId LayoutId, ObjectId BtrId)?)(layout.ObjectId, layout.BlockTableRecordId);
                 }
-            }
-            finally
-            {
-                HostApplicationServices.WorkingDatabase = saved;
-            }
-            throw new InvalidOperationException($"Wblock後の側DBに元レイアウトがない: {layoutName}");
+                return null;
+            });
+            return found ?? throw new InvalidOperationException($"Wblock後の側DBに元レイアウトがない: {layoutName}");
         }
 
         /// <summary>
@@ -943,16 +930,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                 var layout = (Layout)tr.GetObject(layoutId, OpenMode.ForRead);
                 layoutName = layout.LayoutName;
             }
-            Database saved = HostApplicationServices.WorkingDatabase;
-            try
-            {
-                HostApplicationServices.WorkingDatabase = db;
-                LayoutManager.Current.CurrentLayout = layoutName;
-            }
-            finally
-            {
-                HostApplicationServices.WorkingDatabase = saved;
-            }
+            WithWorkingDatabase(db, () => LayoutManager.Current.CurrentLayout = layoutName);
         }
 
         /// <summary>側DBの対象レイアウトへ元レイアウトのページ設定を複製する。</summary>
@@ -969,11 +947,8 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             // Teigha 系ホストは側DBの Entity ラッパー生成時にも WorkingDatabase を参照する。
             // 元図面のままでは側DBの ObjectId を開く際に eWrongDatabase となるため、
             // 側DBの図形を開く区間だけ差し替え、例外時も必ず元へ戻す。
-            Database saved = HostApplicationServices.WorkingDatabase;
-            try
+            InWorkingDatabase(db, tr =>
             {
-                HostApplicationServices.WorkingDatabase = db;
-                using var tr = db.TransactionManager.StartTransaction();
                 var space = (BlockTableRecord)tr.GetObject(btrId, OpenMode.ForRead);
                 var lt = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
                 LayerTableRecord? defTarget = null;
@@ -990,36 +965,39 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                                 // 元図面由来の同名レイヤはオフ・フリーズのまま複製され得るため、印刷可能化と併せて解除する
                                 defTarget = (LayerTableRecord)tr.GetObject(
                                     lt[PlotEnabledLayerName], OpenMode.ForWrite);
-                                defTarget.IsOff = false; defTarget.IsFrozen = false;
-                                defTarget.IsPlottable = true;
+                                EnablePlotting(defTarget);
                             }
                             else
                             {
-                                lt.UpgradeOpen();
-                                defTarget = NewPlotEnabledLayerRecord(PlotEnabledLayerName, layer);
-                                lt.Add(defTarget); tr.AddNewlyCreatedDBObject(defTarget, true); defTarget.IsPlottable = true;
+                                defTarget = AddPlotEnabledLayer(tr, lt, PlotEnabledLayerName, layer);
                             }
                             ent.LayerId = defTarget.ObjectId;
                         }
                         else ent.LayerId = defTarget.ObjectId;
                     }
-                    else { layer.IsOff = false; layer.IsFrozen = false; layer.IsPlottable = true; }
+                    else EnablePlotting(layer);
                 }
                 tr.Commit();
-            }
-            finally
-            {
-                HostApplicationServices.WorkingDatabase = saved;
-            }
+            });
+        }
+
+        /// <summary>
+        /// 画層を表示・凍結解除・印刷可にする。値が違うものだけを書く。
+        /// 側DB は Wblock で元図面の現在の画層を引き継ぎ、作業中の図面を側DB に切り替えている間は、
+        /// その画層の IsFrozen に書くと値が同じでも AutoCAD が eInvalidLayer を返す。
+        /// 現在の画層は凍結できないので、凍結の解除が要るのは現在の画層ではないときだけになる。
+        /// </summary>
+        static void EnablePlotting(LayerTableRecord layer)
+        {
+            if (layer.IsOff) layer.IsOff = false;
+            if (layer.IsFrozen) layer.IsFrozen = false;
+            if (!layer.IsPlottable) layer.IsPlottable = true;
         }
 
         static void PreparePaperEntities(Database db, IReadOnlyList<ObjectId> selectedIds)
         {
-            Database saved = HostApplicationServices.WorkingDatabase;
-            try
+            InWorkingDatabase(db, tr =>
             {
-                HostApplicationServices.WorkingDatabase = db;
-                using var tr = db.TransactionManager.StartTransaction();
                 var lt = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
                 var replacementLayers = new Dictionary<ObjectId, ObjectId>();
                 foreach (ObjectId id in selectedIds)
@@ -1030,21 +1008,13 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                     if (!layer.IsOff && !layer.IsFrozen && layer.IsPlottable) continue;
                     if (!replacementLayers.TryGetValue(layer.ObjectId, out ObjectId replacementId))
                     {
-                        lt.UpgradeOpen();
-                        var replacement = NewPlotEnabledLayerRecord(
-                            $"CADPETA_SELECTION_{layer.ObjectId.Handle}", layer);
-                        replacementId = lt.Add(replacement);
-                        tr.AddNewlyCreatedDBObject(replacement, true);
+                        replacementId = AddPlotEnabledLayer(tr, lt, $"CADPETA_SELECTION_{layer.ObjectId.Handle}", layer).ObjectId;
                         replacementLayers[layer.ObjectId] = replacementId;
                     }
                     entity.LayerId = replacementId;
                 }
                 tr.Commit();
-            }
-            finally
-            {
-                HostApplicationServices.WorkingDatabase = saved;
-            }
+            });
         }
 
         public void Dispose()
@@ -1070,7 +1040,15 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                     if (isolationReleased && snapshot != null)
                         VerifyPaperViewportIsolationRestored(_sourceDb, snapshot);
                 },
-                () => sideDb?.Dispose());
+                () => sideDb?.Dispose(),
+                () =>
+                {
+                    // 側DB を印刷して破棄した直後の、元の図面の最初の印刷だけ、側DB に複製した文字の
+                    // TrueType フォント（Arial）が別のフォント（MS ゴシック）で印刷される（AutoCAD 2026 で確認。
+                    // 2 回目の印刷と、間で元の図面を再作図したときは起きない）。元の図面を再作図して、
+                    // 次の印刷を側DB を使う前と同じにする
+                    if (sideDb != null) _sourceDoc.Editor.Regen();
+                });
         }
     }
 }

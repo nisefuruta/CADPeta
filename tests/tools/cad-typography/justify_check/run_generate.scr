@@ -1,14 +1,12 @@
-(setvar "SECURELOAD" 0)
 (setvar "CMDECHO" 1)
-(load "C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/justify_check/build_justify_chart.lsp")
+(load "C:/Tools/ACAD/lisp/build_justify_chart.lsp")
 (c:BUILDJUSTIFYCHART "C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/justify_check/anchors.tsv" "C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/justify_check/entget_dump.tsv")
-(setvar "SECURELOAD" 1)
 _.SAVEAS 2018 C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/justify_check/justify_chart.dwg
 -PLOT
 Y
 Model
 AutoCAD PDF (High Quality Print).pc3
-ISO ï¿½tï¿½ï¿½ï¿½uï¿½ï¿½ï¿½[ï¿½h A3 (420.00 x 297.00 ï¿½~ï¿½ï¿½)
+ISO ƒtƒ‹ƒuƒŠ[ƒh A3 (420.00 x 297.00 ƒ~ƒŠ)
 M
 L
 N

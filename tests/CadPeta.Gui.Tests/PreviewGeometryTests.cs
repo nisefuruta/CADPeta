@@ -1,5 +1,6 @@
+using System;
+using System.Linq;
 using System.Drawing;
-using CadPeta.Gui;
 using CadPeta.Ir;
 using CadPeta.Transforms;
 using Xunit;

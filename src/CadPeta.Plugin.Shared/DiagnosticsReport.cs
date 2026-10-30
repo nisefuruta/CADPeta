@@ -1,8 +1,10 @@
 // 診断モード（PETADIAG／PETADATADIAG）共通の診断出力。変換各段のSVGダンプ・diag.jsonの
 // 直列化・コンソールへの件数サマリを一箇所へ集約し、PetaRunner と SvgExportRunner の
 // 両方から使う（書式のドリフト防止。ここに CAD 型は現れない）。
-using System.Text;
-using System.Text.Json;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.Serialization;
 using CadPeta.Ir;
 using CadPeta.UseCases;
 
@@ -24,7 +26,7 @@ public static class DiagnosticsReport
             {
                 // 診断ダンプだけが出所メタデータ（data-*）を残す。
                 // 通常の SVG 出力は既定＝除去のまま
-                File.WriteAllText(path, SvgWriter.Write(ir, includeProvenance: true), new UTF8Encoding(false));
+                File.WriteAllText(path, SvgWriter.Write(ir, includeProvenance: true), TextEncodings.Utf8NoBom);
                 log.WriteLine(Msg.Format("diag.dump", path));
             }
             catch (Exception ex) when (IsDumpFailure(ex))
@@ -49,23 +51,27 @@ public static class DiagnosticsReport
     /// </summary>
     public static void WriteDiagJson(TextWriter log, string svgPath, IrDiagnostics diagnostics)
     {
-        var diagOut = new List<object>();
+        var diagOut = new List<DiagJsonEntry>();
         log.WriteLine(Msg.Text("diag.header"));
         foreach (var (type, count, targets) in diagnostics.Summarize())
         {
             // diag.json へは type/count/targets を原文のまま直列化する（機械比較の成果物。
             // 翻訳するのはコンソール表示の書式だけ）
             log.WriteLine(Msg.Format("diag.count_line", type, count));
-            diagOut.Add(new { type, count, targets });
+            diagOut.Add(new DiagJsonEntry { Type = type, Count = count, Targets = new List<string>(targets) });
         }
         if (diagnostics.Entries.Count == 0) log.WriteLine(Msg.Text("diag.none"));
-        File.WriteAllText(svgPath + ".diag.json",
-            JsonSerializer.Serialize(diagOut, new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            }), new UTF8Encoding(false));
+        File.WriteAllText(svgPath + ".diag.json", PluginJson.Serialize(diagOut, indented: true), TextEncodings.Utf8NoBom);
         log.WriteLine(Msg.Format("diag.json_written", svgPath));
+    }
+
+    // diag.json の 1 項目（種別・件数・対象）。名前と順番は試験のスクリプトとの約束
+    [DataContract]
+    sealed class DiagJsonEntry
+    {
+        [DataMember(Name = "type", Order = 1)] public string Type { get; set; } = "";
+        [DataMember(Name = "count", Order = 2)] public int Count { get; set; }
+        [DataMember(Name = "targets", Order = 3)] public List<string> Targets { get; set; } = new();
     }
 
     // 診断ダンプで「その出力先は使えない／IR を直列化できない」を意味する例外の判別。

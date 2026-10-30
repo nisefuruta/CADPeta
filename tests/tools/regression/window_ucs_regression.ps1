@@ -26,25 +26,27 @@
 # 条件は DVIEW と UCS コマンドで実行時に作る（実測: accoreconsole の LISP から
 # `_.DVIEW "" _PO <目標点> <視点> ""` で目標点、`_.DVIEW "" _TW <角度> ""` でねじれを設定できる）。
 # 新しい図面資産を足さず、TESTCHART2 のモデル空間だけで完結させる。
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory)][string]$Ver,     # 2024 / 2026 / 2027
     [string]$OutRoot = "$env:TEMP\CadPeta_window_ucs_regression",
-    [string]$Config = "Debug",
-    [int]$TimeoutSeconds = 300
+    [int]$TimeoutSeconds = 300,  # 1 ケースの上限
+    # 指定したケースだけを、指定の順番で実行する（ケースの間の影響を調べるとき。群の比較は指定したケースの中で行う）
+    [string[]]$Only = @()
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'window_ucs_regression.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
-$tfm = switch ($Ver) {
-    "2024" { "net48" }
-    "2026" { "net8.0-windows" }
-    "2027" { "net10.0-windows" }
-    default { throw "未知の版: $Ver" }
-}
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$tfm = Get-CadPluginTargetFramework $Ver
 $acc = "C:\Program Files\Autodesk\AutoCAD $Ver\accoreconsole.exe"
-$plugin = "$repo\src\CadPeta.Plugin.Acad\bin\$Config\$tfm\CadPeta.Plugin.Acad.dll"
+$plugin = (Get-E2ePluginPath Acad $tfm)
 if (-not (Test-Path $acc)) { throw "accoreconsole がない: $acc" }
-if (-not (Test-Path $plugin)) { throw "プラグイン未ビルド: $plugin" }
 $dwgSrc = "$repo\tests\assets\testcharts\TESTCHART2.dwg"
 if (-not (Test-Path $dwgSrc)) { throw "入力図面がない: $dwgSrc" }
 
@@ -89,50 +91,48 @@ $cases = @(
        P1 = "64,2";      P2 = "186,-2" }
 )
 
-function Invoke-Case($c) {
-    $work = Join-Path $OutRoot "$($Ver)_$($c.Key)"
-    if (Test-Path $work) { Remove-Item -LiteralPath $work -Recurse -Force }
-    New-Item -ItemType Directory -Force $work | Out-Null
-    $dwgCopy = Join-Path $work "target.dwg"
-    Copy-Item $dwgSrc $dwgCopy
-    $srcHash = (Get-FileHash $dwgCopy -Algorithm SHA256).Hash
+# 全ケースを 1 回の起動で続けて実行する（tests/tools/common/accore_batch.ps1）。各ケースの最初の UCS とビューの状態を
+# マーカーで出力し、全ケースで同じであることを確かめる（前のケースの UCS・ビューが残ると、比べる前提が崩れる）。
+# 定常オブジェクトスナップは実行中だけ OSMODE=0 にする（スクリプト座標入力の2点目が近傍ジオメトリへ吸着し
+# pick が入力値からずれる。AutoCAD 2026 実測・BricsCAD と同種）。OSMODE はプロファイル保存のため QUIT 前に必ず元値へ戻す。
+# SECURELOAD と TRUSTEDPATHS は変えず、信頼済みのフォルダへコピーしたプラグインを NETLOAD する
+. "$PSScriptRoot\..\common\accore_batch.ps1"
+$head = @(
+    '(setvar "TILEMODE" 1)'
+    '(setq cpOsmOld (getvar "OSMODE"))'
+    '(setvar "OSMODE" 0)'
+) + (Get-AccoreNetloadLines $plugin)
+$tail = @('(setvar "OSMODE" cpOsmOld)', '_.QUIT', '_Y')
+# ケースの前に UNDO のマークを置き、ケースの後にマークまで戻す（UCS とビューの変更を取り消す）。
+# UCS とビューを UCS・DVIEW で明示的に初期値へ戻す方法は採らない。初期化そのものが、ねじれた画面の
+# 塗りつぶしの頂点を出力する順番を変え（形は同じで SVG のハッシュだけが変わる。AutoCAD 2026 で確認）、
+# 1 ケース 1 起動の結果と比べられなくなるため
+$markLines = @(
+    '(command "_.UNDO" "_M")'
+    '(princ "\nCADPETA_VIEW_STATE=")(prin1 (list (getvar "TARGET") (getvar "VIEWDIR") (getvar "VIEWTWIST") (getvar "UCSORG") (getvar "UCSXDIR") (getvar "UCSYDIR") (getvar "VIEWCTR") (getvar "VIEWSIZE")))(princ "\n")(princ)'
+)
+$backLines = @('(command "_.UNDO" "_B")')
+$Only = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
+if ($Only.Count -gt 0) { $cases = @(foreach ($key in $Only) { $c = $cases | Where-Object Key -eq $key; if (-not $c) { throw "未知のケース: $key" }; $c }) }
+$batchCases = @($cases | ForEach-Object { @{ Id = $_.Key; Lines = @($markLines) + $_.Setup + @("PETA", $_.P1, $_.P2) + $backLines; Def = $_ } })
 
-    # SECURELOAD は既定のまま、プラグインのフォルダだけを TRUSTEDPATHS へ一時追加して復元する
-    $pd = ([IO.Path]::GetDirectoryName($plugin)) -replace '\\','/'
-    $pl = $plugin -replace '\\','/'
-    $scr = Join-Path $work "run.scr"
-    # 定常オブジェクトスナップは実行中だけ OSMODE=0 にする（スクリプト座標入力の2点目が
-    # 近傍ジオメトリへ吸着し pick が入力値からずれる。AutoCAD 2026 実測・BricsCAD と同種）。
-    # OSMODE はプロファイル保存のため QUIT 前に必ず元値へ戻す
-    $body = @(
-        '(setvar "TILEMODE" 1)'
-        '(setq cpOsmOld (getvar "OSMODE"))'
-        '(setvar "OSMODE" 0)'
-        '(setq cpOld (getvar "TRUSTEDPATHS"))'
-        "(setvar `"TRUSTEDPATHS`" (if (= cpOld `"`") `"$pd`" (strcat cpOld `";`" `"$pd`")))"
-        "(command `"_.NETLOAD`" `"$pl`")"
-        '(setvar "TRUSTEDPATHS" cpOld)'
-    ) + $c.Setup + @("PETA", $c.P1, $c.P2, '(setvar "OSMODE" cpOsmOld)', "_.QUIT", "_Y")
-    ($body -join "`r`n") + "`r`n" | Out-File $scr -Encoding ascii -NoNewline
+function Complete-WindowUcsCase($r) {
+    $c = $r.Case.Def
+    if ($r.TimedOut) { throw "[$($c.Key)] $($r.TimeoutDetail)（$($r.StdoutPath)）" }
+    if ($r.ExitCode -ne 0) { throw "[$($c.Key)] accoreconsole が異常終了した: $($r.ExitDetail)" }
+    if (-not $r.DwgUnchanged) { throw "[$($c.Key)] 入力 DWG が変更された" }
+    if (-not $r.State.Ok) { throw "[$($c.Key)] $($r.State.Detail)" }
+    if ($r.Output -notmatch 'CADPETA_VIEW_STATE=(\([^"\r\n]+)') { throw "[$($c.Key)] UCS・ビューの状態のマーカーがない（$($r.StdoutPath)）" }
+    $viewState = $Matches[1].Trim()
 
-    $stdout = Join-Path $work "accore_stdout.log"
-    $p = Start-Process -FilePath $acc -ArgumentList @('/i', $dwgCopy, '/s', $scr, '/l', 'ja-JP') `
-          -RedirectStandardOutput $stdout -RedirectStandardError "$work\stderr.log" -PassThru -WindowStyle Hidden
-    if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
-        Stop-Process -Id $p.Id -Force; $p.WaitForExit()
-        throw "[$($c.Key)] accoreconsole が ${TimeoutSeconds}秒で完了しない"
-    }
-    if ($p.ExitCode -ne 0) { throw "[$($c.Key)] accoreconsole が異常終了した: exit=$($p.ExitCode)" }
-    if ((Get-FileHash $dwgCopy -Algorithm SHA256).Hash -ne $srcHash) { throw "[$($c.Key)] 入力 DWG が変更された" }
-
-    $svg = Get-ChildItem $work -Filter *.svg | Where-Object { $_.Name -notlike "*stage*" } | Select-Object -First 1
-    if (-not $svg) { throw "[$($c.Key)] SVG が生成されていない（$stdout）" }
-    $head = Get-Content $svg.FullName -TotalCount 1
-    if ($head -notmatch 'width="([^"]+)mm" height="([^"]+)mm" viewBox="([^"]+)"') {
-        throw "[$($c.Key)] SVG の寸法・viewBox を読み取れない: $head"
+    $svg = Get-ChildItem $r.CaseDir -Filter *.svg | Where-Object { $_.Name -notlike "*stage*" } | Select-Object -First 1
+    if (-not $svg) { throw "[$($c.Key)] SVG が生成されていない（$($r.StdoutPath)）" }
+    $headLine = Get-Content $svg.FullName -TotalCount 1
+    if ($headLine -notmatch 'width="([^"]+)mm" height="([^"]+)mm" viewBox="([^"]+)"') {
+        throw "[$($c.Key)] SVG の寸法・viewBox を読み取れない: $headLine"
     }
     return @{
-        Group = $c.Group; Key = $c.Key
+        Group = $c.Group; Key = $c.Key; ViewState = $viewState
         Width = $Matches[1]; Height = $Matches[2]; ViewBox = $Matches[3]
         # 成果物の同一性はハッシュで見る。モデル空間は用紙合わせが強制され viewBox が
         # 用紙全面になるため、viewBox では領域の違いを判別できない（実測）
@@ -142,17 +142,32 @@ function Invoke-Case($c) {
 
 # FILEDIA/OSMODE 等のレジストリ保存値は開始時に記録し、エラー終了を含む finally で必ず復元する
 . "$PSScriptRoot\CadRegGuard.ps1"
-$regGuard = Get-CadRegSnapshot
+$regGuard = Get-CadRegSnapshot -StageToTrusted @($plugin) -AcadVersion $Ver
+$runError = $null
+$regReport = $null # [ref] で受け取る変数を先に作る
 $failures = New-Object System.Collections.ArrayList
+$sw = [Diagnostics.Stopwatch]::StartNew()
 try {
-    $results = @($cases | ForEach-Object { Invoke-Case $_ })
+    if (Test-Path $OutRoot) { Remove-Item -LiteralPath $OutRoot -Recurse -Force }
+    New-Item -ItemType Directory -Force $OutRoot | Out-Null
+    $runs = Invoke-AccoreBatch -Acc $acc -DwgSrc $dwgSrc -Cases $batchCases -Head $head -Tail $tail `
+        -WorkRoot $OutRoot -LaunchName $Ver -TimeoutSeconds $TimeoutSeconds
+    $results = @($batchCases | ForEach-Object { Complete-WindowUcsCase $runs[$_.Id] })
 }
+catch { $runError = $_ }
 finally {
-    $regReport = Restore-CadRegState $regGuard
-    if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
-    if (-not $regReport.ok) { [void]$failures.Add("レジストリ保全の復元検証に失敗: " + ($regReport.mismatch -join '; ')) }
+    "所要 {0:n0} 秒（1 回の起動）" -f $sw.Elapsed.TotalSeconds
+    Restore-CadRegStateAndReport $regGuard ([ref]$regReport) $failures
 }
+# 本体が例外で止まったときは、その例外と復元の失敗を合わせて投げる（ケースの判定は途中までなので、一覧は表示しない）
+if ($runError) { Assert-CadRunAndRegRestore $runError $regReport }
 
+# 各ケースの最初の UCS・ビューの状態が同じこと（前のケースの状態が残っていないこと）
+foreach ($r in $results) {
+    if ($r.ViewState -ne $results[0].ViewState) {
+        [void]$failures.Add("[$($r.Key)] ケースの最初の UCS・ビューの状態が最初のケースと違う: $($r.ViewState) / $($results[0].ViewState)")
+    }
+}
 "=== 版 $Ver / 同じモデル点・同じ画面の向きなら同一の成果物になるはず ==="
 foreach ($g in ($results | Group-Object Group)) {
     $ref = $g.Group[0]

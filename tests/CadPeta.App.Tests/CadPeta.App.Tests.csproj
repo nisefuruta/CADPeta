@@ -8,4 +8,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\CadPeta.App\CadPeta.App.csproj" />
   </ItemGroup>
+  <!-- 一時フォルダとリポジトリ内のファイルの場所は、CadPeta.Testsと同一定義をリンク共有し、複製を持たない -->
+  <ItemGroup>
+    <Compile Include="..\CadPeta.Tests\TempFolder.cs" Link="TempFolder.cs" />
+    <Compile Include="..\CadPeta.Tests\RepositoryPaths.cs" Link="RepositoryPaths.cs" />
+  </ItemGroup>
 </Project>

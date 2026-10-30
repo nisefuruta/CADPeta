@@ -1,6 +1,7 @@
 // 境界ポート（ユースケース層が所有する interface）。
 // 取得アダプタ（構造SVG書き出しのDB直接取得とPDF印刷経路のPDF解析）と
 // 出力アダプタ（EMF等）はこれを実装し、合成ルートが結線する。
+using System.Collections.Generic;
 using CadPeta.Ir;
 
 namespace CadPeta.UseCases;

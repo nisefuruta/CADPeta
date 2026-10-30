@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
 namespace CadPeta.Plugin.Shared;
 
 // 選択絞り込みの開始判断（4製品共通の単一実装）: 製品ポートの限定結果を検査し、対象なしの中止と

@@ -7,8 +7,9 @@
 #   -Ver 2024|2026|2027     使用する accoreconsole の版（TFM 対応は Directory.Build.props）
 #   -Label <name>           出力ラベル（unsigned / signed 等）
 #
-# 前提: 対話 AutoCAD は終了しておく（DLL ロック回避）。SECURELOAD は _.QUIT で
-# 永続しないが、末尾でレジストリ残留を点検する。
+# 前提: 対話 AutoCAD は終了しておく（DLL ロック回避）。SECURELOAD は変えず、DLL のフォルダだけを
+# 信頼済みのフォルダ（C:\Tools\ACAD\dotnet）へコピーして NETLOAD し、終了後にコピーしたものだけを削除する。末尾でレジストリ残留を点検する。
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory)][string]$BundleContents,
     [string]$Ver = "2027",
@@ -16,7 +17,13 @@ param(
     [string]$OutRoot = "$env:TEMP\CadPeta_bundle_sign_verify"
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'bundle_sign_verify.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
+. "$PSScriptRoot\..\common\test_helpers.ps1"
 
 $tfm = switch ($Ver) {
     "2024" { "net48" }
@@ -43,7 +50,7 @@ $results = @()
 # CAD のタイムアウト・強制終了でも永続 sysvar（SECURELOAD 等）を利用者プロファイルへ残さない包括ガード
 # （スナップショットは最初の起動前、復元は全図面ループの完了後に1回だけ）
 . "$PSScriptRoot\..\regression\CadRegGuard.ps1"
-$regGuard = Get-CadRegSnapshot
+$regGuard = Get-CadRegSnapshot -StageToTrusted @($plugin) -AcadVersion $Ver
 $runError = $null
 try {
     foreach ($d in $drawings) {
@@ -56,16 +63,15 @@ try {
         # NETLOAD→PETA→空行(Enter=全体) の .scr（ASCII）
         $scr = Join-Path $work "run.scr"
         @"
-(setvar "SECURELOAD" 0)
-NETLOAD
-$plugin
+$((Get-AccoreNetloadLines $plugin) -join "`r`n")
 PETA
 
 _.QUIT _Y
 "@ | Out-File $scr -Encoding ascii
 
         $stdout = Join-Path $work "accore_stdout.log"
-        & $acad /i $dwgCopy /s $scr /l ja-JP 2>&1 | Out-File $stdout -Encoding utf8
+        Push-Location -LiteralPath (Split-Path -Parent $scr)  # accoreconsole は図面ごとのログを作業ディレクトリへ書く
+        try { & $acad /i $dwgCopy /s $scr /l ja-JP 2>&1 | Out-File $stdout -Encoding utf8 } finally { Pop-Location }
         $exit = $LASTEXITCODE
 
         foreach ($ext in @("svg", "emf")) {
@@ -83,16 +89,10 @@ _.QUIT _Y
 }
 catch { $runError = $_ }
 finally {
-    $regReport = Restore-CadRegState $regGuard
-    if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
+    $regReport = $null # [ref] で受け取る変数を先に作る
+    Restore-CadRegStateAndReport $regGuard ([ref]$regReport)
 }
-if ($runError -and -not $regReport.ok) {
-    throw [AggregateException]::new(
-        'CAD実行失敗に加えてレジストリ復元にも失敗した',
-        [Exception[]]@($runError.Exception, [InvalidOperationException]::new($regReport.mismatch -join '; ')))
-}
-if ($runError) { throw $runError }
-if (-not $regReport.ok) { throw "レジストリ保全の復元検証に失敗: $($regReport.mismatch -join '; ')" }
+Assert-CadRunAndRegRestore $runError $regReport
 
 # SECURELOAD のレジストリ残留点検（版のプロファイルキー）
 Write-Host "[$Label] SECURELOAD 残留点検:" -ForegroundColor DarkGray

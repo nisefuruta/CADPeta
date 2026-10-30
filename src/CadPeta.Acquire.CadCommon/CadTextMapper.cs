@@ -8,28 +8,28 @@
 // - MTEXT は書式断片（フォント・色・位置が確定した実描画単位）へ展開して写像する。
 //   背景マスクは本文より先に塗り矩形として出力する（下の図形を隠す描画順を保つ）
 // - 斜体・鏡像など text 要素で表現できない変形は近似し、診断ログへ記録する
+using System;
+using System.Collections.Generic;
+using System.IO;
+
 #if CADPETA_ACAD
 using Autodesk.AutoCAD.Colors;
 using Autodesk.AutoCAD.DatabaseServices;
-using Autodesk.AutoCAD.Geometry;
 using SdkException = Autodesk.AutoCAD.Runtime.Exception;
 namespace CadPeta.Acquire.Acad;
 #elif CADPETA_ARES
 using Teigha.Colors;
 using Teigha.DatabaseServices;
-using Teigha.Geometry;
 using SdkException = Teigha.Runtime.Exception;
 namespace CadPeta.Acquire.Ares;
 #elif CADPETA_IJCAD
 using Itjp.Ijcad.Colors;
 using Itjp.Ijcad.DatabaseServices;
-using Itjp.Ijcad.Geometry;
 using SdkException = Itjp.Ijcad.Runtime.Exception;
 namespace CadPeta.Acquire.Ijcad;
 #elif CADPETA_BRICSCAD
 using Teigha.Colors;
 using Teigha.DatabaseServices;
-using Teigha.Geometry;
 using SdkException = Teigha.Runtime.Exception;
 namespace CadPeta.Acquire.Bricscad;
 #else
@@ -272,7 +272,7 @@ internal static class CadTextMapper
             Segments = GlyphPlacement.Place(textSpace, xMm, yMm, rotationDeg, widthFactor),
             Stroke = style.Rgb,
             StrokeOpacity = style.Opacity,
-            // 線量りは用紙上の絶対幅。グループ変換の拡大率で割って格納し、描画で元へ戻す
+            // 線の太さは用紙上の絶対幅。グループ変換の拡大率で割って格納し、描画で元へ戻す
             //（幾何エンティティと同じ規則）。線種の破線は文字へ適用しない（CAD の文字描画は
             // 線種に関わらず実線のため StrokeDashMm を設定しない）
             StrokeWidthMm = style.LineweightMm / groupScale,

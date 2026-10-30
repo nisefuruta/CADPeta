@@ -4,6 +4,8 @@
 // 換算する（PDF印刷経路の実測と一致: Arial 1.397・MS Gothic 1.2996。プロット PDF の Tf 値で確認）。
 // キャップハイトは GDI のアウトラインメトリクスから取る。Win32 依存はこのクラスに閉じ、
 // CAD製品APIには依存しないため取得アダプタ間で共有できる。
+using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace CadPeta.Acquire.Common;
@@ -280,8 +282,8 @@ public static class GdiFontMetrics
 
     static T? WithFont<T>(IntPtr hdc, string typeface, bool bold, bool italic, int height, Func<T> body)
     {
-        const int FwNormal = 400, FwBold = 700;
-        const uint DefaultCharset = 1;
+        const int FwNormal = 400, FwBold = 700;          // wingdi.h のフォントウェイト
+        const uint DefaultCharset = 1;                   // DEFAULT_CHARSET
         IntPtr font = CreateFontW(-height, 0, 0, 0, bold ? FwBold : FwNormal,
             italic ? 1u : 0u, 0, 0, DefaultCharset, 0, 0, 0, 0, typeface);
         if (font == IntPtr.Zero)
@@ -299,16 +301,8 @@ public static class GdiFontMetrics
     }
 
     static OUTLINETEXTMETRICW? QueryOutlineMetrics(IntPtr hdc, string typeface,
-                                                   bool bold, bool italic, int height)
-    {
-        const int FwNormal = 400, FwBold = 700;          // wingdi.h のフォントウェイト
-        const uint DefaultCharset = 1;                   // DEFAULT_CHARSET
-        IntPtr font = CreateFontW(-height, 0, 0, 0, bold ? FwBold : FwNormal,
-            italic ? 1u : 0u, 0, 0, DefaultCharset, 0, 0, 0, 0, typeface);
-        if (font == IntPtr.Zero)
-            return null;
-        IntPtr old = SelectObject(hdc, font);
-        try
+                                                   bool bold, bool italic, int height) =>
+        WithFont<OUTLINETEXTMETRICW?>(hdc, typeface, bold, italic, height, () =>
         {
             uint size = GetOutlineTextMetricsW(hdc, 0, IntPtr.Zero);
             if (size == 0)
@@ -324,13 +318,7 @@ public static class GdiFontMetrics
             {
                 Marshal.FreeHGlobal(buf);
             }
-        }
-        finally
-        {
-            SelectObject(hdc, old);
-            DeleteObject(font);
-        }
-    }
+        });
 
     // OUTLINETEXTMETRICW の先頭部分（otmsCapEmHeight まで）。後続フィールドは可変長文字列
     // オフセットのため、必要なフィールドまでを定義して PtrToStructure で読む

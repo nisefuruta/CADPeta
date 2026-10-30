@@ -1,6 +1,9 @@
 // PDF埋め込み画像のデコードと SMask 合成（フィルタ伸長は PdfPig、JPEG のみ System.Drawing）。
 // SOLIDハッチ×透過の JPEG+SMask 画像化（PDF印刷経路の非可逆類型）を RGBA 合成 PNG として IR へ渡す。
 // OLE貼付（Excel表など）のプロット結果である CCITTFaxDecode の 1bit Indexed 画像もここで画素化する。
+using System;
+using System.IO;
+using System.Linq;
 using System.Drawing;
 using System.Drawing.Imaging;
 using UglyToad.PdfPig;

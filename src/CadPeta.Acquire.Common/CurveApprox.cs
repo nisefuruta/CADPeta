@@ -4,6 +4,9 @@
 // 円弧・楕円弧の3次ベジェ近似は標準の接線係数法（区間 ≤90°で最大誤差は半径の 0.03% 未満、
 // IR のコンテンツ量子より十分小さい）。特定のCAD製品APIに依存しない共有計算のため、
 // 取得アダプタ間で共有する。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Ir;
 
 namespace CadPeta.Acquire.Common;

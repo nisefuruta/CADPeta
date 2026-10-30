@@ -1,6 +1,9 @@
 // RangePrompt（範囲プロンプトの状態機械）を偽の IEditorPort で駆動して検査する。
 // 実機（AutoCAD/互換CAD）を持たない環境でも、範囲（全体/窓）と選択絞り込みの独立性、
 // オプションのトグル、PETA と構造SVG書き出し（PETADATA）の対話差を機械検証できる。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using CadPeta.Acquire.Common;
 using CadPeta.Plugin.Shared;

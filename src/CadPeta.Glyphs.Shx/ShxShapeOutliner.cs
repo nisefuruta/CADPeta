@@ -4,6 +4,7 @@
 // 実在し、線種側の尺度指定（S=）がシェイプ設計単位への直接倍率として働く（AutoCAD の
 // 複雑線種のカスタマイズ仕様どおり）。そのため本クラスはシェイプ設計単位のまま返し、
 // 高さ正規化・Y反転・配置変換はすべて呼び出し側（線種の尺度・線種記号の配置規則を知る側）に委ねる。
+using System.Collections.Generic;
 using CadPeta.Ir;
 
 namespace CadPeta.Glyphs.Shx;

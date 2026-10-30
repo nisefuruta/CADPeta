@@ -3,6 +3,9 @@
 // ja はさらに en）で補う。数値の書式は InvariantCulture に固定する（表示文字列の数値表記を
 // 実行環境の地域設定で揺らさない）。ファイルの読込・言語選択は殻側（CadPeta.Plugin.Shared の
 // Msg）が担い、ここは BCL だけで完結する。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Globalization;
 
 namespace CadPeta.UseCases;
@@ -37,25 +40,8 @@ public sealed class MessageCatalog
     /// （黙って切り替えない）。返り値の Dispose は直前の通知先へ戻す（using で入れ子順に
     /// 解除する）。設定なしの文脈は通知なし（殻の初期化を通らない経路）。
     /// </summary>
-    public static IDisposable BeginFormatFallbackScope(Action<string, string, string> sink)
-    {
-        var previous = _formatFallbackSink.Value;
-        _formatFallbackSink.Value = sink;
-        return new FormatFallbackScope(previous);
-    }
-
-    sealed class FormatFallbackScope : IDisposable
-    {
-        readonly Action<string, string, string>? _previous;
-        bool _disposed;
-        public FormatFallbackScope(Action<string, string, string>? previous) => _previous = previous;
-        public void Dispose()
-        {
-            if (_disposed) return; // 多重 Dispose で二重復元しない
-            _disposed = true;
-            _formatFallbackSink.Value = _previous;
-        }
-    }
+    public static IDisposable BeginFormatFallbackScope(Action<string, string, string> sink) =>
+        AsyncLocalScope<Action<string, string, string>?>.Begin(_formatFallbackSink, sink);
 
     // 再帰ガードはスレッド単位。インスタンス共有にすると、あるスレッドの通知中に
     // 別スレッドの失敗まで再帰と誤判定して無通知になる

@@ -1,5 +1,8 @@
 // グリフ輪郭ポート（IGlyphOutliner）の SHX 実装の統合テスト。
 // 本機に AutoCAD 2026 の Fonts フォルダが無い環境では Skip する。
+using System;
+using System.IO;
+using System.Linq;
 using CadPeta.Glyphs.Shx;
 using CadPeta.Ir;
 using CadPeta.UseCases;

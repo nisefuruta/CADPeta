@@ -5,17 +5,22 @@
 #
 # 使い方: pwsh tests/tools/regression/clip_verify.ps1 [-Dwg <図面>] [-AcadRoot <AutoCADフォルダ>] [-Tfm net8.0-windows]
 # 出力:   作業フォルダ（%TEMP%\CadPeta_clip_verify）に成果物と accore_stdout.log を残す
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$Dwg = "$PSScriptRoot\..\..\assets\testcharts\TESTCHART2_layout.dwg",
     [string]$AcadRoot = "C:\Program Files\Autodesk\AutoCAD 2026",
-    [string]$Tfm = "net8.0-windows",
-    [string]$Config = "Debug"
+    [string]$Tfm = "net8.0-windows"
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'clip_verify.ps1' ''
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 
 $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
-$plugin = "$repo\src\CadPeta.Plugin.Acad\bin\$Config\$Tfm\CadPeta.Plugin.Acad.dll"
-if (-not (Test-Path $plugin)) { throw "プラグインが未ビルド: $plugin（dotnet build CadPeta.sln を先に実行すること）" }
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$plugin = (Get-E2ePluginPath Acad $Tfm)
 if (-not (Test-Path $Dwg)) { throw "検証図面がない: $Dwg" }
 
 # 作業フォルダ（図面を複製し、成果物は図面の隣に出るためリポジトリを汚さない）
@@ -28,9 +33,7 @@ Copy-Item $Dwg $dwgCopy -Force
 # NETLOAD→PETA の .scr（パスは ASCII のみ。日本語を書くなら CP932 が必要）
 $scr = Join-Path $work "peta_clip.scr"
 @"
-(setvar "SECURELOAD" 0)
-NETLOAD
-$plugin
+$((Get-AccoreNetloadLines $plugin) -join "`r`n")
 PETA
 
 _.QUIT _Y
@@ -42,15 +45,19 @@ Set-Clipboard -Value "clip_verify sentinel $(Get-Date -Format o)"
 
 $stdout = Join-Path $work "accore_stdout.log"
 . "$PSScriptRoot\CadRegGuard.ps1"
-$regGuard = Get-CadRegSnapshot
+$regGuard = Get-CadRegSnapshot -StageToTrusted @($plugin) -AcadVersion (Get-AcadVersionFromPath $AcadRoot)
+$runError = $null
+$regReport = $null # [ref] で受け取る変数を先に作る
 try {
-    & "$AcadRoot\accoreconsole.exe" /i $dwgCopy /s $scr /l ja-JP 2>&1 | Out-File $stdout -Encoding utf8
+    Push-Location -LiteralPath (Split-Path -Parent $scr)  # accoreconsole は図面ごとのログを作業ディレクトリへ書く
+    try { & "$AcadRoot\accoreconsole.exe" /i $dwgCopy /s $scr /l ja-JP 2>&1 | Out-File $stdout -Encoding utf8 } finally { Pop-Location }
     $cadExitCode = $LASTEXITCODE
 }
+catch { $runError = $_ }
 finally {
-    $regReport = Restore-CadRegState $regGuard
+    Restore-CadRegStateAndReport $regGuard ([ref]$regReport)
 }
-if (-not $regReport.ok) { throw "レジストリ保全の復元検証に失敗: $($regReport.mismatch -join '; ')" }
+Assert-CadRunAndRegRestore $runError $regReport
 if ($cadExitCode -ne 0) { throw "accoreconsole が異常終了 (exit=$cadExitCode)。$stdout を確認すること" }
 
 $emf = [IO.Path]::ChangeExtension($dwgCopy, $null).TrimEnd('.') + "_PETA_A3.emf"

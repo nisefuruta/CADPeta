@@ -1,9 +1,13 @@
 // グループ平坦化（変換行列の焼き込み）の単体テスト。
 // EMF 出力の前段が使う変換の正確さと、グループ非対応コードへの波及がないことを検査する。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Geometry;
 using CadPeta.Ir;
 using CadPeta.Transforms;
 using Xunit;
+using static CadPeta.Tests.IrTestBuilders;
 
 namespace CadPeta.Tests;
 
@@ -11,12 +15,7 @@ public class GroupFlattenTests
 {
     const int Precision = 9; // 変換は倍精度演算のみで、この桁まで数値一致する
 
-    static IrPath Line(double x0, double y0, double x1, double y1, double width = 0.25) => new()
-    {
-        Segments = new List<IrSegment> { new IrMove(x0, y0), new IrLine(x1, y1) },
-        Stroke = new IrRgb(0, 0, 0),
-        StrokeWidthMm = width,
-    };
+    static IrDocument Flatten(IrDocument ir) => GroupFlatten.Apply(ir, new IrDiagnostics());
 
     [Fact]
     public void グループが無ければ入力をそのまま返す()
@@ -35,7 +34,7 @@ public class GroupFlattenTests
         // matrix(0, 2, -2, 0, 100, 50) → (x,y) → (100-2y, 50+2x)
         var ir = new IrDocument { WidthMm = 200, HeightMm = 200 };
         var g = new IrGroup { Transform = new IrMatrix(0, 2, -2, 0, 100, 50) };
-        g.Children.Add(Line(1, 0, 3, 0, width: 0.25));
+        g.Children.Add(Line(1, 0, 3, 0, widthMm: 0.25));
         ir.Nodes.Add(g);
 
         var diag = new IrDiagnostics();
@@ -65,7 +64,7 @@ public class GroupFlattenTests
         outer.Children.Add(inner);
         ir.Nodes.Add(outer);
 
-        var flat = GroupFlatten.Apply(ir, new IrDiagnostics());
+        var flat = Flatten(ir);
         var p = Assert.IsType<IrPath>(Assert.Single(flat.Nodes));
         var m0 = Assert.IsType<IrMove>(p.Segments[0]);
         // 内側(0,0) → 内側変換(5,0) → 外側変換(2倍+10,20) = (20,20)
@@ -86,7 +85,7 @@ public class GroupFlattenTests
         });
         ir.Nodes.Add(g);
 
-        var flat = GroupFlatten.Apply(ir, new IrDiagnostics());
+        var flat = Flatten(ir);
         var t = Assert.IsType<IrText>(Assert.Single(flat.Nodes));
         Assert.Equal(100, t.XMm, Precision);
         Assert.Equal(70, t.YMm, Precision);
@@ -116,12 +115,12 @@ public class GroupFlattenTests
     {
         var ir = new IrDocument { WidthMm = 100, HeightMm = 100 };
         var g = new IrGroup { Transform = new IrMatrix(2, 0, 0, 2, 0, 0) };
-        var dashed = Line(0, 0, 10, 0);
+        var dashed = Line(0, 0, 10, 0, widthMm: 0.25);
         dashed.StrokeDashMm = new[] { 1.2, 0.6 };
         g.Children.Add(dashed);
         ir.Nodes.Add(g);
 
-        var flat = GroupFlatten.Apply(ir, new IrDiagnostics());
+        var flat = Flatten(ir);
         var p = Assert.IsType<IrPath>(Assert.Single(flat.Nodes));
         Assert.Equal(new[] { 2.4, 1.2 }, p.StrokeDashMm!.Select(d => Math.Round(d, 9)));
     }
@@ -134,7 +133,7 @@ public class GroupFlattenTests
         g.Children.Add(Line(0, 0, 1, 0));
         ir.Nodes.Add(g);
 
-        var flat = GroupFlatten.Apply(ir, new IrDiagnostics());
+        var flat = Flatten(ir);
         Assert.Equal("c0", flat.Nodes[0].ClipId);
     }
 
@@ -145,13 +144,13 @@ public class GroupFlattenTests
         var g = new IrGroup { Transform = new IrMatrix(1, 0, 0, 1, 5, 5), DataLayer = "A" };
         g.Children.Add(Line(0, 0, 1, 0));
         g.Children.Add(Line(0, 1, 1, 1));
-        var single = Line(50, 50, 60, 60);
+        var single = Line(50, 50, 60, 60, widthMm: 0.25);
         single.DataLayer = "B";
         ir.Nodes.Add(g);
         ir.Nodes.Add(single);
         ir.LayerGroups = new List<IrLayerGroup> { new("A", 1), new("B", 1) };
 
-        var flat = GroupFlatten.Apply(ir, new IrDiagnostics());
+        var flat = Flatten(ir);
         Assert.Equal(3, flat.Nodes.Count);
         Assert.Equal(new[] { ("A", 2), ("B", 1) },
                      flat.LayerGroups!.Select(x => (x.Label, x.Count)));
@@ -163,7 +162,7 @@ public class GroupFlattenTests
     public void グループのbboxは変換行列込みで保守的に取れる()
     {
         var g = new IrGroup { Transform = new IrMatrix(2, 0, 0, 2, 100, 0) };
-        g.Children.Add(Line(0, 0, 5, 5, width: 1));
+        g.Children.Add(Line(0, 0, 5, 5, widthMm: 1));
         var b = IrBounds.NodeBbox(g);
         // 子 bbox（線幅半分 0.5 拡張）= (-0.5,-0.5)-(5.5,5.5) → 2倍+100 = (99,-1)-(111,11)
         Assert.Equal(99, b[0], Precision);
@@ -177,7 +176,7 @@ public class GroupFlattenTests
     {
         var ir = new IrDocument { WidthMm = 100, HeightMm = 100 };
         var inner = new IrGroup();
-        var red = Line(0, 0, 1, 0);
+        var red = Line(0, 0, 1, 0, widthMm: 0.25);
         red.Stroke = new IrRgb(1, 0, 0);
         inner.Children.Add(red);
         var outer = new IrGroup();

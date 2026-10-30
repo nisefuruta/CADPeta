@@ -12,6 +12,9 @@
 //
 // 座標系: MM_ANISOTROPIC、論理単位 0.01mm（rclFrame と同じ量子）、原点は viewBox 左上。
 // IR の Y下向きと GDI の Y下向きが一致するため反転は不要。
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
@@ -68,16 +71,11 @@ public sealed class EmfWriter : IIrOutput
     /// コマンドラインへ案内する（両者の一致は単体テストで固定）。</summary>
     public const string OpacityFlattenedDiagPrefix = "透過の不透明化";
 
-    string OpacityFlattenedCategory => $"{OpacityFlattenedDiagPrefix}（合成下地色={BackgroundHex}）";
+    string OpacityFlattenedCategory => $"{OpacityFlattenedDiagPrefix}（合成下地色={_background.ToHex()}）";
 
-    string BackgroundHex => $"#{ToByte(_background.R):X2}{ToByte(_background.G):X2}{ToByte(_background.B):X2}";
-    static byte ToByte(double value) => (byte)Clamp((int)Math.Round(value * 255), 0, 255);
-    static bool Finite01(double value) => !double.IsNaN(value) && !double.IsInfinity(value) && value >= 0 && value <= 1;
+    static bool Finite01(double value) => Numbers.IsFinite(value) && value >= 0 && value <= 1;
 
-    static uint Col(IrRgb c) => Gdi.Rgb(
-        (byte)Clamp((int)Math.Round(c.R * 255), 0, 255),
-        (byte)Clamp((int)Math.Round(c.G * 255), 0, 255),
-        (byte)Clamp((int)Math.Round(c.B * 255), 0, 255));
+    static uint Col(IrRgb c) => Gdi.Rgb(IrRgb.ToByte(c.R), IrRgb.ToByte(c.G), IrRgb.ToByte(c.B));
 
     public void Write(IrDocument ir, string outputPath, IrDiagnostics diag)
     {
@@ -121,8 +119,7 @@ public sealed class EmfWriter : IIrOutput
         // 96dpi を仮定するため、記録デバイスを 96dpi に合わせないと実寸がずれる
         // （実画面108.9dpiで +13.5% を実測）
         const double OfficeAssumedDpi = 96.0;  // Office が EMF デバイスに仮定する固定 dpi（上記実測）
-        const double MmPerInch = 25.4;
-        const double PxPerMm = OfficeAssumedDpi / MmPerInch;
+        const double PxPerMm = OfficeAssumedDpi / Units.MmPerInch;
 
         var frame = new RECT { L = 0, T = 0, R = L(ir.WidthMm), B = L(ir.HeightMm) };
         IntPtr hdc = Gdi.CreateEnhMetaFileW(hdcRef, path, ref frame,
@@ -161,9 +158,11 @@ public sealed class EmfWriter : IIrOutput
         uint curTextColor = 0xFFFFFFFF; // COLORREF は 0x00BBGGRR 形式のため上位バイト≠0 は「未設定」の番兵
         int curFillMode = 0;
 
-        void SelPen(IntPtr h) { if (h != curPen) { Gdi.SelectObject(hdc, h); curPen = h; } }
-        void SelBrush(IntPtr h) { if (h != curBrush) { Gdi.SelectObject(hdc, h); curBrush = h; } }
-        void SelFont(IntPtr h) { if (h != curFont) { Gdi.SelectObject(hdc, h); curFont = h; } }
+        // 選択中のオブジェクトと同じなら SelectObject を省く（ペン・ブラシ・フォントで共通）
+        void Select(ref IntPtr current, IntPtr h) { if (h != current) { Gdi.SelectObject(hdc, h); current = h; } }
+        void SelPen(IntPtr h) => Select(ref curPen, h);
+        void SelBrush(IntPtr h) => Select(ref curBrush, h);
+        void SelFont(IntPtr h) => Select(ref curFont, h);
 
         IntPtr Pen(double mm, IrRgb c)
         {
@@ -619,7 +618,7 @@ public sealed class EmfWriter : IIrOutput
         var bits = new byte[stride * bh];
         var row = new byte[bw * 4];
         hadAlpha = false;
-        int bgB = ToByte(background.B), bgG = ToByte(background.G), bgR = ToByte(background.R);
+        int bgB = IrRgb.ToByte(background.B), bgG = IrRgb.ToByte(background.G), bgR = IrRgb.ToByte(background.R);
         var data = bmp.LockBits(new Rectangle(0, 0, bw, bh),
                                 ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         try

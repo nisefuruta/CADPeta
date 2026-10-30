@@ -2,6 +2,7 @@
 // 輪郭化を要するため、非可逆処理として処理ログに記録する）。
 // 輪郭の取得はグリフ輪郭ポート（TrueType 実装 = GdiGlyphOutliner）、
 // 配置は GlyphPlacement の共通変換で行う。
+using System.Collections.Generic;
 using CadPeta.Ir;
 using CadPeta.UseCases;
 

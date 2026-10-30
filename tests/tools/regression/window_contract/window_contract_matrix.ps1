@@ -9,11 +9,11 @@
 #   pwsh -File tests/tools/regression/window_contract/window_contract_matrix.ps1 -Dwg <実図面> -Case AsIs
 #
 # 規律（この repo の実機検証の作法。破ると環境が壊れる）:
-# - SECURELOAD は既定のまま触らない。プラグインのフォルダだけを TRUSTEDPATHS へ一時追加し、必ず復元する。
+# - SECURELOAD と TRUSTEDPATHS は変えない。計測器の DLL は信頼済みのフォルダへコピーして NETLOAD し、終了後に削除する。
 # - FILEDIA を脚本に書かない。脚本は必ず _.QUIT で終える（EOF・強制killはレジストリを汚す）。
 # - 入力 DWG は作業コピーに対してのみ操作し、原本のハッシュ不変を確認する。
 # - 残留プロセスを失敗証跡として報告する（黙って消さない）。
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$Case = 'A',
     [string]$Dwg,                                  # 省略時は TESTCHART2.dwg
@@ -22,6 +22,11 @@ param(
     [int]$TimeoutSeconds = 300
 )
 $ErrorActionPreference = 'Stop'
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'window_contract_matrix.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 $repo = (Resolve-Path "$PSScriptRoot\..\..\..\..").Path
@@ -87,11 +92,7 @@ $transLisp = @"
 $scr = Join-Path $work 'run.scr'
 @"
 (setvar "TILEMODE" 1)
-(setq cpOldTrusted (getvar "TRUSTEDPATHS"))
-(setvar "TRUSTEDPATHS" (if (= cpOldTrusted "") "$pd" (strcat cpOldTrusted ";" "$pd")))
-(command "_.NETLOAD" "$pl")
-(setvar "TRUSTEDPATHS" cpOldTrusted)
-(princ "\nCPWIN_TRUSTED_RESTORED=")(princ (getvar "TRUSTEDPATHS"))(princ)
+$((Get-AccoreNetloadLines $probe) -join "`r`n")
 $setupLines
 $transLisp
 (setq cpOldOsmode (getvar "OSMODE"))
@@ -107,30 +108,9 @@ _Y
 $stdout = Join-Path $work 'accore_stdout.log'
 $stderr = Join-Path $work 'accore_stderr.log'
 . "$PSScriptRoot\..\CadRegGuard.ps1"
-$regGuard = Get-CadRegSnapshot
-$runError = $null
+. "$PSScriptRoot\..\..\common\accore_run.ps1"
 $p = $null
-try {
-    $p = Start-Process -FilePath $acc -ArgumentList @('/i', $dwgCopy, '/s', $scr, '/l', 'ja-JP') `
-          -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
-    if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
-        Stop-Process -Id $p.Id -Force; $p.WaitForExit()
-        throw "accoreconsole が ${TimeoutSeconds}秒で完了しない（$stdout）"
-    }
-    if ($p.ExitCode -ne 0) { throw "accoreconsole が異常終了した: exit=$($p.ExitCode)（$stdout）" }
-}
-catch { $runError = $_ }
-finally {
-    $regReport = Restore-CadRegState $regGuard
-    if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
-}
-if ($runError -and -not $regReport.ok) {
-    throw [AggregateException]::new(
-        'CAD実行失敗に加えてレジストリ復元にも失敗した',
-        [Exception[]]@($runError.Exception, [InvalidOperationException]::new($regReport.mismatch -join '; ')))
-}
-if ($runError) { throw $runError }
-if (-not $regReport.ok) { throw "レジストリ保全の復元検証に失敗: $($regReport.mismatch -join '; ')" }
+Invoke-AccoreConsoleGuardedWithTimeout $acc $dwgCopy $scr $stdout $stderr $TimeoutSeconds ([ref]$p) -StageToTrusted @($probe)
 if ((Get-FileHash $dwgCopy -Algorithm SHA256).Hash -ne $srcHash) { throw "入力 DWG が変更された（計測条件が保てない）" }
 
 $json = Join-Path $work "$Case.probe.json"

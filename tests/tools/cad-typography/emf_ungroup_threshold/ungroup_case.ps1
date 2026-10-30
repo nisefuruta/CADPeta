@@ -24,7 +24,8 @@ $ErrorActionPreference = "Stop"
 if (-not $PidFile) { $PidFile = "$OutJson.pid" }
 Remove-Item $PidFile -ErrorAction SilentlyContinue
 
-function PtToMm($pt) { return [Math]::Round($pt * 25.4 / 72, 3) }
+. "$PSScriptRoot\..\..\common\office_com.ps1"
+. "$PSScriptRoot\..\..\common\threshold_case.ps1"
 
 $result = [ordered]@{
     emf = $Emf
@@ -44,12 +45,8 @@ $result = [ordered]@{
     forceKilled = $false
 }
 
-if (-not (Test-Path $Emf)) {
-    $result.status = "case_error"; $result.error = "EMF が存在しない: $Emf"
-    ($result | ConvertTo-Json -Depth 6) | Set-Content -Encoding UTF8 $OutJson
-    exit 1
-}
-$fileBytes = [IO.File]::ReadAllBytes($Emf)
+$fileBytes = Read-CaseEmf $Emf $result $OutJson
+if ($null -eq $fileBytes) { exit 1 }
 $result.fileBytes = $fileBytes.Length
 
 Add-Type -Name Clip -Namespace CadPetaThreshold -MemberDefinition @'
@@ -66,29 +63,6 @@ Add-Type -Name Clip -Namespace CadPetaThreshold -MemberDefinition @'
 '@
 $CF_ENHMETAFILE = 14
 
-function Register-Emf {
-    $hemf = [CadPetaThreshold.Clip]::GetEnhMetaFileW($Emf)
-    if ($hemf -eq [IntPtr]::Zero) { throw "GetEnhMetaFile 失敗: $Emf" }
-    $hCopy = [CadPetaThreshold.Clip]::CopyEnhMetaFileW($hemf, [NullString]::Value)
-    $null = [CadPetaThreshold.Clip]::DeleteEnhMetaFile($hemf)
-    if ($hCopy -eq [IntPtr]::Zero) { throw "CopyEnhMetaFile 失敗" }
-    if (-not [CadPetaThreshold.Clip]::OpenClipboard([IntPtr]::Zero)) { throw "OpenClipboard 失敗" }
-    try {
-        $null = [CadPetaThreshold.Clip]::EmptyClipboard()
-        if ([CadPetaThreshold.Clip]::SetClipboardData($CF_ENHMETAFILE, $hCopy) -eq [IntPtr]::Zero) {
-            throw "SetClipboardData 失敗"
-        }
-    } finally { $null = [CadPetaThreshold.Clip]::CloseClipboard() }
-    # 読み戻し照合（本番と同一の登録が成立していることを確認してから貼付する）
-    if (-not [CadPetaThreshold.Clip]::OpenClipboard([IntPtr]::Zero)) { throw "OpenClipboard(照合) 失敗" }
-    try {
-        $h = [CadPetaThreshold.Clip]::GetClipboardData($CF_ENHMETAFILE)
-        $size = [CadPetaThreshold.Clip]::GetEnhMetaFileBits($h, 0, $null)
-        $got = New-Object byte[] $size
-        $null = [CadPetaThreshold.Clip]::GetEnhMetaFileBits($h, $size, $got)
-        if (-not [Linq.Enumerable]::SequenceEqual($got, $fileBytes)) { throw "登録内容がファイルと不一致" }
-    } finally { $null = [CadPetaThreshold.Clip]::CloseClipboard() }
-}
 
 # msoGroup 定数（MsoShapeType 列挙）。「図形に変換」の起点シェイプ（貼付直後の
 # msoPicture=13）は種別によらず必ず Ungroup() を呼ぶ（これが変換操作そのもの）。
@@ -96,24 +70,6 @@ function Register-Emf {
 # （ネスト群の展開）。葉（msoFreeform 等）は例外を発生させずにそのまま数える
 $MSO_GROUP = 6
 
-function Flatten-Shape($shape) {
-    $queue = New-Object System.Collections.Generic.Queue[object]
-    $queue.Enqueue(@{ s = $shape; isTop = $true })
-    $leafCount = 0
-    $levels = 0
-    while ($queue.Count -gt 0) {
-        $item = $queue.Dequeue()
-        $s = $item.s
-        if ($item.isTop -or $s.Type -eq $MSO_GROUP) {
-            $range = $s.Ungroup()
-            $levels++
-            for ($i = 1; $i -le $range.Count; $i++) { $queue.Enqueue(@{ s = $range.Item($i); isTop = $false }) }
-        } else {
-            $leafCount++
-        }
-    }
-    return @{ leafCount = $leafCount; levels = $levels }
-}
 
 $excel = $null
 try {
@@ -138,10 +94,8 @@ try {
     if ($Route -eq "file") {
         $shape = $ws.Shapes.AddPicture($Emf, 0, -1, 10, 10, -1, -1)
     } else {
-        Register-Emf
-        try { $ws.PasteSpecial("図 (拡張メタファイル)") }
-        catch { $ws.PasteSpecial("Picture (Enhanced Metafile)") }
-        $shape = $ws.Shapes.Item($ws.Shapes.Count)
+        Register-Emf ([CadPetaThreshold.Clip]) $Emf $fileBytes $CF_ENHMETAFILE
+        $shape = Add-EmfShapeByPasteSpecial $ws
     }
     $result.widthMm = PtToMm $shape.Width
     $result.heightMm = PtToMm $shape.Height

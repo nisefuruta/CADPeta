@@ -2,6 +2,7 @@
 // 尺度（fit）と、中央配置矩形の用紙座標→表示ページ IR 座標への写像
 // （Y反転＋四半回転4方位）を検査する。実機（AutoCAD＋PDFドライバ）との
 // 数値突き合わせは別途実施済み。
+using System;
 using CadPeta.Geometry;
 using CadPeta.Plugin.Shared;
 using Xunit;

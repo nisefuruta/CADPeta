@@ -1,9 +1,9 @@
 # PETA の O（オブジェクト絞り込み）を、SDK が返す生の PromptStatus / StringResult / 件数まで
 # 採取する AutoCAD headless 計測器。成果物の見た目ではなく、プロンプト境界の事実を確定する。
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$Ver = '2026',
     [string]$OutRoot = "$env:TEMP\CadPeta_object_keyword_probe",
-    [string]$Config = 'Debug',
     [int]$TimeoutSeconds = 180,
     [string]$InputDwg = '',
     [string]$Layout = '',
@@ -12,17 +12,18 @@ param(
     [switch]$ProbeOnly
 )
 $ErrorActionPreference = 'Stop'
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'object_keyword_probe.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
-$tfm = switch ($Ver) {
-    '2024' { 'net48' }
-    '2026' { 'net8.0-windows' }
-    '2027' { 'net10.0-windows' }
-    default { throw "未対応版: $Ver" }
-}
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$tfm = Get-CadPluginTargetFramework $Ver -UnknownVersionLabel "未対応版"
 $acad = "C:\Program Files\Autodesk\AutoCAD $Ver\accoreconsole.exe"
-$plugin = "$repo\src\CadPeta.Plugin.Acad\bin\$Config\$tfm\CadPeta.Plugin.Acad.dll"
+$plugin = (Get-E2ePluginPath Acad $tfm)
 $pluginDir = [IO.Path]::GetDirectoryName($plugin)
 $paperEntityMode = -not [string]::IsNullOrWhiteSpace($InputDwg)
 $source = if ($paperEntityMode) { [IO.Path]::GetFullPath($InputDwg) } else { "$repo\tests\assets\testcharts\TESTCHART2.dwg" }
@@ -30,13 +31,10 @@ if ($paperEntityMode -and [string]::IsNullOrWhiteSpace($Layout)) {
     throw 'InputDwg 指定時は Layout も必須'
 }
 
-$outRootFull = [IO.Path]::GetFullPath($OutRoot).TrimEnd('\')
-$driveRoot = [IO.Path]::GetPathRoot($outRootFull).TrimEnd('\')
-if (-not $outRootFull -or $outRootFull -eq $driveRoot) { throw "OutRoot にドライブ直下は指定できません: $outRootFull" }
+$outRootFull = Resolve-OutRoot $OutRoot
 if (-not (Test-Path $source)) { throw "入力図面がない: $source" }
 if (-not $ProbeOnly) {
     if (-not (Test-Path $acad)) { throw "accoreconsole がない: $acad" }
-    if (-not (Test-Path $plugin)) { throw "プラグイン未ビルド: $plugin" }
 }
 
 # 50,40～150,110 は既存の TESTCHART2 窓回帰と同じ領域。_W の真部分集合であることは
@@ -179,19 +177,6 @@ function Write-Cp932Exact([string]$Path, [string]$Text) {
     if ($readBack -cne $Text) { throw "CP932 の書き込み再読が一致しない: $Path" }
 }
 
-function Get-JsonLines([string]$Path) {
-    $items = New-Object System.Collections.ArrayList
-    if (-not (Test-Path $Path)) { return @() }
-    $lineNo = 0
-    foreach ($line in [IO.File]::ReadAllLines($Path, [Text.Encoding]::UTF8)) {
-        $lineNo++
-        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        try { [void]$items.Add(($line | ConvertFrom-Json -ErrorAction Stop)) }
-        catch { throw "trace JSONL が不正（${Path}:$lineNo）: $($_.Exception.Message)" }
-    }
-    @($items)
-}
-
 function Get-Field($Object, [string[]]$Names) {
     foreach ($name in $Names) {
         $p = $Object.PSObject.Properties[$name]
@@ -221,7 +206,7 @@ function New-CaseFiles($Case) {
     $trace = Join-Path $work 'prompt-trace.jsonl'
     $dumpStem = Join-Path $work 'side-db'
     $end = "CADPETA_CASE_END=$($Case.Id)"
-    $pluginScr = $plugin -replace '\\','/'
+    $pluginScr = (Join-Path $CadPetaTrustedDotnetFolder (Split-Path -Leaf $plugin)) -replace '\\','/'
     $body = New-Object System.Collections.Generic.List[string]
     $body.Add('(setvar "CMDECHO" 1)')
     $body.Add($setupCommon.TrimEnd())
@@ -242,38 +227,7 @@ function New-CaseFiles($Case) {
     }
 }
 
-# accoreconsole の FixedProfile では SECURELOAD と TRUSTEDPATHS の実行中変更が拒否される。
-# 対象版のプロファイル保存値だけを起動前に設定し、外側の CadRegGuard で未作成値を含めて戻す。
-function Enable-PluginLoadForProbe {
-    $release = switch ($Ver) {
-        '2024' { 'R24.3' }
-        '2026' { 'R25.1' }
-        '2027' { 'R26.0' }
-    }
-    $releasePath = "HKCU:\Software\Autodesk\AutoCAD\$release"
-    $variablePaths = New-Object System.Collections.Generic.List[string]
-    foreach ($product in @(Get-ChildItem -LiteralPath $releasePath -ErrorAction Stop)) {
-        $rootVariables = Join-Path $product.PSPath 'Variables'
-        if (Test-Path -LiteralPath $rootVariables) { $variablePaths.Add($rootVariables) }
-        $profiles = Join-Path $product.PSPath 'Profiles'
-        if (Test-Path -LiteralPath $profiles) {
-            foreach ($profile in @(Get-ChildItem -LiteralPath $profiles -ErrorAction Stop)) {
-                $profileVariables = Join-Path $profile.PSPath 'Variables'
-                if (Test-Path -LiteralPath $profileVariables) { $variablePaths.Add($profileVariables) }
-            }
-        }
-    }
-    if ($variablePaths.Count -eq 0) { throw "AutoCAD $Ver の Variables キーがない: $releasePath" }
-    foreach ($path in $variablePaths) {
-        $oldTrusted = (Get-Item -LiteralPath $path -ErrorAction Stop).GetValue('TRUSTEDPATHS', '')
-        $trustedItems = @([string]$oldTrusted -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        $trusted = if ($trustedItems -contains $pluginDir) { [string]$oldTrusted } else { (@($trustedItems) + $pluginDir) -join ';' }
-        Set-ItemProperty -LiteralPath $path -Name 'SECURELOAD' -Value 0 -Type DWord -ErrorAction Stop
-        Set-ItemProperty -LiteralPath $path -Name 'TRUSTEDPATHS' -Value $trusted -Type String -ErrorAction Stop
-    }
-}
-
-function Invoke-Case($Case, $Files) {
+function Invoke-ObjectKeywordCase($Case, $Files) {
     $fail = New-Object System.Collections.Generic.List[string]
     $runId = "object-keyword-$([guid]::NewGuid().ToString('N'))"
     $childEnv = @{
@@ -295,7 +249,7 @@ function Invoke-Case($Case, $Files) {
             $saved[$name] = @{ Exists=(Test-Path -LiteralPath "Env:$name"); Value=$old }
             [Environment]::SetEnvironmentVariable($name, [string]$childEnv[$name], 'Process')
         }
-        $p = Start-Process -FilePath $acad -ArgumentList @('/i',$Files.Dwg,'/s',$Files.Scr,'/l','ja-JP') `
+        $p = Start-Process -WorkingDirectory (Split-Path -Parent $Files.Scr) -FilePath $acad -ArgumentList (ConvertTo-NativeArgString @('/i', $Files.Dwg, '/s', $Files.Scr, '/l', 'ja-JP')) `
             -RedirectStandardOutput $Files.Stdout -RedirectStandardError $Files.Stderr -PassThru -WindowStyle Hidden
     }
     finally {
@@ -340,7 +294,7 @@ function Invoke-Case($Case, $Files) {
     }
     if ($paperEntityMode) {
         if ($stdoutText -match '\[CadPeta\] エラー|System\.InvalidOperationException|eWrongDatabase') {
-            $fail.Add('紙空間選択で例外が発生した')
+            $fail.Add('ペーパー空間選択で例外が発生した')
         }
         $emf = @(Get-ChildItem -LiteralPath $Files.Work -Filter '*.emf' -Recurse -ErrorAction SilentlyContinue)
         if ($Case.ExpectedNoArtifact) {
@@ -351,7 +305,7 @@ function Invoke-Case($Case, $Files) {
             }
         } elseif ($PaperEntityType -eq 'VIEWPORT') {
             if ($emf.Count -ne 1 -or $emf[0].Length -le 0) {
-                $fail.Add("紙空間選択EMF個数またはサイズが不正: count=$($emf.Count)")
+                $fail.Add("ペーパー空間選択EMF個数またはサイズが不正: count=$($emf.Count)")
             }
             $svg = @(Get-ChildItem -LiteralPath $Files.Work -Filter '*.svg' -Recurse -ErrorAction SilentlyContinue)
             $pathCount = if ($svg.Count -eq 1) {
@@ -519,13 +473,13 @@ if ($ProbeOnly) {
 }
 
 . "$PSScriptRoot\CadRegGuard.ps1"
-$regGuard = Get-CadRegSnapshot
+$regGuard = Get-CadRegSnapshot -StageToTrusted @($plugin) -AcadVersion $Ver
 $results = @()
 $regReport = $null
+$runError = $null
 try {
-    Enable-PluginLoadForProbe
     foreach ($item in $prepared) {
-        $result = Invoke-Case $item.Case $item.Files
+        $result = Invoke-ObjectKeywordCase $item.Case $item.Files
         $results += $result
         $mark = $result.pass ? 'PASS' : 'FAIL'
         "[{0,-20}] {1} trace={2} window={3} selection={4} pickfirst={5}" -f `
@@ -533,10 +487,12 @@ try {
         foreach ($failure in $result.failures) { "  NG: $failure" }
     }
 }
+catch { $runError = $_ }
 finally {
-    $regReport = Restore-CadRegState $regGuard
-    if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
+    Restore-CadRegStateAndReport $regGuard ([ref]$regReport)
 }
+# 本体が例外で止まったときは、その例外と復元の失敗を合わせて投げる（ケースの判定は途中までなので、結果は書き出さない）
+if ($runError) { Assert-CadRunAndRegRestore $runError $regReport }
 if (-not $regReport.ok) {
     $results += [pscustomobject]@{ id='registry-guard'; pass=$false; failures=@("復元検証失敗: " + ($regReport.mismatch -join '; ')) }
 }

@@ -25,9 +25,4 @@
     <ProjectReference Include="..\CadPeta.Acquire.Common\CadPeta.Acquire.Common.csproj" />
   </ItemGroup>
 
-  <!-- 診断ログ JSON の直列化（設計書§7）。net8/net10 は in-box のため net48 のみパッケージ -->
-  <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
-    <PackageReference Include="System.Text.Json" Version="$(SystemTextJsonVersion)" />
-  </ItemGroup>
-
 </Project>

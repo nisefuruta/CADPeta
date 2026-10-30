@@ -19,13 +19,14 @@
 #   pwsh -File tests/tools/regression/peta_option_matrix.ps1 -Set PetaFull [-CaseFilter '...']
 #   pwsh -File tests/tools/regression/peta_option_matrix.ps1 -Set Smoke -Ver 2027 -CampaignId <既存ID>
 #
-# 前提: dotnet build CadPeta.sln 済み。PetaFull/PetaData は peta_option_matrix_flags.json
+# 前提: pwsh -File tests/tools/build_e2e.ps1 済み（配布物と同じビルドの DLL）。PetaFull/PetaData は peta_option_matrix_flags.json
 # （試走から人手承認で固定した内容フラグと golden）が無いと実行を拒否する。
 #
-# 環境保全: scr に FILEDIA / SECURELOAD を書かない。プラグイン読込は TRUSTEDPATHS の
-# scr 内 保存→追加→復元。さらに実行全体を HKCU の AutoCAD ハイブ対象値
+# 環境保全: scr に FILEDIA / SECURELOAD / TRUSTEDPATHS を書かない。プラグインは信頼済みのフォルダへ
+# コピーして読み込み、終了後に削除する。さらに実行全体を HKCU の AutoCAD ハイブ対象値
 # （FileDialog/SECURELOAD/TRUSTEDPATHS/PLOTTRANSPARENCYOVERRIDE）のスナップショット→
 # 復元検査で包む（タイムアウトで自プロセスを停止した後も含む）。
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [ValidateSet('2026', '2027')][string]$Ver = '2026',
     [Parameter(Mandatory)]
@@ -33,19 +34,26 @@ param(
     [string]$CaseFilter = '',
     [string]$OutRoot = "$env:TEMP\CadPeta_option_matrix",
     [string]$CampaignId = '',
-    [string]$Config = 'Debug',
     [int]$TimeoutSeconds = 240,
     [int]$PdfRenderComparisonTimeoutSeconds = 120,
-    [switch]$ProbeOnly
+    [switch]$ProbeOnly,
+    # 1 ケース 1 起動で実行する（既定は図面の種類ごとに 1 回の起動で続けて実行する）
+    [switch]$OneLaunchPerCase
 )
 $ErrorActionPreference = 'Stop'
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'peta_option_matrix.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 # ---------------------------------------------------------------- 環境と定数
 $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
 $tfm = switch ($Ver) { '2026' { 'net8.0-windows' } '2027' { 'net10.0-windows' } }
 $acc = "C:\Program Files\Autodesk\AutoCAD $Ver\accoreconsole.exe"
-$plugin = "$repo\src\CadPeta.Plugin.Acad\bin\$Config\$tfm\CadPeta.Plugin.Acad.dll"
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$plugin = (Get-E2ePluginPath Acad $tfm)
 $dwgByKind = @{
     model    = "$repo\tests\assets\testcharts\TESTCHART2.dwg"
     layout   = "$repo\tests\assets\testcharts\TESTCHART2_layout.dwg"
@@ -53,7 +61,6 @@ $dwgByKind = @{
 }
 $flagsPath = Join-Path $PSScriptRoot 'peta_option_matrix_flags.json'
 if (-not (Test-Path $acc)) { throw "accoreconsole がない: $acc" }
-if (-not (Test-Path $plugin)) { throw "プラグイン未ビルド: $plugin" }
 $dwgByKind.Values | ForEach-Object { if (-not (Test-Path $_)) { throw "入力図面がない: $_" } }
 
 # レイアウトの窓の既知正解（crop_regression.ps1 と同じ窓・同じ図面で確定済みの値）
@@ -63,9 +70,6 @@ $ExpectPaperWinM5 = @{ W = '110'; H = '80'; VB = '155 108.5 110 80' }
 $ExpectPaperFull = @{ W = '420.1583'; H = '297.0389'; VB = '0 0 420.1583 297.0389' }
 # Paper の O 用に entmake する矩形（標準窓の内側に置く）
 $PaperRectLisp = '(setq cadpetaRect (entmakex (list ''(0 . "LWPOLYLINE") ''(100 . "AcDbEntity") (cons 8 "0") ''(67 . 1) (cons 410 "PETA_A3") ''(100 . "AcDbPolyline") ''(90 . 4) ''(70 . 1) ''(10 60.0 50.0) ''(10 140.0 50.0) ''(10 140.0 100.0) ''(10 60.0 100.0))))'
-# Model の O は TESTCHART2 上の固定窓による真部分集合を使う。
-# 全体選択を使うと O が無視されても全体出力と一致し、偽 PASS になる。
-$ModelSubsetLisp = '(setq cadpetaAll (ssget "_X" ''((410 . "Model")))) (setq cadpetaSubset (ssget "_W" ''(50 40) ''(150 110))) (princ (strcat "\nCADPETA_MODEL_SELECTION all=" (itoa (if cadpetaAll (sslength cadpetaAll) 0)) " subset=" (itoa (if cadpetaSubset (sslength cadpetaSubset) 0)))) (princ)'
 $BgColor = '#FF8040'
 
 # stdout 照合の文言（出典: src/CadPeta.UseCases/lang/1041.lang）。リテラルは Escape して使う
@@ -108,6 +112,11 @@ if ($needsFlags) {
 }
 $ModelWin = if ($flags -and $flags.modelWindow) { @{ P1 = $flags.modelWindow.p1; P2 = $flags.modelWindow.p2 } }
             else { @{ P1 = '120,90'; P2 = '320,200' } }  # Trial の既定候補（文字行と透過50%列を含む見込みの2点）
+
+# Model の O は、モデルの窓の内側に完全に入る図形（全図形の真部分集合）を選ぶ。
+# 全体選択を使うと O が無視されても全体出力と一致し、偽 PASS になる。
+# 窓と別の範囲から選ぶと、窓と O を組み合わせたケースで選んだ図形が範囲に入らず、出力が無くなる
+$ModelSubsetLisp = '(setq cadpetaAll (ssget "_X" ''((410 . "Model")))) (setq cadpetaSubset (ssget "_W" ''(' + ($ModelWin.P1 -replace ',', ' ') + ') ''(' + ($ModelWin.P2 -replace ',', ' ') + '))) (princ (strcat "\nCADPETA_MODEL_SELECTION all=" (itoa (if cadpetaAll (sslength cadpetaAll) 0)) " subset=" (itoa (if cadpetaSubset (sslength cadpetaSubset) 0)))) (princ)'
 
 function Get-ContentFlag([string]$space, [string]$r, [int]$o) {
     if (-not $flags) { return $null }
@@ -157,12 +166,6 @@ function Get-StringSha256([string]$s) { Get-BytesSha256 ([Text.Encoding]::UTF8.G
 # PDF は生成時刻などの非描画情報を持ち得るため、ファイルハッシュではなく既存の
 # compare_renders.py で描画内容を比較する。負の対照は通常の合格閾値ではなく、前景マスクが
 # 完全一致していないことを JSON 指標で判定する。exit=2 は比較不能なので同一・相違とも FAIL にする。
-function ConvertTo-NativeArgString([string[]]$ArgArray) {
-    ($ArgArray | ForEach-Object {
-            $s = [string]$_
-            if ($s -match '[\s"]') { '"' + ($s -replace '"', '\"') + '"' } else { $s }
-        }) -join ' '
-}
 
 function Compare-PdfRender([string]$a, [string]$b) {
     if (-not $a -or -not $b -or -not (Test-Path $a) -or -not (Test-Path $b)) {
@@ -207,13 +210,12 @@ function Compare-PdfRender([string]$a, [string]$b) {
 # ---------------------------------------------------------------- レジストリ保全
 # 開始時に記録し、正常終了・エラー終了を問わず finally で復元・検証する（CadRegGuard.ps1）
 . "$PSScriptRoot\CadRegGuard.ps1"
+. "$PSScriptRoot\..\common\accore_batch.ps1"
 
 # ---------------------------------------------------------------- キャンペーン記録
 if (-not $CampaignId) { $CampaignId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '_' + ([guid]::NewGuid().ToString('N').Substring(0, 8)) }
 if ($CampaignId -notmatch '^[A-Za-z0-9_-]+$') { throw "CampaignId は英数字・-・_ のみ: $CampaignId" }
-$outRootFull = [IO.Path]::GetFullPath($OutRoot).TrimEnd('\')
-$driveRoot = [IO.Path]::GetPathRoot($outRootFull).TrimEnd('\')
-if (-not $outRootFull -or $outRootFull -eq $driveRoot) { throw "OutRoot にドライブ直下は指定できません: $outRootFull" }
+$outRootFull = Resolve-OutRoot $OutRoot
 $campaignDir = Join-Path $outRootFull $CampaignId
 New-Item -ItemType Directory -Force (Join-Path $campaignDir 'results') | Out-Null
 
@@ -344,10 +346,12 @@ function Get-ScenarioList {
                     CmdLines = New-PetaDataCmdLines 0 0 0 0 0 })
         }
         'PetaEdge' {
-            # 比較基準（母数に数えない）: Paper 全体、Paper 窓、Model 全体、Model O 真部分集合
+            # 比較基準（母数に数えない）: Paper 全体、Paper 窓、Model 全体、Model 窓、Model O 真部分集合
             [void]$list.Add((Set-ScenarioId (New-PetaScenario 'Paper' 'A' 0 0 0 0 0 0) 'edge-base-full' $true))
             [void]$list.Add((Set-ScenarioId (New-PetaScenario 'Paper' 'W' 0 0 0 0 0 0) 'edge-base-win' $true))
             [void]$list.Add((Set-ScenarioId (New-PetaScenario 'Model' 'A' 0 0 0 0 0 0) 'edge-base-model-full' $true))
+            # Model 窓は O の印刷より前に置く（edge11 の比較基準。O の後の印刷が O の前と同じになることを確かめる）
+            [void]$list.Add((Set-ScenarioId (New-PetaScenario 'Model' 'W' 0 0 0 0 0 0) 'edge-base-model-win' $true))
             [void]$list.Add((Set-ScenarioId (New-PetaScenario 'Model' 'A' 1 0 0 0 0 0) 'edge-base-osel' $true))
             $edges = @(
                 @{ Id = 'edge01-all-keyword'; Cmd = @('PETA', '_All'); Expect = @{ svgEquals = 'edge-base-full' } }
@@ -383,6 +387,13 @@ function Get-ScenarioList {
                     SpaceSetup = New-SpaceSetup 'Model'
                     SelSetup = @($ModelSubsetLisp, '(sssetfirst nil cadpetaSubset)')
                     CmdLines = @('PETA', '') })
+            # O の印刷（側DB）の直後の Model 窓が、O の前の Model 窓と同じ出力になる。O の印刷で破棄した側DB の
+            # 文字のフォントの情報が、元の図面の次の印刷に残らないことを確かめる（1 回の起動で続けて実行するときだけ確かめられる）
+            [void]$list.Add(@{ Id = 'edge11-window-after-object'; Kind = 'peta'; Dwg = 'model'; Space = 'Model'
+                    Axes = @{ R = 'W'; O = 0; M = 0; L = 0; T = 0; F = 0; B = 0 }
+                    Edge = @{ svgEquals = 'edge-base-model-win'; emfEquals = 'edge-base-model-win'; pdfRenderEquals = 'edge-base-model-win' }
+                    SpaceSetup = New-SpaceSetup 'Model'; SelSetup = @()
+                    CmdLines = New-PetaCmdLines 'Model' 'W' 0 0 0 0 0 0 })
         }
         'PetaData' {
             foreach ($sc2 in 0, 1) { foreach ($m in 0, 1) { foreach ($l in 0, 1) {
@@ -449,12 +460,7 @@ function Get-ScenarioList {
 $setDir = Join-Path $campaignDir "$Ver-$Set"
 New-Item -ItemType Directory -Force $setDir | Out-Null
 $tempCadPeta = Join-Path $env:TEMP 'CadPeta'
-$pd = ([IO.Path]::GetDirectoryName($plugin)) -replace '\\', '/'
-$pl = $plugin -replace '\\', '/'
 
-function Add-Check($list, [string]$name, [bool]$ok, [string]$detail = '') {
-    [void]$list.Add(@{ name = $name; ok = $ok; detail = $detail })
-}
 
 function Get-SvgInfo([string]$path) {
     $head = Get-Content $path -TotalCount 1
@@ -491,76 +497,83 @@ function Get-SvgGradientProbe([string]$path) {
     $json | ConvertFrom-Json
 }
 
-function Invoke-Case([hashtable]$sc) {
-    if ($sc.Id -notmatch '^[A-Za-z0-9_-]+$') { throw "caseid が不正: $($sc.Id)" }
-    $caseDir = [IO.Path]::GetFullPath((Join-Path $setDir $sc.Id))
-    if ([IO.Path]::GetDirectoryName($caseDir) -ne $setDir) { throw "ケースパスが setDir 直下ではない: $caseDir" }
-    if (Test-Path $caseDir) { Remove-Item -LiteralPath $caseDir -Recurse -Force }
-    New-Item -ItemType Directory $caseDir | Out-Null
-    if (@(Get-ChildItem $caseDir -Force).Count -ne 0) { throw "ケースディレクトリが空でない: $caseDir" }
-
-    $dwgSrc = $dwgByKind[$sc.Dwg]
-    $dwgCopy = Join-Path $caseDir ([IO.Path]::GetFileName($dwgSrc))
-    Copy-Item $dwgSrc $dwgCopy
-    $dwgHash = (Get-FileHash $dwgCopy -Algorithm SHA256).Hash
-
-    # OSMODE は実行中だけ 0 にする（accoreconsole のスクリプト座標入力は2点目が定常スナップで
-    # 近傍ジオメトリへ吸着し、窓が入力値からずれる。AutoCAD 2026 実測）。プロファイル保存のため
-    # コマンド完了後に元値へ戻す（タイムアウト等で戻らない場合は外側のレジストリ保全が復元する）
-    $body = @(
-        '(setq cpOsmOld (getvar "OSMODE"))'
-        '(setvar "OSMODE" 0)'
-        '(setq cpOld (getvar "TRUSTEDPATHS"))'
-        "(setvar `"TRUSTEDPATHS`" (if (= cpOld `"`") `"$pd`" (strcat cpOld `";`" `"$pd`")))"
-        "(command `"_.NETLOAD`" `"$pl`")"
-        '(setvar "TRUSTEDPATHS" cpOld)'
-    ) + $sc.SpaceSetup + $sc.SelSetup + @(
+# 1 ケースの .scr の行（区切りのマーカーは Invoke-AccoreBatch が前後に置く）。先選択を毎回解除し、前のケースの
+# 選択を持ち越さない。ペーパー空間の O のために作った長方形はケースの終わりで削除する（残すと後のケースの出力に入る）
+function Get-OptionMatrixCaseLines([hashtable]$sc) {
+    @('(sssetfirst nil nil)') + $sc.SpaceSetup + $sc.SelSetup + @(
         "(princ `"\nCADPETA_CASE_BEGIN=$($sc.Id)`")(princ)"
     ) + $sc.CmdLines + @(
-        "(princ `"\nCADPETA_CASE_END=$($sc.Id)`")(princ)"
-        '(setvar "OSMODE" cpOsmOld)'
-        '_.CLOSE'
-        '_Y'
-        '_.QUIT'
+        '(if cadpetaRect (progn (entdel cadpetaRect) (setq cadpetaRect nil)))(princ)'
     )
-    $scr = Join-Path $caseDir 'run.scr'
-    ($body -join "`r`n") + "`r`n" | Out-File $scr -Encoding ascii -NoNewline
+}
 
-    $tempBefore = @(if (Test-Path $tempCadPeta) { (Get-ChildItem $tempCadPeta -Force).Name })
-    $seqBefore = [CadPeta.E2E.Clip]::GetClipboardSequenceNumber()
-    # PETADATA 系は「クリップボードを更新しない」ことを EMF 内容で判定する（シーケンス番号は
-    # 対話デスクトップ上の他プロセスのコピー操作でも進み、判定が偶発で壊れる。実測）
-    $clipEmfBefore = if ($sc.Kind -like 'petadata*') { (Read-ClipboardEmf).bytes } else { $null }
-    $preAcc = @(Get-Process accoreconsole -ErrorAction SilentlyContinue | ForEach-Object Id)
+# 起動の最初と最後の .scr の行。OSMODE は実行中だけ 0 にする（accoreconsole のスクリプト座標入力は2点目が
+# 定常スナップで近傍ジオメトリへ吸着し、窓が入力値からずれる。AutoCAD 2026 実測）。プロファイル保存のため
+# 最後に元値へ戻す（タイムアウト等で戻らない場合は外側のレジストリ保全が復元する）。NETLOAD は起動ごとに 1 回
+function Get-OptionMatrixLaunchHead {
+    @(
+        '(setq cpOsmOld (getvar "OSMODE"))'
+        '(setvar "OSMODE" 0)'
+    ) + (Get-AccoreNetloadLines $plugin)
+}
+function Get-OptionMatrixLaunchTail { @('(setvar "OSMODE" cpOsmOld)', '_.CLOSE', '_Y', '_.QUIT') }
 
-    $stdout = Join-Path $caseDir 'stdout.log'
-    $stderr = Join-Path $caseDir 'stderr.log'
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    $p = Start-Process -FilePath $acc -ArgumentList @('/i', $dwgCopy, '/s', $scr, '/l', 'ja-JP') `
-        -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
-    # 実行中はクリップボードへ触れない（読み戻しは終了後のみ）。クリップボードは対話
-    # デスクトップの共有資源で、利用者が作業中の端末では他のコピー操作と普通に競合する
-    # （登録が Win32 1418 で失敗する・登録成功後に別内容へ置き換わる、を実測。登録失敗時の
-    # 製品挙動〔EMF退避＋案内〕は設計どおり）。この競合起因の読み戻し失敗は呼び出し側が
-    # 1回だけ自動再実行して扱う
-    $timedOut = $false
-    if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
-        $timedOut = $true
-        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-        $p.WaitForExit()
+# ケースの区切りで記録する照合の材料。クリップボードは共有資源なので、ケースの直前と直後の内容を区切りで読む
+# （PETADATA 系は「クリップボードを更新しない」ことを EMF 内容で判定する。シーケンス番号は対話デスクトップ上の
+# 他プロセスのコピー操作でも進み、判定が偶発で壊れる。実測）
+function Get-OptionMatrixBeforeState([hashtable]$sc) {
+    @{
+        TempBefore    = @(if (Test-Path $tempCadPeta) { (Get-ChildItem $tempCadPeta -Force).Name })
+        SeqBefore     = [CadPeta.E2E.Clip]::GetClipboardSequenceNumber()
+        ClipEmfBefore = if ($sc.Kind -like 'petadata*') { (Read-ClipboardEmf).bytes } else { $null }
     }
-    $sw.Stop()
+}
+function Get-OptionMatrixAfterState {
+    @{
+        TempAfter = @(if (Test-Path $tempCadPeta) { (Get-ChildItem $tempCadPeta -Force).Name })
+        SeqAfter  = [CadPeta.E2E.Clip]::GetClipboardSequenceNumber()
+        ClipAfter = Read-ClipboardEmf
+    }
+}
 
-    $out = if (Test-Path $stdout) { Get-Content $stdout -Raw -Encoding Unicode } else { '' }
+# 同じ図面の種類のケースを 1 回の起動で続けて実行し（Invoke-AccoreBatch）、ケースごとに判定する。
+# 1 ケースだけを渡すと 1 ケース 1 起動になる（-OneLaunchPerCase と、まとめた実行でだけ不合格になったケースの
+# 確かめ直しに使う）。戻り値: id → 結果の hashtable
+function Invoke-OptionMatrixBatch([object[]]$cases, [string]$kind, [string]$launchName = $kind) {
+    $batchCases = @($cases | ForEach-Object { @{ Id = $_.Id; Lines = (Get-OptionMatrixCaseLines $_); Scenario = $_ } })
+    $runs = Invoke-AccoreBatch -Acc $acc -DwgSrc $dwgByKind[$kind] -Cases $batchCases `
+        -Head (Get-OptionMatrixLaunchHead) -Tail (Get-OptionMatrixLaunchTail) -WorkRoot $setDir -LaunchName $launchName `
+        -TimeoutSeconds $TimeoutSeconds `
+        -OnCaseStart { param($case) Get-OptionMatrixBeforeState $case.Scenario } `
+        -OnCaseEnd { param($case) Get-OptionMatrixAfterState }
+    $results = @{}
+    foreach ($id in $runs.Keys) {
+        $r = $runs[$id]
+        # ケースの標準出力をケースのフォルダにも置く（g8 の検証などがケースのフォルダを読む）
+        [IO.File]::WriteAllText((Join-Path $r.CaseDir 'stdout.log'), $r.Output, [Text.Encoding]::Unicode)
+        $run = $r.Before + $r.After + @{
+            ExitCode = $r.ExitCode; ExitDetail = $r.ExitDetail; TimedOut = $r.TimedOut; TimeoutDetail = $r.TimeoutDetail
+            ElapsedMs = $r.ElapsedMs; DwgUnchanged = $r.DwgUnchanged; Residual = $r.Residual; StdoutPath = $r.StdoutPath
+            HarnessNames = $r.HarnessNames; State = $r.State
+        }
+        $results[$id] = Complete-OptionMatrixCase $r.Case.Scenario $r.CaseDir $r.Output $run
+    }
+    $results
+}
+# 起動の作業フォルダはケースごとに分ける（まとめた実行の起動の標準出力を上書きしない）
+function Invoke-OptionMatrixCase([hashtable]$sc) { (Invoke-OptionMatrixBatch @($sc) $sc.Dwg "$($sc.Dwg)_$($sc.Id)")[$sc.Id] }
+
+# 実行の結果（$run）と、そのケースの標準出力（$out）とケースのフォルダの成果物から判定する
+function Complete-OptionMatrixCase([hashtable]$sc, [string]$caseDir, [string]$out, [hashtable]$run) {
     $checks = New-Object System.Collections.ArrayList
-    Add-Check $checks 'timeout' (-not $timedOut) ($timedOut ? "${TimeoutSeconds}s 超過で自プロセスを停止した" : '')
-    Add-Check $checks 'exit0' ($p.ExitCode -eq 0) "exit=$($p.ExitCode)"
+    $timeoutDetail = if ($run.TimeoutDetail) { $run.TimeoutDetail } else { "${TimeoutSeconds}s 超過で自プロセスを停止した" }
+    Add-Check $checks 'timeout' (-not $run.TimedOut) ($run.TimedOut ? $timeoutDetail : '')
+    Add-Check $checks 'exit0' ($run.ExitCode -eq 0) $run.ExitDetail
     $endMarker = $out.Contains("CADPETA_CASE_END=$($sc.Id)")
     Add-Check $checks 'endMarker' $endMarker ($endMarker ? '' : '完了マーカーなし（入力列とプロンプトの不整合）')
-    Add-Check $checks 'dwgUnchanged' ((Get-FileHash $dwgCopy -Algorithm SHA256).Hash -eq $dwgHash)
-    $postAcc = @(Get-Process accoreconsole -ErrorAction SilentlyContinue | ForEach-Object Id)
-    $residual = @($postAcc | Where-Object { $_ -notin $preAcc })
-    Add-Check $checks 'noResidualProcess' ($residual.Count -eq 0) (($residual -join ',') )
+    Add-Check $checks 'dwgUnchanged' $run.DwgUnchanged
+    Add-Check $checks 'noResidualProcess' ($run.Residual.Count -eq 0) (($run.Residual -join ','))
+    Add-Check $checks 'drawingStateUnchanged' $run.State.Ok $run.State.Detail
 
     # Model の O 系は、入力集合そのものが非空の真部分集合であることを各ケースで証明する。
     # 成果物比較だけでは、O と比較基準の両方が誤って全体出力になった場合を区別できない。
@@ -577,14 +590,13 @@ function Invoke-Case([hashtable]$sc) {
 
     $result = @{
         id = $sc.Id; kind = $sc.Kind; axes = $sc.Axes; space = $sc.Space
-        exit = $p.ExitCode; elapsedMs = $sw.ElapsedMilliseconds; timedOut = $timedOut
-        checks = $checks; stdoutPath = $stdout
+        exit = $run.ExitCode; elapsedMs = $run.ElapsedMs; timedOut = $run.TimedOut
+        checks = $checks; stdoutPath = $run.StdoutPath
     }
 
-    # 成果物の分類（ケースディレクトリ内のみ・ハーネス自身のファイルは除外）
-    $harnessNames = @([IO.Path]::GetFileName($dwgCopy), 'run.scr', 'stdout.log', 'stderr.log')
+    # 成果物の分類（ケースディレクトリ内のみ・ハーネス自身のファイルと図面ごとのログは除外）
     if ($endMarker) {
-        $files = @(Get-ChildItem $caseDir -File -Recurse | Where-Object { $_.Name -notin $harnessNames })
+        $files = @(Get-ChildItem $caseDir -File -Recurse | Where-Object { $_.Name -notin $run.HarnessNames -and $_.Extension -ne '.log' })
         $arts = @{
             pdf   = @($files | Where-Object Extension -eq '.pdf')
             emf   = @($files | Where-Object Extension -eq '.emf')
@@ -595,8 +607,8 @@ function Invoke-Case([hashtable]$sc) {
         $result.artifacts = @($files | ForEach-Object { @{ name = $_.Name; sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash; size = $_.Length } })
 
         switch -Regex ($sc.Kind) {
-            '^peta$'          { Test-PetaCase $sc $out $arts $checks $result $caseDir $tempBefore }
-            '^petadata$'      { Test-PetaDataCase $sc $out $arts $checks $result $seqBefore $clipEmfBefore }
+            '^peta$'          { Test-PetaCase $sc $out $arts $checks $result $caseDir $run }
+            '^petadata$'      { Test-PetaDataCase $sc $out $arts $checks $result $run }
             '^petadata-empty$' {
                 Add-Check $checks 'abortMsg' ($out -match $Msg.DataEmpty)
                 Add-Check $checks 'noArtifacts' (($arts.pdf.Count + $arts.emf.Count + $arts.svg.Count + $arts.diag.Count) -eq 0) `
@@ -611,7 +623,7 @@ function Invoke-Case([hashtable]$sc) {
 }
 
 # PETA の判定。共通文言・成果物集合・SVG 痕跡・F=off のクリップボード読み戻し
-function Test-PetaCase($sc, $out, $arts, $checks, $result, $caseDir, $tempBefore) {
+function Test-PetaCase($sc, $out, $arts, $checks, $result, $caseDir, $run) {
     $a = $sc.Axes
     $fileOn = ($a.F -eq 0)
     # サマリ行（F=off は（ファイル出力オフ）付き）
@@ -668,12 +680,11 @@ function Test-PetaCase($sc, $out, $arts, $checks, $result, $caseDir, $tempBefore
     else {
         Add-Check $checks 'noArtifacts' (($arts.pdf.Count + $arts.svg.Count + $arts.emf.Count + $arts.diag.Count + $arts.stage.Count) -eq 0) `
             "pdf=$($arts.pdf.Count) svg=$($arts.svg.Count) emf=$($arts.emf.Count)"
-        $tempAfter = @(if (Test-Path $tempCadPeta) { (Get-ChildItem $tempCadPeta -Force).Name })
-        $newTemp = @($tempAfter | Where-Object { $_ -notin $tempBefore })
+        $newTemp = @($run.TempAfter | Where-Object { $_ -notin $run.TempBefore })
         Add-Check $checks 'noTempResidue' ($newTemp.Count -eq 0) ($newTemp -join ',')
-        # クリップボード読み戻し（終了後。F=on の EMF とバイト一致することを実測済み）。
-        # EMF の内容は F=on の相方とクロスチェックで比較する
-        $clipPost = Read-ClipboardEmf
+        # クリップボード読み戻し（ケースの区切り、または終了後に読んだ内容。F=on の EMF とバイト一致することを
+        # 実測済み）。EMF の内容は F=on の相方とクロスチェックで比較する
+        $clipPost = $run.ClipAfter
         if (-not $clipPost.ok) { Add-Check $checks 'clipboardReadable' $false 'OpenClipboard がリトライ後も失敗（判定不能=FAIL）' }
         $bytes = $clipPost.bytes
         Add-Check $checks 'clipboardEmf' ($null -ne $bytes) ($null -eq $bytes ? 'CF_ENHMETAFILE なし' : "$($bytes.Length) bytes")
@@ -692,7 +703,7 @@ function Test-PetaCase($sc, $out, $arts, $checks, $result, $caseDir, $tempBefore
 }
 
 # PETADATA の判定。SVG のみ・寸法 golden・診断カテゴリ・クリップボード不変
-function Test-PetaDataCase($sc, $out, $arts, $checks, $result, $seqBefore, $clipEmfBefore) {
+function Test-PetaDataCase($sc, $out, $arts, $checks, $result, $run) {
     $a = $sc.Axes
     Add-Check $checks 'dataDone' ($out -match $Msg.DataDone)
     Add-Check $checks 'artifactSet' ($arts.svg.Count -eq 1 -and $arts.pdf.Count -eq 0 -and $arts.emf.Count -eq 0 -and $arts.diag.Count -eq 0 -and $arts.stage.Count -eq 0) `
@@ -700,9 +711,10 @@ function Test-PetaDataCase($sc, $out, $arts, $checks, $result, $seqBefore, $clip
     # クリップボード不変は CF_ENHMETAFILE の内容で判定する。「新しい EMF が現れた／別内容へ
     # 変わった」＝ PETADATA が書いた証拠のみ FAIL。形式の消失・open 失敗は対話デスクトップの
     # 他プロセス由来があり得るため WARN 記録（seq 差分も添える）
-    $seqAfter = [CadPeta.E2E.Clip]::GetClipboardSequenceNumber()
-    $clipAfter = Read-ClipboardEmf
-    $shaBefore = Get-BytesSha256 $clipEmfBefore
+    $seqBefore = $run.SeqBefore
+    $seqAfter = $run.SeqAfter
+    $clipAfter = $run.ClipAfter
+    $shaBefore = Get-BytesSha256 $run.ClipEmfBefore
     $shaAfter = Get-BytesSha256 $clipAfter.bytes
     if ($shaAfter -eq $shaBefore) {
         Add-Check $checks 'clipboardUntouched' $true "seq $seqBefore → $seqAfter（EMF 内容不変）"
@@ -817,9 +829,6 @@ function Find-Result($results, [hashtable]$axes, [string]$space) {
 
 function Invoke-PetaCross($results) {
     $cross = New-Object System.Collections.ArrayList
-    function Add-Cross([string]$name, [bool]$ok, [string]$detail = '') {
-        [void]$cross.Add(@{ name = $name; ok = $ok; detail = $detail })
-    }
     $petaCases = @($results | Where-Object { $_.kind -eq 'peta' -and -not $_.Baseline })
     foreach ($r in $petaCases) {
         $a = $r.axes
@@ -829,13 +838,13 @@ function Invoke-PetaCross($results) {
             $mate = Find-Result $results (Copy-AxesWith $a 'B' 0) $r.space
             if ($mate) {
                 if ($a.F -eq 0) {
-                    if ($r.svg -and $mate.svg) { Add-Cross "Bpair-svg:$($r.id)" ($r.svg.sha -eq $mate.svg.sha) }
+                    if ($r.svg -and $mate.svg) { Add-Check $cross "Bpair-svg:$($r.id)" ($r.svg.sha -eq $mate.svg.sha) }
                     if ($flag -and $flag.hasTransparency -and $r.emfSha -and $mate.emfSha) {
-                        Add-Cross "Bpair-emfDiff:$($r.id)" ($r.emfSha -ne $mate.emfSha) '透過ありのため下地色差が出るはず'
+                        Add-Check $cross "Bpair-emfDiff:$($r.id)" ($r.emfSha -ne $mate.emfSha) '透過ありのため下地色差が出るはず'
                     }
                 }
                 elseif ($flag -and $flag.hasTransparency -and $r.clipEmfSha -and $mate.clipEmfSha) {
-                    Add-Cross "Bpair-clipDiff:$($r.id)" ($r.clipEmfSha -ne $mate.clipEmfSha)
+                    Add-Check $cross "Bpair-clipDiff:$($r.id)" ($r.clipEmfSha -ne $mate.clipEmfSha)
                 }
             }
         }
@@ -843,7 +852,7 @@ function Invoke-PetaCross($results) {
         if ($a.F -eq 1 -and $r.clipEmfSha) {
             $mate = Find-Result $results (Copy-AxesWith $a 'F' 0) $r.space
             if ($mate -and $mate.emfSha) {
-                Add-Cross "Fpair-emf:$($r.id)" ($r.clipEmfSha -eq $mate.emfSha) `
+                Add-Check $cross "Fpair-emf:$($r.id)" ($r.clipEmfSha -eq $mate.emfSha) `
                     ($r.clipEmfSha -eq $mate.emfSha ? '' : "clip=$($r.clipEmfSha.Substring(0,12)) file=$($mate.emfSha.Substring(0,12))")
             }
         }
@@ -851,8 +860,8 @@ function Invoke-PetaCross($results) {
         if ($a.L -eq 1 -and $r.svg) {
             $mate = Find-Result $results (Copy-AxesWith $a 'L' 0) $r.space
             if ($mate -and $mate.svg) {
-                Add-Cross "Lpair-drawCount:$($r.id)" ($r.svg.drawCount -eq $mate.svg.drawCount) "$($r.svg.drawCount) vs $($mate.svg.drawCount)"
-                Add-Cross "Lpair-dims:$($r.id)" ($r.svg.W -eq $mate.svg.W -and $r.svg.H -eq $mate.svg.H)
+                Add-Check $cross "Lpair-drawCount:$($r.id)" ($r.svg.drawCount -eq $mate.svg.drawCount) "$($r.svg.drawCount) vs $($mate.svg.drawCount)"
+                Add-Check $cross "Lpair-dims:$($r.id)" ($r.svg.W -eq $mate.svg.W -and $r.svg.H -eq $mate.svg.H)
             }
         }
     }
@@ -864,21 +873,21 @@ function Invoke-PetaCross($results) {
     $modelO = Find-Result $results $modelOAxes 'Model'
     if ($modelFull -and $modelO) {
         $svgDiff = $modelFull.svg -and $modelO.svg -and ($modelFull.svg.sha -ne $modelO.svg.sha)
-        Add-Cross 'ModelObjectSubset-svgDiff' ([bool]$svgDiff) ($svgDiff ? '' : 'O 出力が Model 全体と同一')
+        Add-Check $cross 'ModelObjectSubset-svgDiff' ([bool]$svgDiff) ($svgDiff ? '' : 'O 出力が Model 全体と同一')
         $emfDiff = $modelFull.emfSha -and $modelO.emfSha -and ($modelFull.emfSha -ne $modelO.emfSha)
-        Add-Cross 'ModelObjectSubset-emfDiff' ([bool]$emfDiff) ($emfDiff ? '' : 'O 出力が Model 全体と同一')
+        Add-Check $cross 'ModelObjectSubset-emfDiff' ([bool]$emfDiff) ($emfDiff ? '' : 'O 出力が Model 全体と同一')
         $pdfCmp = Compare-PdfRender $modelFull.pdfPath $modelO.pdfPath
-        Add-Cross 'ModelObjectSubset-pdfRenderDiff' ([bool]$pdfCmp.Different) $pdfCmp.Detail
+        Add-Check $cross 'ModelObjectSubset-pdfRenderDiff' ([bool]$pdfCmp.Different) $pdfCmp.Detail
     }
     elseif (-not $CaseFilter) {
-        Add-Cross 'ModelObjectSubset-coverage' $false 'Model 全体または Model O の代表ケースがない'
+        Add-Check $cross 'ModelObjectSubset-coverage' $false 'Model 全体または Model O の代表ケースがない'
     }
     # Model の寸法一貫性: (R,O,M) が同じ組は同一ヘッダ
     $modelGroups = $petaCases | Where-Object { $_.space -eq 'Model' -and $_.svg } |
         Group-Object { "$($_.axes.R)|$($_.axes.O)|$($_.axes.M)" }
     foreach ($g in $modelGroups) {
         $heads = @($g.Group | ForEach-Object { "$($_.svg.W)|$($_.svg.H)|$($_.svg.VB)" } | Sort-Object -Unique)
-        Add-Cross "ModelDims:$($g.Name)" ($heads.Count -eq 1) (($heads -join ' / '))
+        Add-Check $cross "ModelDims:$($g.Name)" ($heads.Count -eq 1) (($heads -join ' / '))
     }
     # Model 窓×余白の算術: M=5 の寸法は M=0 の寸法＋四辺5mm（=各軸+10mm）。クロップは
     # 出力mm座標で効くため、用紙合わせ後の寸法に対しても加算で成立する
@@ -888,7 +897,7 @@ function Invoke-PetaCross($results) {
         if ($m0 -and $m1) {
             $okW = [math]::Abs([double]$m1.svg.W - ([double]$m0.svg.W + 10)) -le 0.0005
             $okH = [math]::Abs([double]$m1.svg.H - ([double]$m0.svg.H + 10)) -le 0.0005
-            Add-Cross "ModelMarginArith:O$o" ($okW -and $okH) "M0=$($m0.svg.W)x$($m0.svg.H) M5=$($m1.svg.W)x$($m1.svg.H)"
+            Add-Check $cross "ModelMarginArith:O$o" ($okW -and $okH) "M0=$($m0.svg.W)x$($m0.svg.H) M5=$($m1.svg.W)x$($m1.svg.H)"
         }
     }
     # L 軸のカバレッジ: L=1 かつファイル出力ありのケースを持つ空間ごとに、縮退せず
@@ -899,7 +908,7 @@ function Invoke-PetaCross($results) {
     }
     foreach ($space in $lSpaces) {
         $confirmed = @($petaCases | Where-Object { $_.space -eq $space -and $_.axes.L -eq 1 -and $_.svg -and $_.svg.hasLayerGroups -and -not $_.degradedOcg })
-        Add-Cross "LayerAxisCoverage:$space" ($confirmed.Count -ge 1) ($confirmed.Count -eq 0 ? '全ケースが OCG 欠如縮退 → L 軸未検証' : "$($confirmed.Count) 件で確認")
+        Add-Check $cross "LayerAxisCoverage:$space" ($confirmed.Count -ge 1) ($confirmed.Count -eq 0 ? '全ケースが OCG 欠如縮退 → L 軸未検証' : "$($confirmed.Count) 件で確認")
     }
     @($cross)
 }
@@ -907,30 +916,27 @@ function Invoke-PetaCross($results) {
 # PETADATA のクロスチェック: T/L だけ違うペアの寸法・描画数の不変、グラデーション G0/G1
 function Invoke-PetaDataCross($results) {
     $cross = New-Object System.Collections.ArrayList
-    function Add-Cross([string]$name, [bool]$ok, [string]$detail = '') {
-        [void]$cross.Add(@{ name = $name; ok = $ok; detail = $detail })
-    }
     $cases = @($results | Where-Object { $_.kind -eq 'petadata' -and $_.svg -and $_.id -like 'pdata-s*' })
     $groups = $cases | Group-Object { "$($_.axes.Scale2)|$($_.axes.M)|$($_.axes.S)" }
     foreach ($g in $groups) {
         $dims = @($g.Group | ForEach-Object { "$($_.svg.W)|$($_.svg.H)" } | Sort-Object -Unique)
-        Add-Cross "DataDims-invariant:$($g.Name)" ($dims.Count -eq 1) (($dims -join ' / '))
+        Add-Check $cross "DataDims-invariant:$($g.Name)" ($dims.Count -eq 1) (($dims -join ' / '))
     }
     foreach ($g in ($cases | Group-Object { "$($_.axes.Scale2)|$($_.axes.M)|$($_.axes.S)|$($_.axes.T)" })) {
         $counts = @($g.Group | ForEach-Object { $_.svg.drawCount } | Sort-Object -Unique)
-        Add-Cross "DataDrawCount-Lpair:$($g.Name)" ($counts.Count -eq 1) (($counts -join ' / '))
+        Add-Check $cross "DataDrawCount-Lpair:$($g.Name)" ($counts.Count -eq 1) (($counts -join ' / '))
     }
     $g0 = $results | Where-Object id -eq 'pdata-grad-g0' | Select-Object -First 1
     $g1 = $results | Where-Object id -eq 'pdata-grad-g1' | Select-Object -First 1
     if ($g0 -and $g1 -and $g0.gradient -and $g1.gradient) {
-        Add-Cross 'Gradient-imageCount' ($g0.gradient.count -eq $g1.gradient.count) "$($g0.gradient.count) vs $($g1.gradient.count)"
+        Add-Check $cross 'Gradient-imageCount' ($g0.gradient.count -eq $g1.gradient.count) "$($g0.gradient.count) vs $($g1.gradient.count)"
         # DPI 150→75 で埋込 PNG の画素寸法は各画像とも縮む（拡大する画像が1枚でもあれば失敗）
         $shrunk = 0; $grew = 0
         for ($i = 0; $i -lt [math]::Min($g0.gradient.count, $g1.gradient.count); $i++) {
             if ($g1.gradient.images[$i].w -lt $g0.gradient.images[$i].w) { $shrunk++ }
             elseif ($g1.gradient.images[$i].w -gt $g0.gradient.images[$i].w) { $grew++ }
         }
-        Add-Cross 'Gradient-dpiShrinks' ($shrunk -ge 1 -and $grew -eq 0) "縮小 $shrunk 件 / 拡大 $grew 件"
+        Add-Check $cross 'Gradient-dpiShrinks' ($shrunk -ge 1 -and $grew -eq 0) "縮小 $shrunk 件 / 拡大 $grew 件"
     }
     @($cross)
 }
@@ -938,9 +944,6 @@ function Invoke-PetaDataCross($results) {
 # エッジ・スモークの比較期待。
 function Invoke-EdgeCross($results) {
     $cross = New-Object System.Collections.ArrayList
-    function Add-Cross([string]$name, [bool]$ok, [string]$detail = '') {
-        [void]$cross.Add(@{ name = $name; ok = $ok; detail = $detail })
-    }
     $byId = @{}
     foreach ($r in $results) { $byId[$r.id] = $r }
     foreach ($r in $results) {
@@ -949,34 +952,34 @@ function Invoke-EdgeCross($results) {
         if ($e.svgEquals) {
             $base = $byId[$e.svgEquals]
             $ok = $base -and $r.svg -and $base.svg -and ($r.svg.sha -eq $base.svg.sha)
-            Add-Cross "svgEquals:$($r.id)=$($e.svgEquals)" ([bool]$ok) ($ok ? '' : "実 $($r.svg.sha) 基準 $($base.svg.sha)")
+            Add-Check $cross "svgEquals:$($r.id)=$($e.svgEquals)" ([bool]$ok) ($ok ? '' : "実 $($r.svg.sha) 基準 $($base.svg.sha)")
         }
         if ($e.emfEquals) {
             $base = $byId[$e.emfEquals]
             $ok = $base -and $r.emfSha -and $base.emfSha -and ($r.emfSha -eq $base.emfSha)
-            Add-Cross "emfEquals:$($r.id)=$($e.emfEquals)" ([bool]$ok)
+            Add-Check $cross "emfEquals:$($r.id)=$($e.emfEquals)" ([bool]$ok)
         }
         if ($e.svgNotEquals) {
             $base = $byId[$e.svgNotEquals]
             $ok = $base -and $r.svg -and $base.svg -and ($r.svg.sha -ne $base.svg.sha)
-            Add-Cross "svgNotEquals:$($r.id)!=$($e.svgNotEquals)" ([bool]$ok) `
+            Add-Check $cross "svgNotEquals:$($r.id)!=$($e.svgNotEquals)" ([bool]$ok) `
                 ($ok ? '' : 'O 出力が Model 全体と同一（O 無視の疑い）')
         }
         if ($e.emfNotEquals) {
             $base = $byId[$e.emfNotEquals]
             $ok = $base -and $r.emfSha -and $base.emfSha -and ($r.emfSha -ne $base.emfSha)
-            Add-Cross "emfNotEquals:$($r.id)!=$($e.emfNotEquals)" ([bool]$ok) `
+            Add-Check $cross "emfNotEquals:$($r.id)!=$($e.emfNotEquals)" ([bool]$ok) `
                 ($ok ? '' : 'O 出力が Model 全体と同一（O 無視の疑い）')
         }
         if ($e.pdfRenderEquals) {
             $base = $byId[$e.pdfRenderEquals]
             $cmp = if ($base) { Compare-PdfRender $r.pdfPath $base.pdfPath } else { @{ Exit = 2; Detail = '比較基準がない' } }
-            Add-Cross "pdfRenderEquals:$($r.id)=$($e.pdfRenderEquals)" ($cmp.Exit -eq 0) $cmp.Detail
+            Add-Check $cross "pdfRenderEquals:$($r.id)=$($e.pdfRenderEquals)" ($cmp.Exit -eq 0) $cmp.Detail
         }
         if ($e.pdfRenderNotEquals) {
             $base = $byId[$e.pdfRenderNotEquals]
             $cmp = if ($base) { Compare-PdfRender $r.pdfPath $base.pdfPath } else { @{ Exit = 2; Detail = '比較基準がない' } }
-            Add-Cross "pdfRenderNotEquals:$($r.id)!=$($e.pdfRenderNotEquals)" ([bool]$cmp.Different) $cmp.Detail
+            Add-Check $cross "pdfRenderNotEquals:$($r.id)!=$($e.pdfRenderNotEquals)" ([bool]$cmp.Different) $cmp.Detail
         }
     }
     @($cross)
@@ -1013,16 +1016,28 @@ if ($ProbeOnly) {
 
 "=== campaign=$CampaignId ver=$Ver set=$Set cases=$($scenarios.Count) ==="
 # FILEDIA/OSMODE 等は開始時に必ず記録し、正常・エラー終了の両方で finally が復元する
-$regBefore = Get-CadRegSnapshot
-"レジストリ保全: 対象値 $($regBefore.Count) 件を記録"
+$regBefore = Get-CadRegSnapshot -StageToTrusted @($plugin) -AcadVersion $Ver
+"レジストリ保全: AutoCAD のプロファイルの値 $($regBefore.Values.Count) 件と .aws $($regBefore.Aws.Count) 件を記録"
 
 $results = New-Object System.Collections.ArrayList
 $regReport = $null
+$runError = $null
 try {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    # 既定は図面の種類ごとに 1 回の起動で続けて実行する。-OneLaunchPerCase は 1 ケース 1 起動（従来の形）
+    $byId = @{}
+    if (-not $OneLaunchPerCase) {
+        foreach ($kind in @($scenarios | ForEach-Object { $_.Dwg } | Select-Object -Unique)) {
+            $group = @($scenarios | Where-Object { $_.Dwg -eq $kind })
+            "--- 図面 $kind の $($group.Count) ケースを 1 回の起動で実行する"
+            $batch = Invoke-OptionMatrixBatch $group $kind
+            foreach ($id in $batch.Keys) { $byId[$id] = $batch[$id] }
+        }
+    }
     $i = 0
     foreach ($sc in $scenarios) {
         $i++
-        $r = Invoke-Case $sc
+        $r = if ($OneLaunchPerCase) { Invoke-OptionMatrixCase $sc } else { $byId[$sc.Id] }
         # クリップボードは共有資源で、利用者の作業（コピー操作）と競合し得る。競合起因の
         # 読み戻し失敗だけは1回だけ自動再実行する。それ以外の失敗、再実行後の失敗はそのまま FAIL。
         # clipboardUntouched も対象に含める（Office 系のコピーは CF_ENHMETAFILE を載せるため
@@ -1030,9 +1045,20 @@ try {
         # 5,948 bytes の文面 EMF が載った。製品起因なら再実行でも決定的に再失敗する）
         $clipOnly = @($r.checks | Where-Object { -not $_.ok } | ForEach-Object name)
         if (-not $r.pass -and $clipOnly.Count -gt 0 -and -not ($clipOnly | Where-Object { $_ -notin @('clipboardEmf', 'clipboardReadable', 'clipboardUntouched') })) {
-            "    ↻ {0}: クリップボード読み戻しのみ失敗のため1回だけ再実行する" -f $sc.Id
-            $r = Invoke-Case $sc
+            "    ↻ {0}: クリップボード読み戻しのみ失敗のため1回だけ 1 ケース 1 起動で再実行する" -f $sc.Id
+            $r = Invoke-OptionMatrixCase $sc
             $r.retried = $true
+        }
+        elseif (-not $r.pass -and -not $OneLaunchPerCase) {
+            # まとめた実行でだけ不合格かを、1 ケース 1 起動で確かめる。合格でも、ケースの間の影響を見逃さないため不合格のままにする
+            "    ↻ {0}: まとめた実行で不合格のため 1 ケース 1 起動で確かめる" -f $sc.Id
+            # まとめた実行のケースのフォルダを残すため、別の名前のフォルダで実行する
+            $scSingle = @{} + $sc
+            $scSingle.Id = "$($sc.Id)-single"
+            $single = Invoke-OptionMatrixCase $scSingle
+            if ($single.pass) {
+                Add-Check $r.checks 'batchOnlyFailure' $false '1 ケース 1 起動では合格した（まとめた実行でだけ不合格）'
+            }
         }
         if ($sc.Baseline) { $r.Baseline = $true }
         if ($sc.Edge) { $r.edge = $sc.Edge }
@@ -1044,13 +1070,16 @@ try {
         }
     }
 }
+catch { $runError = $_ }
 finally {
+    "所要 {0:n0} 秒（{1}）" -f $sw.Elapsed.TotalSeconds, $(if ($OneLaunchPerCase) { '1 ケース 1 起動' } else { '図面の種類ごとに 1 回の起動' })
     if ($regBefore) {
-        $regReport = Restore-CadRegState $regBefore
-        if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
+        Restore-CadRegStateAndReport $regBefore ([ref]$regReport)
         if (-not $regReport.ok) { "レジストリ復元の検証に失敗: " + ($regReport.mismatch -join '; ') }
     }
 }
+# 本体が例外で止まったときは、その例外と復元の失敗を合わせて投げる（ケースの判定は途中までなので、集計は書き出さない）
+if ($runError) { Assert-CadRunAndRegRestore $runError $regReport }
 
 # クロスチェック
 $cross = @()

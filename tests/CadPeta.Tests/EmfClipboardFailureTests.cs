@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using CadPeta.Out.Emf;
 using Xunit;
 
@@ -101,9 +105,10 @@ public sealed class EmfClipboardFailureTests
 
     static void WithEmf(Action<string, byte[]> run)
     {
-        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".emf");
+        using var temp = new TempFolder();
+        string path = temp.File("clipboard.emf");
         byte[] bytes = Enumerable.Range(0, 128).Select(i => (byte)i).ToArray();
         File.WriteAllBytes(path, bytes);
-        try { run(path, bytes); } finally { File.Delete(path); }
+        run(path, bytes);
     }
 }

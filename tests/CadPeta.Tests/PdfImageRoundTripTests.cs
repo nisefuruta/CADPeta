@@ -2,26 +2,19 @@
 // PdfWriter は画像を /DeviceRGB 8bpc の無圧縮ストリームで書く。取得側 PdfImageDecoder は
 // これを ColorSpace に従って3バイト/画素で復元しなければならない（かつて先頭バイトのグレーと
 // 誤読していた欠陥の回帰。docs/validation/architecture-decisions.md §3.4）。
+using System.Linq;
 using System.Drawing;
 using System.Drawing.Imaging;
 using CadPeta.Acquire.Pdf;
 using CadPeta.Ir;
 using CadPeta.Out.Emf;
 using CadPeta.Out.Pdf;
-using CadPeta.UseCases;
 using Xunit;
 
 namespace CadPeta.Tests;
 
 public class PdfImageRoundTripTests
 {
-    static byte[] EncodePng(Bitmap bmp)
-    {
-        using var ms = new MemoryStream();
-        bmp.Save(ms, ImageFormat.Png);
-        return ms.ToArray();
-    }
-
     [Fact]
     public void DeviceRGB画像はPDF往復で色と向きを保つ()
     {
@@ -45,12 +38,11 @@ public class PdfImageRoundTripTests
         var ir = new IrDocument { WidthMm = 40, HeightMm = 30 };
         ir.Nodes.Add(new IrImage
         {
-            XMm = 0, YMm = 0, WidthMm = 40, HeightMm = 30, PngBytes = EncodePng(bmp),
+            XMm = 0, YMm = 0, WidthMm = 40, HeightMm = 30, PngBytes = TestImages.EncodePng(bmp),
         });
 
-        string dir = Path.Combine(Path.GetTempPath(), "cadpeta_p4_imgroundtrip");
-        Directory.CreateDirectory(dir);
-        string pdfPath = Path.Combine(dir, "rt_" + Guid.NewGuid().ToString("N") + ".pdf");
+        using var temp = new TempFolder();
+        string pdfPath = temp.File("rt.pdf");
         new PdfWriter(new GdiGlyphOutliner()).Write(ir, pdfPath, new IrDiagnostics());
 
         var back = new PdfIrAcquirer().Acquire(pdfPath, new IrDiagnostics());

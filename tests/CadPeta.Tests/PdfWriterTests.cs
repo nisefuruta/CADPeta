@@ -1,6 +1,9 @@
 // PdfWriter（自前の最小PDFライタ）の単体検証。構造（MediaBox換算・xref整合・
 // ExtGState/クリップ/破線/SMask の出現・画像の上下向き）と非可逆処理（文字輪郭化）の
 // 診断ログ記録を検査する。
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using CadPeta.Ir;
 using CadPeta.Out.Emf;
@@ -17,8 +20,8 @@ public class PdfWriterTests
     static (byte[] Bytes, string Text) WritePdf(IrDocument ir, IrDiagnostics? diag = null,
                                                 IGlyphOutliner? outliner = null)
     {
-        string path = Path.Combine(Path.GetTempPath(), "cadpeta_p3b_pdfpng",
-            "unit_" + Guid.NewGuid().ToString("N") + ".pdf");
+        using var temp = new TempFolder();
+        string path = temp.File("unit.pdf");
         diag ??= new IrDiagnostics();
         new PdfWriter(outliner ?? new GdiGlyphOutliner()).Write(ir, path, diag);
         var bytes = File.ReadAllBytes(path);
@@ -31,7 +34,7 @@ public class PdfWriterTests
         var ir = new IrDocument { WidthMm = 210, HeightMm = 297 };
         var (_, text) = WritePdf(ir);
         double wPt = 210 * PdfWriter.PtPerMm, hPt = 297 * PdfWriter.PtPerMm;
-        Assert.Contains($"/MediaBox [0 0 {PdfNum.N(wPt)} {PdfNum.N(hPt)}]", text);
+        Assert.Contains($"/MediaBox [0 0 {IrNumber.Coordinate(wPt)} {IrNumber.Coordinate(hPt)}]", text);
         // 1pt=1/72インチ・1インチ=25.4mmの定義どおり（210mm→595.28pt、297mm→841.89pt 相当）
         Assert.Equal(595.2756, wPt, 3);
         Assert.Equal(841.8898, hPt, 3);
@@ -92,7 +95,7 @@ public class PdfWriterTests
             StrokeDashMm = new[] { 2.0, 1.0 },
         });
         var (_, text) = WritePdf(ir);
-        Assert.Contains($"[{PdfNum.N(2.0)} {PdfNum.N(1.0)}] 0 d", text);
+        Assert.Contains($"[{IrNumber.Coordinate(2.0)} {IrNumber.Coordinate(1.0)}] 0 d", text);
     }
 
     [Fact]
@@ -107,7 +110,7 @@ public class PdfWriterTests
         var diag = new IrDiagnostics();
         var (_, text) = WritePdf(ir, diag);
         Assert.Contains("/GS0 gs", text);
-        Assert.Contains($"/ca {PdfNum.N(0.5)}", text);
+        Assert.Contains($"/ca {IrNumber.Coordinate(0.5)}", text);
         // PDFはExtGStateでネイティブに透過を表現できるため、EMFと異なり非可逆処理ではない
         Assert.DoesNotContain(diag.Entries, e => e.Type.Contains("不透明化"));
     }
@@ -131,7 +134,7 @@ public class PdfWriterTests
             Fill = new IrRgb(0, 0, 0), ClipId = "c0",
         });
         var (_, text) = WritePdf(ir);
-        Assert.Contains($"{PdfNum.N(5.0)} {PdfNum.N(5.0)} m", text);
+        Assert.Contains($"{IrNumber.Coordinate(5.0)} {IrNumber.Coordinate(5.0)} m", text);
         Assert.Contains("W* n", text); // EvenOdd=true → W*
     }
 
@@ -223,7 +226,7 @@ public class PdfWriterTests
         var ir = new IrDocument { WidthMm = 50, HeightMm = 50 };
         ir.Nodes.Add(new IrImage { XMm = 5, YMm = 7, WidthMm = 20, HeightMm = 10, PngBytes = ms.ToArray() });
         var (_, text) = WritePdf(ir);
-        Assert.Contains($"{PdfNum.M(20.0)} 0 0 {PdfNum.M(-10.0)} {PdfNum.M(5.0)} {PdfNum.M(17.0)} cm", text);
+        Assert.Contains($"{IrNumber.Matrix(20.0)} 0 0 {IrNumber.Matrix(-10.0)} {IrNumber.Matrix(5.0)} {IrNumber.Matrix(17.0)} cm", text);
     }
 
     [Fact]

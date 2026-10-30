@@ -6,22 +6,21 @@
 # 使い方: pwsh tests/tools/regression/crop_regression.ps1 -Ver 2027 [-OutRoot <出力ルート>]
 # 注意:   プロンプト応答は正しい値のみ与える（無効入力は AutoCAD の作法どおり
 #         スクリプト自体を停止させる。検証記録_クロップ結線.md §6）
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory)][string]$Ver,     # 2024 / 2026 / 2027
-    [string]$OutRoot = "$env:TEMP\CadPeta_crop_regression",
-    [string]$Config = "Debug"
+    [string]$OutRoot = "$env:TEMP\CadPeta_crop_regression"
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'crop_regression.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
-$tfm = switch ($Ver) {
-    "2024" { "net48" }
-    "2026" { "net8.0-windows" }
-    "2027" { "net10.0-windows" }
-    default { throw "未知の版: $Ver" }
-}
+$tfm = Get-CadPluginTargetFramework $Ver
 $acadRoot = "C:\Program Files\Autodesk\AutoCAD $Ver"
-$plugin = "$repo\src\CadPeta.Plugin.Acad\bin\$Config\$tfm\CadPeta.Plugin.Acad.dll"
-if (-not (Test-Path $plugin)) { throw "プラグイン未ビルド: $plugin" }
+$plugin = (Get-E2ePluginPath Acad $tfm)
 $dwgSrc = "$repo\tests\assets\testcharts\TESTCHART2_layout.dwg"
 
 # ケース定義: PETA の範囲プロンプトへの応答列と、SVG に期待する寸法・viewBox。
@@ -39,66 +38,64 @@ $cases = @(
        Expect = @{ Width = "420.1583"; Height = "297.0389"; ViewBox = "0 0 420.1583 297.0389" } }
 )
 
-# FILEDIA/OSMODE 等のレジストリ保存値は開始時に記録し、エラー終了を含む finally で必ず復元する
+# 3 ケースを 1 回の起動で続けて実行する（tests/tools/common/accore_batch.ps1）。前のケースの余白(M)などの
+# オプションが次のケースへ残れば、期待の寸法と合わずに不合格になる。
+# 定常オブジェクトスナップは実行中だけ OSMODE=0 にする。accoreconsole のスクリプト座標入力は
+# 2点目（GetCorner／-PLOT の右上コーナー）が近傍ジオメトリへ吸着し、窓が入力値からずれる
+# （AutoCAD 2026 実測: (150,110) が (167,111) に化けた。ネイティブ -PLOT の格納値も同値で、
+# 製品でなく入力経路の性質。BricsCAD でも同じ実測がある）。OSMODE はプロファイル保存のため
+# QUIT 前に必ず元値へ戻す。SECURELOAD と TRUSTEDPATHS は変えず、プラグインを信頼済みのフォルダへコピーして読み込む
 . "$PSScriptRoot\CadRegGuard.ps1"
-$regGuard = Get-CadRegSnapshot
+. "$PSScriptRoot\..\common\accore_batch.ps1"
+$head = @(
+    '(setq cpOsmOld (getvar "OSMODE"))'
+    '(setvar "OSMODE" 0)'
+) + (Get-AccoreNetloadLines $plugin)
+$tail = @('(setvar "OSMODE" cpOsmOld)', '_.QUIT', '_Y')
+$batchCases = @($cases | ForEach-Object { @{ Id = $_.Key; Lines = @('PETA') + $_.Lines; Def = $_ } })
 
+# FILEDIA/OSMODE 等のレジストリ保存値は開始時に記録し、エラー終了を含む finally で必ず復元する
+$regGuard = Get-CadRegSnapshot -StageToTrusted @($plugin) -AcadVersion $Ver
+$runError = $null
+$regReport = $null # [ref] で受け取る変数を先に作る
 $failures = New-Object System.Collections.ArrayList
+$sw = [Diagnostics.Stopwatch]::StartNew()
 try {
-foreach ($c in $cases) {
-    $label = "$($Ver)_$($c.Key)"
-    $work = Join-Path $OutRoot $label
-    New-Item -ItemType Directory -Force $work | Out-Null
-    Remove-Item "$work\*" -Force -ErrorAction SilentlyContinue
-    $dwgCopy = Join-Path $work ([IO.Path]::GetFileName($dwgSrc))
-    Copy-Item $dwgSrc $dwgCopy -Force
+    New-Item -ItemType Directory -Force $OutRoot | Out-Null
+    $runs = Invoke-AccoreBatch -Acc "$acadRoot\accoreconsole.exe" -DwgSrc $dwgSrc -Cases $batchCases -Head $head -Tail $tail `
+        -WorkRoot $OutRoot -LaunchName $Ver
+    foreach ($bc in $batchCases) {
+        $c = $bc.Def
+        $r = $runs[$c.Key]
+        $label = "$($Ver)_$($c.Key)"
+        if ($r.TimedOut) { [void]$failures.Add("[$label] $($r.TimeoutDetail)"); continue }
+        if ($r.ExitCode -ne 0) { [void]$failures.Add("[$label] accoreconsole が異常終了: $($r.ExitDetail)"); continue }
+        if (-not $r.State.Ok) { [void]$failures.Add("[$label] $($r.State.Detail)"); continue }
 
-    $scr = Join-Path $work "run.scr"
-    # 定常オブジェクトスナップは実行中だけ OSMODE=0 にする。accoreconsole のスクリプト座標入力は
-    # 2点目（GetCorner／-PLOT の右上コーナー）が近傍ジオメトリへ吸着し、窓が入力値からずれる
-    # （AutoCAD 2026 実測: (150,110) が (167,111) に化けた。ネイティブ -PLOT の格納値も同値で、
-    # 製品でなく入力経路の性質。BricsCAD でも同じ実測がある）。OSMODE はプロファイル保存のため
-    # QUIT 前に必ず元値へ戻す
-    $body = @(
-        '(setvar "SECURELOAD" 0)'
-        '(setq cpOsmOld (getvar "OSMODE"))'
-        '(setvar "OSMODE" 0)'
-        'NETLOAD'
-        $plugin
-        'PETA'
-    ) + $c.Lines + @('(setvar "OSMODE" cpOsmOld)', '_.QUIT _Y')
-    ($body -join "`r`n") + "`r`n" | Out-File $scr -Encoding ascii -NoNewline
-
-    $stdout = Join-Path $work "accore_stdout.log"
-    & "$acadRoot\accoreconsole.exe" /i $dwgCopy /s $scr /l ja-JP 2>&1 | Out-File $stdout -Encoding utf8
-    $exit = $LASTEXITCODE
-    $arts = @(Get-ChildItem $work -Include *.svg, *.emf, *.json -Recurse)
-    "[$label] exit=$exit artifacts=$($arts.Count)"
-    if ($exit -ne 0) { [void]$failures.Add("[$label] accoreconsole が異常終了: exit=$exit") ; continue }
-
-    # SVG の寸法と viewBox（ASCII のため stdout の文字化けと無関係に判定できる）
-    $svg = Get-ChildItem $work -Filter *.svg | Select-Object -First 1
-    if (-not $svg) { [void]$failures.Add("[$label] SVG が生成されていない") ; continue }
-    $head = (Get-Content $svg.FullName -TotalCount 1)
-    if ($head -notmatch 'width="([^"]+)mm" height="([^"]+)mm" viewBox="([^"]+)"') {
-        [void]$failures.Add("[$label] SVG の寸法・viewBox を読み取れない: $head")
-        continue
-    }
-    $got = @{ Width = $Matches[1]; Height = $Matches[2]; ViewBox = $Matches[3] }
-    "[$label] width=$($got.Width) height=$($got.Height) viewBox=$($got.ViewBox)"
-    foreach ($k in @("Width", "Height", "ViewBox")) {
-        if ($got[$k] -ne $c.Expect[$k]) {
-            [void]$failures.Add("[$label] $k が期待と違う: 期待=$($c.Expect[$k]) 実際=$($got[$k])")
+        # SVG の寸法と viewBox（ASCII のため stdout の文字化けと無関係に判定できる）
+        $svg = Get-ChildItem $r.CaseDir -Filter *.svg | Select-Object -First 1
+        if (-not $svg) { [void]$failures.Add("[$label] SVG が生成されていない"); continue }
+        $headLine = (Get-Content $svg.FullName -TotalCount 1)
+        if ($headLine -notmatch 'width="([^"]+)mm" height="([^"]+)mm" viewBox="([^"]+)"') {
+            [void]$failures.Add("[$label] SVG の寸法・viewBox を読み取れない: $headLine")
+            continue
+        }
+        $got = @{ Width = $Matches[1]; Height = $Matches[2]; ViewBox = $Matches[3] }
+        "[$label] width=$($got.Width) height=$($got.Height) viewBox=$($got.ViewBox)"
+        foreach ($k in @("Width", "Height", "ViewBox")) {
+            if ($got[$k] -ne $c.Expect[$k]) {
+                [void]$failures.Add("[$label] $k が期待と違う: 期待=$($c.Expect[$k]) 実際=$($got[$k])")
+            }
         }
     }
 }
-}
+catch { $runError = $_ }
 finally {
-    $regReport = Restore-CadRegState $regGuard
-    if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
-    if (-not $regReport.ok) { [void]$failures.Add("レジストリ保全の復元検証に失敗: " + ($regReport.mismatch -join '; ')) }
+    "所要 {0:n0} 秒（1 回の起動）" -f $sw.Elapsed.TotalSeconds
+    Restore-CadRegStateAndReport $regGuard ([ref]$regReport) $failures
 }
-
+# 本体が例外で止まったときは、その例外と復元の失敗を合わせて投げる（ケースの判定は途中までなので、一覧は表示しない）
+if ($runError) { Assert-CadRunAndRegRestore $runError $regReport }
 if ($failures.Count -gt 0) {
     ""
     "=== 失敗 ==="

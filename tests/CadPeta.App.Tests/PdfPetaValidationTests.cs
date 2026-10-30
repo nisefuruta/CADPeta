@@ -1,19 +1,26 @@
-using CadPeta.App;
+using System;
+using System.Linq;
 using CadPeta.Geometry;
 using CadPeta.Ir;
+using CadPeta.Tests;
 using Xunit;
 
 namespace CadPeta.App.Tests;
 
 public sealed class PdfPetaValidationTests
 {
-    [Fact] public void Valid_request_has_no_invariant_errors() =>
-        Assert.Empty(Request(new PdfPetaOutput(PdfPetaOutputKind.Png, Path.Combine(Path.GetTempPath(), "a.png"), 150)).ValidateInvariants());
+    [Fact]
+    public void Valid_request_has_no_invariant_errors()
+    {
+        using var temp = new TempFolder();
+        Assert.Empty(Request(new PdfPetaOutput(PdfPetaOutputKind.Png, temp.File("a.png"), 150)).ValidateInvariants());
+    }
 
     [Fact]
     public void Pipeline共通契約が非有限cropと重複pathを拒否する()
     {
-        string path = Path.Combine(Path.GetTempPath(), "same.png");
+        using var temp = new TempFolder();
+        string path = temp.File("same.png");
         var request = Request(new(PdfPetaOutputKind.Png, path, 150), new(PdfPetaOutputKind.Svg, path)) with
         { CropRectMm = new RectMm(0, 0, double.NaN, 10) };
         var commonErrors = request.ValidateInvariants();
@@ -27,15 +34,16 @@ public sealed class PdfPetaValidationTests
     [Fact]
     public void 入力上書き_拡張子違い_同種複数を共通契約で拒否する()
     {
-        string input = Path.Combine(Path.GetTempPath(), "input.pdf");
+        using var temp = new TempFolder();
+        string input = temp.File("input.pdf");
         var request = new PdfPetaRequest
         {
             InputPdfPath = input,
             Outputs = new[]
             {
                 new PdfPetaOutput(PdfPetaOutputKind.Pdf, input),
-                new PdfPetaOutput(PdfPetaOutputKind.Svg, Path.Combine(Path.GetTempPath(), "wrong.pdf")),
-                new PdfPetaOutput(PdfPetaOutputKind.Svg, Path.Combine(Path.GetTempPath(), "second.svg")),
+                new PdfPetaOutput(PdfPetaOutputKind.Svg, temp.File("wrong.pdf")),
+                new PdfPetaOutput(PdfPetaOutputKind.Svg, temp.File("second.svg")),
             },
         };
         var errors = request.ValidateInvariants();

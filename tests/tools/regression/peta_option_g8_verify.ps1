@@ -38,10 +38,11 @@
 #
 # 使い方:
 #   pwsh -File tests/tools/regression/peta_option_g8_verify.ps1 `
-#       -CampaignDir <peta_option_matrix.ps1 の campaignDir> -Ver 2026 -Config Debug `
-#       -RoiConfig tests/tools/regression/peta_option_g8_roi.json
+#       -CampaignDir <peta_option_matrix.ps1 の campaignDir> -Ver 2026 `
+#       -RoiConfig tests/tools/regression/peta_option_matrix_g8_roi.json
 #
 # 終了コード: 0=全ケースPASS、1=1件でもFAILまたは未実施（SKIP）がある。
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory)][string]$CampaignDir,
     [ValidateSet('2026', '2027')][string]$Ver = '2026',
@@ -52,6 +53,11 @@ param(
     [int]$PythonToolTimeoutSeconds = 120
 )
 $ErrorActionPreference = 'Stop'
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'peta_option_g8_verify.ps1' $OutDir
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 # ---------------------------------------------------------------- 前提の確認
@@ -60,7 +66,7 @@ $matrixDir = Join-Path $PSScriptRoot 'peta_option_matrix'
 $compareScript = Join-Path $matrixDir 'compare_renders.py'
 $helperScript = Join-Path $matrixDir 'g8_helpers.py'
 # Model窓オラクルは window_contract_oracle.ps1（座標契約の読み戻し専用・用紙サイズ未指定で
-# ANSI A になる）に頼らず、New-PlotScrBody（用紙サイズ明示済み）を自前で使う。そのため
+# ANSI A になる）に頼らず、New-PlotScrLines（用紙サイズ明示済み）を自前で使う。そのため
 # window_contract_oracle.ps1／WindowContractProbe.dll はこのスクリプトの前提資産ではない
 foreach ($f in @($compareScript, $helperScript)) {
     if (-not (Test-Path $f -PathType Leaf)) { throw "前提資産がない: $f" }
@@ -116,12 +122,7 @@ $CmpDilateArgs = @('--dilate', "$CmpDilatePx", '--search', "$CmpSearchPx")
 # Start-Process -ArgumentList は配列要素を空白区切りで単純連結するだけで自動引用しない
 # （実測: "hello world" が2引数に割れる）。CampaignDir/OutDir 等の利用者指定パスは空白を
 # 含み得るため、要素ごとに手で引用してから単一文字列として渡す
-function ConvertTo-ProcessArgString([string[]]$ArgArray) {
-    ($ArgArray | ForEach-Object {
-            $s = [string]$_
-            if ($s -match '[\s"]') { '"' + ($s -replace '"', '\"') + '"' } else { $s }
-        }) -join ' '
-}
+. "$PSScriptRoot\..\common\test_helpers.ps1"
 
 # ---------------------------------------------------------------- ブラウザ探索（SVG比較用）
 function Find-HeadlessBrowser {
@@ -147,7 +148,7 @@ function Invoke-PyTool([string]$Label, [string]$ScriptPath, [string[]]$PyArgs) {
     $argList = @('run', '--project', $projectArg, 'python', $ScriptPath) + $PyArgs
     $p = $null
     try {
-        $p = Start-Process -FilePath 'uv' -ArgumentList (ConvertTo-ProcessArgString $argList) `
+        $p = Start-Process -FilePath 'uv' -ArgumentList (ConvertTo-NativeArgString $argList) `
             -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru -WindowStyle Hidden
         $timedOut = -not $p.WaitForExit($PythonToolTimeoutSeconds * 1000)
         if ($timedOut) {
@@ -256,11 +257,9 @@ function ConvertTo-PointPair([string]$P1, [string]$P2) {
 # レイアウトはプロンプト列が異なり（AutoCAD 2026 ja 実機で確定: 用紙サイズ既定が pc3 既定の
 # ANSI A になるため用紙名を明示し、用紙単位・図面の方向・上下反転・線の太さ尺度変更・
 # ペーパー空間を最初に印刷・隠線処理のプロンプトが挟まる）、別テンプレートを使う。
-function New-PlotScrBody([string[]]$PreLines, [string[]]$AreaLines, [string]$ScaleLine, [string]$PdfPath, [string]$StoredPathFwd, [string]$Space = 'Model') {
+# オラクル 1 つの .scr の行（-PLOT と、ページ設定へ格納された窓の読み戻し）。OSMODE の設定と終了の行は起動の最初と最後に置く
+function New-PlotScrLines([string[]]$PreLines, [string[]]$AreaLines, [string]$ScaleLine, [string]$PdfPath, [string]$StoredPathFwd, [string]$Space = 'Model') {
     $body = New-Object System.Collections.Generic.List[string]
-    # -PLOT の窓コーナーもスクリプト座標入力の2点目が定常スナップへ吸着する（実測）ため、
-    # 実行中だけ OSMODE=0 にし、QUIT 前に元値へ戻す
-    $body.AddRange([string[]]@('(setq cpOsmOld (getvar "OSMODE"))', '(setvar "OSMODE" 0)'))
     $body.AddRange([string[]]$PreLines)
     if ($Space -eq 'Paper') {
         $body.AddRange([string[]]@(
@@ -327,79 +326,47 @@ function New-PlotScrBody([string[]]$PreLines, [string[]]$AreaLines, [string]$Sca
             '                      " 140=" (cpnum cpe 140) " 141=" (cpnum cpe 141)) cprf)'
             '  (setq cpe (dictnext cpld)))'
             '(close cprf)'
-            '(setvar "OSMODE" cpOsmOld)'
-            '_.QUIT'
-            '_Y'
         ))
     , @($body)
 }
 
-function Invoke-AccoreOracle([string]$WorkDir, [string]$DwgSrc, [string[]]$PreLines, [string[]]$AreaLines, [string]$ScaleLine, [string]$Label, [string]$Space = 'Model') {
-    if (Test-Path $WorkDir) { Remove-Item -LiteralPath $WorkDir -Recurse -Force }
-    New-Item -ItemType Directory -Force $WorkDir | Out-Null
-    $dwgCopy = Join-Path $WorkDir ([IO.Path]::GetFileName($DwgSrc))
-    Copy-Item $DwgSrc $dwgCopy
-    $pdfPath = Join-Path $WorkDir 'oracle.pdf'
-    $storedPath = Join-Path $WorkDir 'oracle_stored.txt'
-    $storedFwd = $storedPath -replace '\\', '/'
-    $scr = Join-Path $WorkDir 'oracle.scr'
-    $body = New-PlotScrBody $PreLines $AreaLines $ScaleLine $pdfPath $storedFwd $Space
-    # 日本語（用紙名）を含む scr は CP932 で書く（ASCII だと文字が落ちて応答がずれる）
-    [IO.File]::WriteAllText($scr, ($body -join "`r`n") + "`r`n", [Text.Encoding]::GetEncoding(932))
+# 起動の最初と最後の行。-PLOT の窓コーナーもスクリプト座標入力の2点目が定常スナップへ吸着する（実測）ため、
+# 実行中だけ OSMODE=0 にし、終了の前に元値へ戻す
+$oracleHead = @('(setq cpOsmOld (getvar "OSMODE"))', '(setvar "OSMODE" 0)')
+$oracleTail = @('(setvar "OSMODE" cpOsmOld)', '_.QUIT', '_Y')
 
-    $stdout = Join-Path $WorkDir 'accore_stdout.log'
-    $stderr = Join-Path $WorkDir 'accore_stderr.log'
-    $p = Start-Process -FilePath $acc -ArgumentList (ConvertTo-ProcessArgString @('/i', $dwgCopy, '/s', $scr, '/l', 'ja-JP')) `
-        -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
-    if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
-        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-        $p.WaitForExit()
-        throw "オラクル生成[$Label]が ${TimeoutSeconds}秒で完了しない: $stdout"
-    }
-    if (-not (Test-Path $pdfPath)) {
-        $tail = (Get-Content $stdout -Encoding Unicode -Tail 60 -ErrorAction SilentlyContinue) -join "`n"
-        throw "オラクル PDF[$Label]が生成されていない（-PLOT の応答列がずれた可能性）:`n--- stdout 末尾 ---`n$tail"
-    }
-    $residual = (Get-Process AcCoreConsole -ErrorAction SilentlyContinue | Measure-Object).Count
-    if ($residual -gt 0) { Write-Warning "accoreconsole が $residual 件残留している（オラクル[$Label]）" }
-    $readback = if (Test-Path $storedPath) { @(Get-Content $storedPath) } else { @() }
-    if ($readback.Count -eq 0) {
-        $tail = (Get-Content $stdout -Encoding Unicode -Tail 60 -ErrorAction SilentlyContinue) -join "`n"
-        throw "オラクル[$Label]の格納値読み戻しが出ていない（-PLOT の応答列がずれた可能性）:`n--- stdout 末尾 ---`n$tail"
-    }
-    @{ Pdf = $pdfPath; Readback = $readback; WorkDir = $WorkDir; Stdout = $stdout }
+# オラクル 1 つの定義。Kind はオラクルのフォルダの名前、Post は結果へ判定の材料を足す処理（引数は結果の hashtable）
+function New-OracleSpec([string]$Kind, [string]$Dir, [string]$Dwg, [string[]]$Pre, [string[]]$Area, [string]$Scale, [string]$Space, [scriptblock]$Post = $null) {
+    @{ Kind = $Kind; Dir = $Dir; Dwg = $Dwg; Pre = $Pre; Area = $Area; Scale = $Scale; Space = $Space; Post = $Post }
 }
 
-# ---------------------------------------------------------------- オラクル種別ごとの生成
-function New-PaperWindowOracle([hashtable]$Win) {
-    $work = Join-Path $oracleRoot 'paper-window'
+function New-PaperWindowOracleSpec([hashtable]$Win) {
     $pre = @('(setvar "TILEMODE" 0)', '(setvar "CTAB" "PETA_A3")')
     $area = @('Window', $Win.P1, $Win.P2)
     # PETA_A3 レイアウトのページ設定は既に1:1（tests/assets/testcharts/README.md 参照）。
     # window_contract_oracle.ps1 は座標契約の実測目的で "Fit" を使うが、ここは画像比較のため
     # 実際の印刷寸法を1:1で固定する（未検証: 応答列がずれたら "Fit" 相当に戻して切出し側も直すこと）
-    $r = Invoke-AccoreOracle $work $dwgLayout $pre $area '1:1' 'PaperWindow' 'Paper'
-
-    $line = $r.Readback | Where-Object { $_ -match '^LAYOUT=PETA_A3 ' } | Select-Object -First 1
-    $check = @{ found = [bool]$line; matches = $false; detail = $line; expectedP1 = $Win.P1; expectedP2 = $Win.P2 }
-    if ($line -and $line -match '48=([-\d.]+) 49=([-\d.]+) 140=([-\d.]+) 141=([-\d.]+)') {
-        $pts = ConvertTo-PointPair $Win.P1 $Win.P2
-        $x0 = [double]$Matches[1]; $y0 = [double]$Matches[2]; $x1 = [double]$Matches[3]; $y1 = [double]$Matches[4]
-        $tol = 0.01
-        $check.matches = ([math]::Abs($x0 - $pts.X0) -le $tol) -and ([math]::Abs($y0 - $pts.Y0) -le $tol) -and
-        ([math]::Abs($x1 - $pts.X1) -le $tol) -and ([math]::Abs($y1 - $pts.Y1) -le $tol)
-        $check.storedLowerLeft = @($x0, $y0); $check.storedUpperRight = @($x1, $y1)
-    }
-    $r.WindowContractCheck = $check
-    $r
+    New-OracleSpec 'PaperWindow' 'paper-window' $dwgLayout $pre $area '1:1' 'Paper' {
+        param($r)
+        $line = $r.Readback | Where-Object { $_ -match '^LAYOUT=PETA_A3 ' } | Select-Object -First 1
+        $check = @{ found = [bool]$line; matches = $false; detail = $line; expectedP1 = $Win.P1; expectedP2 = $Win.P2 }
+        if ($line -and $line -match '48=([-\d.]+) 49=([-\d.]+) 140=([-\d.]+) 141=([-\d.]+)') {
+            $pts = ConvertTo-PointPair $Win.P1 $Win.P2
+            $x0 = [double]$Matches[1]; $y0 = [double]$Matches[2]; $x1 = [double]$Matches[3]; $y1 = [double]$Matches[4]
+            $tol = 0.01
+            $check.matches = ([math]::Abs($x0 - $pts.X0) -le $tol) -and ([math]::Abs($y0 - $pts.Y0) -le $tol) -and
+            ([math]::Abs($x1 - $pts.X1) -le $tol) -and ([math]::Abs($y1 - $pts.Y1) -le $tol)
+            $check.storedLowerLeft = @($x0, $y0); $check.storedUpperRight = @($x1, $y1)
+        }
+        $r.WindowContractCheck = $check
+    }.GetNewClosure()
 }
 
-function New-PaperOWindowOracle([hashtable]$Win) {
-    $work = Join-Path $oracleRoot 'paper-o-window'
+function New-PaperOWindowOracleSpec([hashtable]$Win) {
     # cadpetaRect と同一の矩形（peta_option_matrix.ps1 の $PaperRectLisp・60,50-140,100・
     # LWPOLYLINE・レイヤ"0"）を PETA_A3 の紙面空間へ単独で置き、他の実体（ビューポート含む）を
     # 全て消す。PETA の _Object 選択がこの1実体だけを出力対象にする挙動を、素の -PLOT で
-    # 再現するため（座標は peta_option_matrix.ps1 と同期を保つこと）
+    # 再現するため（座標は peta_option_matrix.ps1 と同期を保つこと）。消した図形はオラクルの後の UNDO で戻る
     $pre = @(
         '(setvar "TILEMODE" 0)'
         '(setvar "CTAB" "PETA_A3")'
@@ -407,61 +374,89 @@ function New-PaperOWindowOracle([hashtable]$Win) {
         '(command "_.ERASE" "_ALL" "")'
         '(entmakex (list (cons 0 "LWPOLYLINE") (cons 100 "AcDbEntity") (cons 8 "0") (cons 67 1) (cons 410 "PETA_A3") (cons 100 "AcDbPolyline") (cons 90 4) (cons 70 1) (list 10 60.0 50.0) (list 10 140.0 50.0) (list 10 140.0 100.0) (list 10 60.0 100.0)))'
     )
-    $area = @('Window', $Win.P1, $Win.P2)
-    Invoke-AccoreOracle $work $dwgLayout $pre $area '1:1' 'PaperOWindow' 'Paper'
+    New-OracleSpec 'PaperOWindow' 'paper-o-window' $dwgLayout $pre @('Window', $Win.P1, $Win.P2) '1:1' 'Paper'
 }
 
-function New-ModelFullOracle {
-    $work = Join-Path $oracleRoot 'model-full'
-    $extentsPath = Join-Path $work 'extents.txt'
-    $extentsFwd = $extentsPath -replace '\\', '/'
+function New-ModelFullOracleSpec {
     $pre = @(
         '(setvar "TILEMODE" 1)'
         '(command "_.ZOOM" "_Extents")'
         '(defun cpfmt3 (p) (strcat (rtos (car p) 2 6) "," (rtos (cadr p) 2 6) "," (rtos (caddr p) 2 6)))'
-        "(setq cpef (open `"$extentsFwd`" `"w`"))"
+        '(setq cpef (open "{LAUNCHDIR_LISP}/model-full.extents.txt" "w"))'
         '(write-line (strcat "EXTMIN=" (cpfmt3 (getvar "EXTMIN")) " EXTMAX=" (cpfmt3 (getvar "EXTMAX"))) cpef)'
         '(close cpef)'
     )
-    $area = @('Extents')
-    $r = Invoke-AccoreOracle $work $dwgModel $pre $area 'Fit' 'ModelFull'
-    if (Test-Path $extentsPath) {
-        $line = Get-Content $extentsPath -Raw
-        if ($line -match 'EXTMIN=([-\d.]+),([-\d.]+),[-\d.]+ EXTMAX=([-\d.]+),([-\d.]+),[-\d.]+') {
-            $r.ExtentsWMm = [double]$Matches[3] - [double]$Matches[1]
-            $r.ExtentsHMm = [double]$Matches[4] - [double]$Matches[2]
+    New-OracleSpec 'ModelFull' 'model-full' $dwgModel $pre @('Extents') 'Fit' 'Model' {
+        param($r)
+        $extentsPath = Join-Path $r.WorkDir 'model-full.extents.txt'
+        if (Test-Path $extentsPath) {
+            $line = Get-Content $extentsPath -Raw
+            if ($line -match 'EXTMIN=([-\d.]+),([-\d.]+),[-\d.]+ EXTMAX=([-\d.]+),([-\d.]+),[-\d.]+') {
+                $r.ExtentsWMm = [double]$Matches[3] - [double]$Matches[1]
+                $r.ExtentsHMm = [double]$Matches[4] - [double]$Matches[2]
+            }
         }
+        if (-not $r.ContainsKey('ExtentsWMm')) { throw "モデル全体オラクルの図形範囲(EXTMIN/EXTMAX)が読めない: $extentsPath" }
     }
-    if (-not $r.ContainsKey('ExtentsWMm')) { throw "モデル全体オラクルの図形範囲(EXTMIN/EXTMAX)が読めない: $extentsPath" }
-    $r
 }
 
-function New-ModelWindowOracle([hashtable]$Win) {
-    $work = Join-Path $oracleRoot 'model-window'
+function New-ModelWindowOracleSpec([hashtable]$Win) {
     # window_contract_oracle.ps1 の -Case AsIs（図面既定のUCS/ビューのまま Window+Fit+Center で
     # -PLOT する応答列）と同じ考え方だが、あちらは格納値(DXF 48/49/140/141)の読み戻しだけが目的で
     # 画像は使わない。用紙サイズを明示していないため既定の ANSI A (279.4x215.9mm) になり、
     # A3想定で切り出す本ハーネストの画像比較が破綻する（実測）。window_contract_oracle.ps1 自体は
-    # 変更せず、ここでは New-PlotScrBody（Model分岐で用紙サイズを明示済み）を自前で使う
-    $pre = @('(setvar "TILEMODE" 1)')
-    $area = @('Window', $Win.P1, $Win.P2)
-    Invoke-AccoreOracle $work $dwgModel $pre $area 'Fit' 'ModelWindow'
+    # 変更せず、ここでは New-PlotScrLines（Model分岐で用紙サイズを明示済み）を自前で使う
+    New-OracleSpec 'ModelWindow' 'model-window' $dwgModel @('(setvar "TILEMODE" 1)') @('Window', $Win.P1, $Win.P2) 'Fit' 'Model'
 }
 
-$oracleCache = @{}
-function Get-OracleFor([string]$Kind, [hashtable]$Win) {
-    if ($oracleCache.ContainsKey($Kind)) { return $oracleCache[$Kind] }
-    $result = switch ($Kind) {
-        'PaperWindow' { New-PaperWindowOracle $Win }
-        'PaperOWindow' { New-PaperOWindowOracle $Win }
-        'ModelFull' { New-ModelFullOracle }
-        'ModelWindow' { New-ModelWindowOracle $Win }
-        default { throw "未知のオラクル種別: $Kind" }
+# オラクルを図面ごとに 1 回の起動でまとめて作る（tests/tools/common/accore_batch.ps1）。各オラクルの前に UNDO の
+# マークを置き、後でマークまで戻す（Paper O 窓の図形の削除と、-PLOT が保存するページ設定を次のオラクルへ残さない）。
+# 戻り値: @{ Oracles = Kind → @{ Pdf; Readback; WorkDir; Stdout } と Post が足した判定の材料; Errors = Kind → 作れなかった理由 }。
+# 1 つのオラクルの失敗で、ほかのオラクルを捨てない（使うケースだけが不合格になる）
+function Invoke-OracleBatch([hashtable[]]$Specs) {
+    $oracles = @{}
+    $errors = @{}
+    New-Item -ItemType Directory -Force $oracleRoot | Out-Null
+    foreach ($group in ($Specs | Group-Object { $_.Dwg })) {
+        $cases = @($group.Group | ForEach-Object {
+            $lines = New-PlotScrLines $_.Pre $_.Area $_.Scale "{LAUNCHDIR}\$($_.Dir).oracle.pdf" "{LAUNCHDIR_LISP}/$($_.Dir).stored.txt" $_.Space
+            @{ Id = $_.Dir; Lines = @('(command "_.UNDO" "_M")') + $lines + @('(command "_.UNDO" "_B")'); Spec = $_ }
+        })
+        try {
+            # 日本語（用紙名）を含む scr は CP932 で書く（ASCII だと文字が落ちて応答がずれる）
+            $runs = Invoke-AccoreBatch -Acc $acc -DwgSrc $group.Name -Cases $cases -Head $oracleHead -Tail $oracleTail `
+                -WorkRoot $oracleRoot -LaunchName ([IO.Path]::GetFileNameWithoutExtension($group.Name)) -TimeoutSeconds $TimeoutSeconds `
+                -Encoding ([Text.Encoding]::GetEncoding(932))
+        }
+        catch {
+            foreach ($c in $cases) { $errors[$c.Spec.Kind] = "起動に失敗した: $($_.Exception.Message)" }
+            continue
+        }
+        foreach ($c in $cases) {
+            $spec = $c.Spec
+            try {
+                $run = $runs[$c.Id]
+                $stdout = Join-Path $run.CaseDir 'accore_stdout.log'
+                [IO.File]::WriteAllText($stdout, $run.Output, [Text.Encoding]::Unicode)
+                $tail = "`n--- stdout 末尾 ---`n$(($run.Output -split "`n" | Select-Object -Last 60) -join "`n")"
+                $pdf = Join-Path $run.CaseDir "$($spec.Dir).oracle.pdf"
+                $stored = Join-Path $run.CaseDir "$($spec.Dir).stored.txt"
+                if ($run.TimedOut) { throw "$($run.TimeoutDetail): $stdout" }
+                if ($run.ExitCode -ne 0) { throw "accoreconsole が異常終了した（$($run.ExitDetail)）: $stdout" }
+                if (@($run.Residual).Count) { throw "accoreconsole が残っている（PID: $(@($run.Residual) -join ',')）" }
+                if (-not $run.State.Ok) { throw $run.State.Detail }
+                if (-not (Test-Path $pdf)) { throw "PDF が生成されていない（-PLOT の応答列がずれた可能性）:$tail" }
+                $readback = @(if (Test-Path $stored) { Get-Content $stored })
+                if ($readback.Count -eq 0) { throw "格納値読み戻しが出ていない（-PLOT の応答列がずれた可能性）:$tail" }
+                $r = @{ Pdf = $pdf; Readback = $readback; WorkDir = $run.CaseDir; Stdout = $stdout }
+                if ($spec.Post) { & $spec.Post $r }
+                $oracles[$spec.Kind] = $r
+            }
+            catch { $errors[$spec.Kind] = $_.Exception.Message }
+        }
     }
-    $oracleCache[$Kind] = $result
-    $result
+    @{ Oracles = $oracles; Errors = $errors }
 }
-
 # ---------------------------------------------------------------- EMF の GDI 描画（レンダの正規化）
 # 実機で確認した事実: EMF のメタファイル再生（Graphics.DrawImage(Metafile,...)）はクラシックGDIの
 # 描画命令を経由するため、ホストGraphicsのSmoothingMode=AntiAliasを設定しても無視され、輪郭が
@@ -515,7 +510,7 @@ function Render-SvgViaBrowser([string]$SvgPath, [int]$TargetDpi, [string]$OutPng
     $expectH = [int][math]::Round($winH * $scaleFactor)
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         if (Test-Path $OutPng) { Remove-Item $OutPng -Force }
-        $p = Start-Process -FilePath $browserExe -ArgumentList (ConvertTo-ProcessArgString $chromeArgs) -PassThru -WindowStyle Hidden
+        $p = Start-Process -FilePath $browserExe -ArgumentList (ConvertTo-NativeArgString $chromeArgs) -PassThru -WindowStyle Hidden
         $exited = $p.WaitForExit(90 * 1000)
         if (-not $exited) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
@@ -556,8 +551,38 @@ $overallOk = $true
 
 # FILEDIA/OSMODE 等のレジストリ保存値は開始時に記録し、エラー終了を含む finally で必ず復元する
 . "$PSScriptRoot\CadRegGuard.ps1"
+. "$PSScriptRoot\..\common\accore_batch.ps1"
 $regGuard = Get-CadRegSnapshot
+$runError = $null
+$regReport = $null # [ref] で受け取る変数を先に作る
 try {
+# 4 種類のオラクルを、図面ごとに 1 回の起動でまとめて作る（Paper 窓・Paper O 窓・Model 全体・Model 窓の 4 起動が 2 起動になる）。
+# 作れなかったときは、そのオラクルを使うケースを不合格にする
+# ケースが使うオラクルだけを作る
+$oracleKinds = @($Cases | ForEach-Object Oracle | Sort-Object -Unique)
+$paperWin = @{ P1 = $PaperWinP1; P2 = $PaperWinP2 }
+$specs = New-Object System.Collections.Generic.List[hashtable]
+$specErrors = @{}
+foreach ($kind in $oracleKinds) {
+    try {
+        $specs.Add($(switch ($kind) {
+            'PaperWindow' { New-PaperWindowOracleSpec $paperWin }
+            'PaperOWindow' { New-PaperOWindowOracleSpec $paperWin }
+            'ModelFull' { New-ModelFullOracleSpec }
+            'ModelWindow' {
+                # Model 窓の範囲は、そのオラクルを使う最初のケースの PETA の窓と同じにする
+                $modelWinCase = $Cases | Where-Object Oracle -eq 'ModelWindow' | Select-Object -First 1
+                New-ModelWindowOracleSpec (Get-ScenarioWindowPoints (Get-ScenarioEntry (Find-CaseDir $modelWinCase.Id) $modelWinCase.Id))
+            }
+            default { throw "未知のオラクル種別: $kind" }
+        }))
+    }
+    catch { $specErrors[$kind] = $_.Exception.Message }
+}
+$batch = if ($specs.Count) { Invoke-OracleBatch $specs.ToArray() } else { @{ Oracles = @{}; Errors = @{} } }
+$oracles = $batch.Oracles
+$oracleErrors = $batch.Errors + $specErrors
+foreach ($kind in $oracleErrors.Keys) { "オラクル[$kind]を作れない: $($oracleErrors[$kind])" }
 foreach ($c in $Cases) {
     "=== ケース $($c.Id)（oracle=$($c.Oracle) compare=$($c.Compare)） ==="
     $caseOutDir = Join-Path $OutDir $c.Id
@@ -574,14 +599,8 @@ foreach ($c in $Cases) {
         $arts = Get-CaseArtifacts $caseDir
         $caseResult.petaCaseDir = $caseDir
 
-        $win = $null
-        switch ($c.Oracle) {
-            { $_ -in @('PaperWindow', 'PaperOWindow') } { $win = @{ P1 = $PaperWinP1; P2 = $PaperWinP2 } }
-            'ModelWindow' { $win = Get-ScenarioWindowPoints $scenario }
-            default { }
-        }
-
-        $oracle = Get-OracleFor $c.Oracle $win
+        if (-not $oracles.ContainsKey($c.Oracle)) { throw "オラクル[$($c.Oracle)]が無い: $($oracleErrors[$c.Oracle])" }
+        $oracle = $oracles[$c.Oracle]
         $caseResult.oraclePdf = $oracle.Pdf
         if ($oracle.WindowContractCheck) {
             $caseResult.windowContractCheck = $oracle.WindowContractCheck
@@ -849,12 +868,14 @@ foreach ($c in $Cases) {
     }
 }
 }
+catch { $runError = $_ }
 finally {
     # finally 内では throw しない（実行中の例外を握りつぶさない）。復元は必ず試みる
-    $regReport = Restore-CadRegState $regGuard
-    if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
+    Restore-CadRegStateAndReport $regGuard ([ref]$regReport)
     if (-not $regReport.ok) { $overallOk = $false; Write-Warning ("レジストリ保全の復元検証に失敗: " + ($regReport.mismatch -join '; ')) }
 }
+# 本体が例外で止まったときは、その例外と復元の失敗を合わせて投げる（ケースの判定は途中までなので、集計は書き出さない）
+if ($runError) { Assert-CadRunAndRegRestore $runError $regReport }
 
 # ---------------------------------------------------------------- 集計・保存
 $summary = [ordered]@{

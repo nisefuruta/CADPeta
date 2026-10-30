@@ -11,11 +11,19 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>WindowContractProbe</AssemblyName>
+    <DefineConstants>$(DefineConstants);CADPETA_ACAD</DefineConstants>
+    <!-- ソースは ..\Shared\WindowContractProbe.cs を 4 製品で共有する。既定の **/*.cs の取り込みを止め、
+         このフォルダの WindowContractProbe.cs（共有化前の旧ソース）をコンパイルしない -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!-- NETLOAD されるためホストが deps.json を読まない。依存は同一フォルダ配備にする -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\WindowContractProbe.cs" Link="WindowContractProbe.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- ExcludeAssets=runtime: コンパイル専用参照（実行時はホスト AutoCAD が同名アセンブリを提供）。

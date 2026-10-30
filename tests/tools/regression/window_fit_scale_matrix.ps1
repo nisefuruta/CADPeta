@@ -13,22 +13,27 @@
 #  2) 最終 SVG の viewBox 寸法 = 窓×尺度（表示フレーム）
 #  3) 最終 SVG の内容 bbox が viewBox を満たす（窓の縁に描いた矩形が四辺とも残る =
 #     クロップが実際の印字内容と一致する絶対サイズ検証）
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$Ver = "2026",
     [string]$OutRoot = "$env:TEMP\CadPeta_window_fit_scale",
-    [string]$Config = "Debug",
-    [int]$TimeoutSeconds = 240
+    [int]$TimeoutSeconds = 240   # 1 ケースの上限
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'window_fit_scale_matrix.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 [Text.Encoding]::RegisterProvider([Text.CodePagesEncodingProvider]::Instance)
 $cp932 = [Text.Encoding]::GetEncoding(932)
 $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
-$tfm = switch ($Ver) { "2024" { "net48" }; "2026" { "net8.0-windows" }; "2027" { "net10.0-windows" }; default { throw "未対応版: $Ver" } }
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$tfm = Get-CadPluginTargetFramework $Ver -UnknownVersionLabel "未対応版"
 $acad = "C:\Program Files\Autodesk\AutoCAD $Ver\accoreconsole.exe"
-$plugin = "$repo\src\CadPeta.Plugin.Acad\bin\$Config\$tfm\CadPeta.Plugin.Acad.dll"
+$plugin = (Get-E2ePluginPath Acad $tfm)
 $template = "C:\Program Files\Autodesk\AutoCAD $Ver\UserDataCache\ja-jp\Template\acadiso.dwt"
 if (-not (Test-Path $acad)) { throw "accoreconsole がない: $acad" }
-if (-not (Test-Path $plugin)) { throw "プラグインが未ビルド: $plugin" }
 if (-not (Test-Path $template)) { throw "テンプレートがない: $template" }
 
 # 用紙は表示名（-PLOT の用紙プロンプトは表示名を要求する）。余白付き（200×263）と
@@ -53,82 +58,54 @@ $ContentBboxTolMm = 1.0
 # 基本値以外の環境ではガードの開始値復元と矛盾するため、包括ガードへ一本化した
 . "$PSScriptRoot\CadRegGuard.ps1"
 
+# 全ケースを 1 回の起動で続けて実行する（tests/tools/common/accore_batch.ps1）。テンプレートの図面は図形を持たない
+# ので、各ケースの終わりに全図形を削除し、次のケースを同じ空の図面から始める（SETUP のマーカーの図形の数で確かめる）。
+# 図面は各ケースで別の名前で保存する（保存した図面は開いたままなので、ケースのフォルダへ移さない）。
+# SECURELOAD と TRUSTEDPATHS は変えず、信頼済みのフォルダへコピーしたプラグインを NETLOAD する（起動ごとに 1 回）
+. "$PSScriptRoot\..\common\accore_batch.ps1"
+$head = Get-AccoreNetloadLines $plugin
+$tail = @('_.CLOSE', '_Y', '_.QUIT')
+$batchCases = @(foreach ($c in $cases) {
+    $x1 = 50.0; $y1 = 40.0
+    $x2 = [math]::Round($x1 + $c.w, 3); $y2 = [math]::Round($y1 + $c.h, 3)
+    $p1 = "$x1,$y1"; $p2 = "$x2,$y2"
+    # -PLOT の応答列は AutoCAD 2026 ja-JP 実機確定（window_contract_oracle.ps1 と同型）。
+    # 方向はローカルキーワード英字（P/L）で応答する（「縦」等の全角語は黙って中断する。実測）
+    $lines = @(
+        "(command `"_.PLINE`" `"$p1`" `"$x2,$y1`" `"$p2`" `"$x1,$y2`" `"_C`")"
+        "(command `"_.LINE`" `"$p1`" `"$p2`" `"`")"
+        "(command `"_.LINE`" `"$x1,$y2`" `"$x2,$y1`" `"`")"
+        '_.SAVEAS', '2018', "{LAUNCHDIR}\case_$($c.id).dwg"
+        '-PLOT', 'Yes', '', 'AutoCAD PDF (High Quality Print).pc3', $c.paper, '', $c.orient, '',
+        'Window', $p1, $p2, 'Fit', 'Center', '', '', '', '', "{LAUNCHDIR}\oracle_$($c.id).pdf", 'Yes', 'Yes'
+        'PETADIAG', $p1, $p2
+        '(command "_.ERASE" "_ALL" "")'
+    )
+    @{ Id = $c.id; Lines = $lines; Def = $c }
+})
+
 $failures = @()
 New-Item -ItemType Directory -Force $OutRoot | Out-Null
-# スナップショットは最初のCAD起動より前、復元は全ケースのCAD終了後に1回だけ（ループ全体を1つのtry/finallyで包む）
-$regGuard = Get-CadRegSnapshot
+# スナップショットは CAD の起動より前、復元は CAD の終了後に 1 回だけ
+$regGuard = Get-CadRegSnapshot -StageToTrusted @($plugin) -AcadVersion $Ver
 $runError = $null
+$sw = [Diagnostics.Stopwatch]::StartNew()
 try {
-    foreach ($c in $cases) {
-        $work = Join-Path $OutRoot $c.id
-        if (Test-Path $work) { Remove-Item -LiteralPath $work -Recurse -Force }
-        New-Item -ItemType Directory $work | Out-Null
-        $seed = Join-Path $work "seed.dwt"
-        Copy-Item $template $seed
-        $dwg = Join-Path $work "case.dwg"
-        $oraclePdf = Join-Path $work "oracle.pdf"
-        $x1 = 50.0; $y1 = 40.0
-        $x2 = [math]::Round($x1 + $c.w, 3); $y2 = [math]::Round($y1 + $c.h, 3)
-        $p1 = "$x1,$y1"; $p2 = "$x2,$y2"
+    # 用紙の表示名に日本語を含むため、.scr は CP932 で書く
+    $runs = Invoke-AccoreBatch -Acc $acad -DwgSrc $template -Cases $batchCases -Head $head -Tail $tail `
+        -WorkRoot $OutRoot -LaunchName $Ver -TimeoutSeconds $TimeoutSeconds -KeepPatterns @('case_*.dwg', 'case_*.dwl', 'case_*.dwl2') -Encoding $cp932
+    foreach ($bc in $batchCases) {
+        $c = $bc.Def
+        $r = $runs[$c.id]
+        if ($r.TimedOut) { $failures += "$($c.id): $($r.TimeoutDetail)"; continue }
+        if ($r.ExitCode -ne 0) { $failures += "$($c.id): $($r.ExitDetail)"; continue }
+        if (-not $r.State.Ok) { $failures += "$($c.id): $($r.State.Detail)"; continue }
 
-        # -PLOT の応答列は AutoCAD 2026 ja-JP 実機確定（window_contract_oracle.ps1 と同型）。
-        # 方向はローカルキーワード英字（P/L）で応答する（「縦」等の全角語は黙って中断する。実測）
-        $scr = Join-Path $work "run.scr"
-        # FILEDIA は書かない（accoreconsole ではダイアログが出ず不要）。基本値は 1 であり、
-        # _.QUIT を経ない異常終了で 0 が永続した場合も、終了時の Restore-CadRegState が開始値へ戻す
-        $text = @"
-(setvar "SECURELOAD" 0)
-(command "_.PLINE" "$p1" "$x2,$y1" "$p2" "$x1,$y2" "_C")
-(command "_.LINE" "$p1" "$p2" "")
-(command "_.LINE" "$x1,$y2" "$x2,$y1" "")
-_.SAVEAS
-2018
-$dwg
--PLOT
-Yes
-
-AutoCAD PDF (High Quality Print).pc3
-$($c.paper)
-
-$($c.orient)
-
-Window
-$p1
-$p2
-Fit
-Center
-
-
-
-
-$oraclePdf
-Yes
-Yes
-NETLOAD
-$plugin
-PETADIAG
-$p1
-$p2
-_.CLOSE
-_Y
-_.QUIT
-"@
-        [IO.File]::WriteAllText($scr, $text, $cp932)
-        $stdout = Join-Path $work "stdout.log"
-        $stderr = Join-Path $work "stderr.log"
-        $p = Start-Process -FilePath $acad -ArgumentList @('/i', $seed, '/s', $scr, '/l', 'ja-JP') -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
-        if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
-            Stop-Process -Id $p.Id -Force; $p.WaitForExit()
-            $failures += "$($c.id): accoreconsole が ${TimeoutSeconds}秒で完了しない"
-            continue
-        }
-        if ($p.ExitCode -ne 0) { $failures += "$($c.id): exit=$($p.ExitCode)"; continue }
-
-        $lines = Get-Content $stdout -Encoding Unicode
+        $lines = $r.Output -split "`r?`n"
         $effective = @($lines | Select-String '有効な印刷領域:\s*幅=\s*([0-9.]+)\s*高さ=\s*([0-9.]+)')
         $scaleLine = @($lines | Select-String '窓プロット:.*尺度=([0-9.]+)mm/単位、回転=(\d+)度')
         if ($effective.Count -lt 2 -or $scaleLine.Count -lt 1) {
-            $failures += "$($c.id): 実効領域または尺度の診断行が取れない（stdout=$stdout）"
+            $failures += "$($c.id): 実効領域または尺度の診断行が取れない（stdout=$($r.StdoutPath)）"
             continue
         }
         $s = [double]$scaleLine[0].Matches[0].Groups[1].Value
@@ -145,7 +122,7 @@ _.QUIT
             }
         }
 
-        $svg = @(Get-ChildItem $work -Filter *.svg | Where-Object { $_.Name -notmatch '\.stage\d+\.' })
+        $svg = @(Get-ChildItem $r.CaseDir -Filter *.svg | Where-Object { $_.Name -notmatch '\.stage\d+\.' })
         if ($svg.Count -ne 1) { $failures += "$($c.id): 最終SVGが1つでない（$($svg.Count)）"; continue }
         $svgText = Get-Content $svg[0].FullName -Raw
         $vb = [regex]::Match($svgText, 'viewBox="([-0-9.]+) ([-0-9.]+) ([0-9.]+) ([0-9.]+)"')
@@ -180,17 +157,11 @@ _.QUIT
 }
 catch { $runError = $_ }
 finally {
-    $regReport = Restore-CadRegState $regGuard
-    if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
+    "所要 {0:n0} 秒（1 回の起動）" -f $sw.Elapsed.TotalSeconds
+    $regReport = $null # [ref] で受け取る変数を先に作る
+    Restore-CadRegStateAndReport $regGuard ([ref]$regReport)
 }
-if ($runError -and -not $regReport.ok) {
-    throw [AggregateException]::new(
-        'CAD実行失敗に加えてレジストリ復元にも失敗した',
-        [Exception[]]@($runError.Exception, [InvalidOperationException]::new($regReport.mismatch -join '; ')))
-}
-if ($runError) { throw $runError }
-if (-not $regReport.ok) { throw "レジストリ保全の復元検証に失敗: $($regReport.mismatch -join '; ')" }
-
+Assert-CadRunAndRegRestore $runError $regReport
 $residual = (Get-Process AcCoreConsole -ErrorAction SilentlyContinue | Measure-Object).Count
 if ($residual -gt 0) { $failures += "AcCoreConsole が $residual 件残留" }
 if ($failures.Count -gt 0) {

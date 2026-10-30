@@ -2,6 +2,8 @@
 // GDI のパスブラケット（BeginPath + ExtTextOutW + GetPath）でグリフ輪郭を取り出し、
 // テキスト空間（原点=ベースライン左端、Y下向き、mm、幅係数は未適用）のセグメント列を返す。
 // 輪郭の量子は 0.01mm（EMF の論理単位と同一。EMF 経路の座標量子を変えないため）。
+using System;
+using System.Collections.Generic;
 using CadPeta.Ir;
 using CadPeta.UseCases;
 

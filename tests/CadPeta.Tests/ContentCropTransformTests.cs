@@ -1,6 +1,9 @@
+using System;
+using System.Collections.Generic;
 using CadPeta.Ir;
 using CadPeta.UseCases;
 using Xunit;
+using static CadPeta.Tests.IrTestBuilders;
 
 namespace CadPeta.Tests;
 
@@ -42,7 +45,7 @@ public class ContentCropTransformTests
         // をグループローカルから合成すると、トップレベル座標では (10,10)-(20,20)。
         var innerPath = new IrPath
         {
-            Segments = new List<IrSegment> { new IrMove(0, 0), new IrLine(10, 10) },
+            Segments = DiagonalSegments(),
             Fill = new IrRgb(0, 0, 0),
         };
         var group3 = new IrGroup { Transform = new IrMatrix(1, 0, 0, 1, 2, 2) };

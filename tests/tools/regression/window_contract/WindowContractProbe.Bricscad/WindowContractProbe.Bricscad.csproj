@@ -13,8 +13,12 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>WindowContractProbe.Bricscad</AssemblyName>
+    <DefineConstants>$(DefineConstants);CADPETA_BRICSCAD</DefineConstants>
+    <!-- ソースは ..\Shared\WindowContractProbe.cs を 4 製品で共有する。既定の **/*.cs の取り込みを止め、
+         このフォルダの WindowContractProbe.cs（共有化前の旧ソース）をコンパイルしない -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!-- BricsCAD 本体のインストール先。環境が変わる場合はプロパティで上書きする -->
     <BricscadBinDir Condition="'$(BricscadBinDir)' == ''">C:\Program Files\Bricsys\BricsCAD V26 ja_JP</BricscadBinDir>
     <!-- TD_Mgd/BrxMgd は NuGet 参照アセンブリではなく実体 DLL（HintPath 直接参照）のため、
@@ -23,6 +27,10 @@
          ないため、この既知の警告だけを抑制する -->
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\WindowContractProbe.cs" Link="WindowContractProbe.cs" />
+  </ItemGroup>
 
   <!-- BricsCAD 参照アセンブリ: 利用者所有の本体 DLL への直接参照であり、ビルドには BricsCAD の
        インストールが前提となる。Teigha.Runtime（CommandMethod・CommandClass）・

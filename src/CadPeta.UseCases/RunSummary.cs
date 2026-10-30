@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace CadPeta.UseCases;
 
 public static class RunSummary

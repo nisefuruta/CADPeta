@@ -1,3 +1,6 @@
+using System;
+using System.Windows.Forms;
+
 namespace CadPeta.Gui;
 
 internal static class Program

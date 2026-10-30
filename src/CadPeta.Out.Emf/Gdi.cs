@@ -1,5 +1,6 @@
 // GDI32 / USER32 の P/Invoke 宣言（クラシックGDIレコードの直書き用）。
 // Win32 依存はこのアダプタプロジェクトに閉じる。
+using System;
 using System.Runtime.InteropServices;
 
 namespace CadPeta.Out.Emf;

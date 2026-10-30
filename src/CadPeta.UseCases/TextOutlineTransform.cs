@@ -2,6 +2,7 @@
 // フォント保持は貼り付け先での編集性に優れ、輪郭化は環境非依存の見た目を保証する——
 // この二方式の後者を選んだ場合の変換段で、文字編集性を失う非可逆処理として
 // 件数と対象を処理ログへ記録する。置換は同位置の 1:1（Nodes の数と描画順を変えない）。
+using System.Collections.Generic;
 using CadPeta.Ir;
 
 namespace CadPeta.UseCases;

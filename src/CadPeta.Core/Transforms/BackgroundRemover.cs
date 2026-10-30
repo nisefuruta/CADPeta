@@ -2,7 +2,7 @@
 // 三条件「描画順が最初期・ページ範囲とほぼ一致・塗りのみ」で同定し除去する。
 // AutoCAD PDF系ドライバでは出現しない実測（6PDFで0件）だが、他ドライバ・他CAD由来の
 // PDF への防御として維持する（実物図面での実測で確認）。
-using System.Globalization;
+using System;
 using CadPeta.Geometry;
 using CadPeta.Ir;
 
@@ -22,7 +22,7 @@ public static class BackgroundRemover
                && CoversPage(GeoClip.Bbox(bg.Segments), ir.WidthMm, ir.HeightMm))
         {
             diag.Add(DiagCategory,
-                     $"node seq=0 fill={bg.Fill.Value.ToSvg()} {BboxText(GeoClip.Bbox(bg.Segments))}");
+                     $"node seq=0 fill={bg.Fill.Value.ToSvg()} {GeoClip.BboxText(GeoClip.Bbox(bg.Segments))}");
             ir.Nodes.RemoveAt(0);
             removed++;
         }
@@ -36,9 +36,4 @@ public static class BackgroundRemover
     static bool CoversPage(double[] b, double wMm, double hMm) =>
         Math.Abs(b[0]) <= PageEdgeTolMm && Math.Abs(b[1]) <= PageEdgeTolMm
         && Math.Abs(b[2] - wMm) <= PageEdgeTolMm && Math.Abs(b[3] - hMm) <= PageEdgeTolMm;
-
-    static string BboxText(double[] b) =>
-        // string.Create(IFormatProvider,…) は netstandard2.0 に無いため等価の Invariant で書く
-        FormattableString.Invariant(
-            $"bbox_mm=({b[0]:F1},{b[1]:F1})-({b[2]:F1},{b[3]:F1})");
 }

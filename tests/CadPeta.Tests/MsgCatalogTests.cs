@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
 using CadPeta.Plugin.Shared;
 using CadPeta.UseCases;
 using Xunit;
@@ -11,6 +16,10 @@ namespace CadPeta.Tests;
 /// </summary>
 public sealed class MsgCatalogTests
 {
+    /// <summary>キー k の書式が型依存で壊れている(\{0:Q\} は読込時の検証を通るが、実引数が int だと FormatException になる)カタログ。壊れたときの次の段は <paramref name="inner"/>。</summary>
+    static MessageCatalog CatalogWithBrokenFormat(MessageCatalog inner) =>
+        new("1033", new Dictionary<string, string> { ["k"] = "broken {0:Q}" }, inner);
+
     [Fact]
     public void 日英カタログはキー集合が一致する()
     {
@@ -93,7 +102,7 @@ public sealed class MsgCatalogTests
         // FormatException になる。連鎖の次（組み込み相当）の文言で表示を続け、
         // 失敗した段（カタログ名・キー・理由）を通知する（黙って切り替えない）
         var inner = new MessageCatalog("1033-builtin", new Dictionary<string, string> { ["k"] = "ok {0}" });
-        var outer = new MessageCatalog("1033", new Dictionary<string, string> { ["k"] = "broken {0:Q}" }, inner);
+        var outer = CatalogWithBrokenFormat(inner);
         var notified = new List<string>();
         using (MessageCatalog.BeginFormatFallbackScope((name, key, error) => notified.Add($"{name}/{key}")))
             Assert.Equal("ok 3", outer.Format("k", 3));
@@ -120,7 +129,7 @@ public sealed class MsgCatalogTests
         // 診断出力（通知）の失敗で、防いだはずのコマンド中断を再導入しない。
         // 通知先がログ書き込み不能等で例外を投げても、組み込み文言の表示は続く
         var inner = new MessageCatalog("1033-builtin", new Dictionary<string, string> { ["k"] = "ok {0}" });
-        var outer = new MessageCatalog("1033", new Dictionary<string, string> { ["k"] = "broken {0:Q}" }, inner);
+        var outer = CatalogWithBrokenFormat(inner);
         using var scope = MessageCatalog.BeginFormatFallbackScope(
             (_, _, _) => throw new IOException("log write failed"));
         Assert.Equal("ok 3", outer.Format("k", 3));
@@ -132,8 +141,8 @@ public sealed class MsgCatalogTests
         // ガードがインスタンス共有だと、通知中の別スレッドの失敗まで再帰と誤判定して
         // 無通知になる。ガードはスレッド単位であること
         var inner = new MessageCatalog("1033-builtin", new Dictionary<string, string> { ["k"] = "ok {0}" });
-        var main = new MessageCatalog("1033", new Dictionary<string, string> { ["k"] = "broken {0:Q}" }, inner);
-        var other = new MessageCatalog("1033", new Dictionary<string, string> { ["k"] = "broken {0:Q}" }, inner);
+        var main = CatalogWithBrokenFormat(inner);
+        var other = CatalogWithBrokenFormat(inner);
         int notifications = 0;
         using var scope = MessageCatalog.BeginFormatFallbackScope((_, _, _) =>
         {
@@ -164,65 +173,57 @@ public sealed class MsgCatalogTests
     {
         // 設定後の初期報告（log.WriteLine）が失敗すると呼び出し側はスコープを受け取れず
         // 解除できない。Initialize 側で直前の状態へ戻してから再送出すること
-        string dir = Path.Combine(Path.GetTempPath(), "CadPeta_lang_test_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        // キー欠落＋型依存の書式不正を持つ差し替えファイルで、初期報告（lang.missing_keys）を
+        // 必ず発生させる
+        File.WriteAllText(Path.Combine(dir, "1033.lang"), "confirm.partial=broken {0:Q}\n");
+        var slot = MessageCatalogs.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
+        int outerNotified = 0;
+        using (MessageCatalog.BeginFormatFallbackScope((_, _, _) => outerNotified++))
         {
-            // キー欠落＋型依存の書式不正を持つ差し替えファイルで、初期報告（lang.missing_keys）を
-            // 必ず発生させる
-            File.WriteAllText(Path.Combine(dir, "1033.lang"), "confirm.partial=broken {0:Q}\n");
-            var slot = Msg.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
-            int outerNotified = 0;
-            using (MessageCatalog.BeginFormatFallbackScope((_, _, _) => outerNotified++))
-            {
-                Assert.Throws<IOException>(() => Msg.InitializeSlot(slot, resolved: true, new ThrowingWriter()));
-                // InitializeSlot が設定した通知先は解除済みで、外側（直前）の通知先へ戻っている
-                _ = slot.Catalog.Format("confirm.partial", 3);
-                Assert.Equal(1, outerNotified);
-            }
+            Assert.Throws<IOException>(() => Msg.InitializeSlot(slot, resolved: true, new ThrowingWriter()));
+            // InitializeSlot が設定した通知先は解除済みで、外側（直前）の通知先へ戻っている
+            _ = slot.Catalog.Format("confirm.partial", 3);
+            Assert.Equal(1, outerNotified);
         }
-        finally { Directory.Delete(dir, recursive: true); }
     }
 
     [Fact]
     public void 通知先はスコープ終了で直前の状態へ戻り解除後は呼ばれない()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPeta_lang_test_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        File.WriteAllText(Path.Combine(dir, "1033.lang"), "confirm.partial=broken {0:Q}\n");
+        var slot = MessageCatalogs.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
+
+        // 解除後は通知されない（コマンド終了後のログ・Editor 参照へ遅延書き込みしない）
+        var first = new StringWriter();
+        var scope1 = Msg.AttachFormatFallbackObserver(slot, first);
+        scope1.Dispose();
+        scope1.Dispose(); // 多重 Dispose も安全（二重復元しない）
+        _ = slot.Catalog.Format("confirm.partial", 3);
+        Assert.Equal("", first.ToString());
+
+        // 入れ子は内側だけへ届き、内側の終了で外側へ戻る
+        var outerLog = new StringWriter();
+        using (Msg.AttachFormatFallbackObserver(slot, outerLog))
         {
-            File.WriteAllText(Path.Combine(dir, "1033.lang"), "confirm.partial=broken {0:Q}\n");
-            var slot = Msg.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
-
-            // 解除後は通知されない（コマンド終了後のログ・Editor 参照へ遅延書き込みしない）
-            var first = new StringWriter();
-            var scope1 = Msg.AttachFormatFallbackObserver(slot, first);
-            scope1.Dispose();
-            scope1.Dispose(); // 多重 Dispose も安全（二重復元しない）
-            _ = slot.Catalog.Format("confirm.partial", 3);
-            Assert.Equal("", first.ToString());
-
-            // 入れ子は内側だけへ届き、内側の終了で外側へ戻る
-            var outerLog = new StringWriter();
-            using (Msg.AttachFormatFallbackObserver(slot, outerLog))
-            {
-                var innerLog = new StringWriter();
-                using (Msg.AttachFormatFallbackObserver(slot, innerLog))
-                    _ = slot.Catalog.Format("confirm.partial", 3);
-                Assert.Contains("confirm.partial", innerLog.ToString());
-                Assert.Equal("", outerLog.ToString()); // 独立した文脈の診断を相互配送しない
+            var innerLog = new StringWriter();
+            using (Msg.AttachFormatFallbackObserver(slot, innerLog))
                 _ = slot.Catalog.Format("confirm.partial", 3);
-                Assert.Contains("confirm.partial", outerLog.ToString());
-            }
+            Assert.Contains("confirm.partial", innerLog.ToString());
+            Assert.Equal("", outerLog.ToString()); // 独立した文脈の診断を相互配送しない
+            _ = slot.Catalog.Format("confirm.partial", 3);
+            Assert.Contains("confirm.partial", outerLog.ToString());
         }
-        finally { Directory.Delete(dir, recursive: true); }
     }
 
     [Fact]
     public void 独立したスレッドの文脈間で通知を相互配送しない()
     {
         var inner = new MessageCatalog("1033-builtin", new Dictionary<string, string> { ["k"] = "ok {0}" });
-        var catalog = new MessageCatalog("1033", new Dictionary<string, string> { ["k"] = "broken {0:Q}" }, inner);
+        var catalog = CatalogWithBrokenFormat(inner);
         int mainNotified = 0, threadNotified = 0;
         using (MessageCatalog.BeginFormatFallbackScope((_, _, _) => Interlocked.Increment(ref mainNotified)))
         {
@@ -289,24 +290,20 @@ public sealed class MsgCatalogTests
     {
         // 外部 lang ファイルの差し替え時: 欠落キーは同言語の組み込みカタログで補い、
         // MissingKeysComparedToFallback が欠落を検出する（en 選択時も成立すること）
-        string dir = Path.Combine(Path.GetTempPath(), "CadPeta_lang_test_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            File.WriteAllText(Path.Combine(dir, "1033.lang"), "range.cancelled=custom cancel\n");
-            var en = Msg.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
-            Assert.False(en.FromEmbedded);
-            Assert.Equal("custom cancel", en.Catalog.Format("range.cancelled"));
-            Assert.Contains("data.aborted", en.MissingKeys);
-            Assert.Equal("PETADATA aborted", en.Catalog.Format("data.aborted")); // 組み込み en で補完
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        File.WriteAllText(Path.Combine(dir, "1033.lang"), "range.cancelled=custom cancel\n");
+        var en = MessageCatalogs.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
+        Assert.False(en.FromEmbedded);
+        Assert.Equal("custom cancel", en.Catalog.Format("range.cancelled"));
+        Assert.Contains("data.aborted", en.MissingKeys);
+        Assert.Equal("PETADATA aborted", en.Catalog.Format("data.aborted")); // 組み込み en で補完
 
-            File.WriteAllText(Path.Combine(dir, "1041.lang"), "range.cancelled=独自の中止文言\n");
-            var ja = Msg.LoadFromDir(dir, Msg.JapaneseLcid, fallback: en.Catalog);
-            Assert.Equal("独自の中止文言", ja.Catalog.Format("range.cancelled"));
-            Assert.Contains("data.aborted", ja.MissingKeys);
-            Assert.Equal("PETADATAを中止した", ja.Catalog.Format("data.aborted")); // 組み込み ja で補完
-        }
-        finally { Directory.Delete(dir, recursive: true); }
+        File.WriteAllText(Path.Combine(dir, "1041.lang"), "range.cancelled=独自の中止文言\n");
+        var ja = MessageCatalogs.LoadFromDir(dir, Msg.JapaneseLcid, fallback: en.Catalog);
+        Assert.Equal("独自の中止文言", ja.Catalog.Format("range.cancelled"));
+        Assert.Contains("data.aborted", ja.MissingKeys);
+        Assert.Equal("PETADATAを中止した", ja.Catalog.Format("data.aborted")); // 組み込み ja で補完
     }
 
     [Theory]
@@ -314,17 +311,13 @@ public sealed class MsgCatalogTests
     [InlineData("runner.svg_written=bad {1}")] // 組み込み定義（{0} のみ）に無い引数番号
     public void 不正な複合書式の差し替えファイルは読込時に組み込みへ切り替える(string content)
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPeta_lang_test_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            File.WriteAllText(Path.Combine(dir, "1033.lang"), content + "\n");
-            var slot = Msg.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
-            Assert.True(slot.FromEmbedded);   // ファイル不読として組み込みで続行
-            Assert.NotNull(slot.FileError);   // 理由は Initialize が lang.file_invalid で報告する
-            Assert.Equal("SVG output: x", slot.Catalog.Format("runner.svg_written", "x"));
-        }
-        finally { Directory.Delete(dir, recursive: true); }
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        File.WriteAllText(Path.Combine(dir, "1033.lang"), content + "\n");
+        var slot = MessageCatalogs.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
+        Assert.True(slot.FromEmbedded);   // ファイル不読として組み込みで続行
+        Assert.NotNull(slot.FileError);   // 理由は Initialize が lang.file_invalid で報告する
+        Assert.Equal("SVG output: x", slot.Catalog.Format("runner.svg_written", "x"));
     }
 
     [Fact]
@@ -332,46 +325,38 @@ public sealed class MsgCatalogTests
     {
         // {0:Q} は読込時の検証（文字列プローブ・引数番号の検査）を通過するが、
         // 実引数の int では FormatException になる。表示は組み込みの文言で続ける
-        string dir = Path.Combine(Path.GetTempPath(), "CadPeta_lang_test_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            File.WriteAllText(Path.Combine(dir, "1033.lang"), "confirm.partial=broken {0:Q}\n");
-            var slot = Msg.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
-            Assert.False(slot.FromEmbedded);  // 読込は通る（型までは読込時に判定できない）
-            var report = new StringWriter();
-            Msg.AttachFormatFallbackObserver(slot, report);
-            Assert.Equal("\nExclude 3 unsupported object(s) and output the rest? [Yes/No] <No>: ",
-                slot.Catalog.Format("confirm.partial", 3));
-            // 切替の都度、対象キーと理由をコマンドラインへ報告する（黙って切り替えない）
-            Assert.Contains("confirm.partial", report.ToString());
-            Assert.Contains("cannot be formatted", report.ToString());
-        }
-        finally { Directory.Delete(dir, recursive: true); }
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        File.WriteAllText(Path.Combine(dir, "1033.lang"), "confirm.partial=broken {0:Q}\n");
+        var slot = MessageCatalogs.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
+        Assert.False(slot.FromEmbedded);  // 読込は通る（型までは読込時に判定できない）
+        var report = new StringWriter();
+        Msg.AttachFormatFallbackObserver(slot, report);
+        Assert.Equal("\nExclude 3 unsupported object(s) and output the rest? [Yes/No] <No>: ",
+            slot.Catalog.Format("confirm.partial", 3));
+        // 切替の都度、対象キーと理由をコマンドラインへ報告する（黙って切り替えない）
+        Assert.Contains("confirm.partial", report.ToString());
+        Assert.Contains("cannot be formatted", report.ToString());
     }
 
     [Fact]
     public void 外部enの追加キーをjaの欠落として誤報しない()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPeta_lang_test_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            // 完全な同梱カタログ（テスト出力の lang フォルダ）を複製し、en にだけ独自キーを足す。
-            // net48 の xUnit はシャドウコピーで Assembly.Location が lang を持たない場所を
-            // 指すため、実配置は BaseDirectory から引く
-            var shipped = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lang");
-            File.Copy(Path.Combine(shipped, "1041.lang"), Path.Combine(dir, "1041.lang"));
-            File.WriteAllText(Path.Combine(dir, "1033.lang"),
-                File.ReadAllText(Path.Combine(shipped, "1033.lang")) + "custom.extra=hello\n");
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        // 完全な同梱カタログ（テスト出力の lang フォルダ）を複製し、en にだけ独自キーを足す。
+        // net48 の xUnit はシャドウコピーで Assembly.Location が lang を持たない場所を
+        // 指すため、実配置は BaseDirectory から引く
+        var shipped = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lang");
+        File.Copy(Path.Combine(shipped, "1041.lang"), Path.Combine(dir, "1041.lang"));
+        File.WriteAllText(Path.Combine(dir, "1033.lang"),
+            File.ReadAllText(Path.Combine(shipped, "1033.lang")) + "custom.extra=hello\n");
 
-            var en = Msg.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
-            var ja = Msg.LoadFromDir(dir, Msg.JapaneseLcid, fallback: en.Catalog);
-            Assert.Empty(en.MissingKeys);
-            Assert.Empty(ja.MissingKeys);     // en の追加キーは ja の欠落ではない
-            Assert.Equal("hello", en.Catalog.Format("custom.extra"));
-        }
-        finally { Directory.Delete(dir, recursive: true); }
+        var en = MessageCatalogs.LoadFromDir(dir, Msg.EnglishLcid, fallback: null);
+        var ja = MessageCatalogs.LoadFromDir(dir, Msg.JapaneseLcid, fallback: en.Catalog);
+        Assert.Empty(en.MissingKeys);
+        Assert.Empty(ja.MissingKeys);     // en の追加キーは ja の欠落ではない
+        Assert.Equal("hello", en.Catalog.Format("custom.extra"));
     }
 
     [Fact]
@@ -396,8 +381,13 @@ public sealed class MsgCatalogTests
         Assert.Equal("レイアウト: PETA_A3（デバイス=Dev.pc3、用紙=A3、スタイル=なし）",
             Msg.Japanese.Format("plotport.layout_info", "PETA_A3", "Dev.pc3", "A3",
                 Msg.Japanese.Format("plotport.style_none")));
-        Assert.Equal("用紙 A3 は Dev.pc3 に存在せず、寸法の合う用紙も無いため既定用紙で進める（出力寸法が変わる）",
-            Msg.Japanese.Format("plotport.media_missing", "A3", "Dev.pc3"));
+        Assert.Equal("用紙 A3 を Dev.pc3 で使えず、寸法の合う用紙も見つからないため既定用紙で進める（出力寸法が変わる）。理由: 用紙の一覧を取得できない（NullReferenceException: x）",
+            Msg.Japanese.Format("plotport.media_missing", "A3", "Dev.pc3",
+                Msg.Japanese.Format("plotport.media_list_failed", "NullReferenceException: x")));
+        Assert.Equal("PDF の用紙 101 件のうち、寸法を取得できた 0 件に同じ名前と寸法の用紙が無い（寸法を取得できない最初の用紙: ISO_A3、ErrorStatus=eInvalidInput）",
+            Msg.Japanese.Format("plotport.media_not_found", "PDF", 101, 0, "ISO_A3", "eInvalidInput"));
+        Assert.Equal("PDF の用紙 101 件に同じ名前と寸法の用紙が無い",
+            Msg.Japanese.Format("plotport.media_not_found_all", "PDF", 101));
         Assert.Equal("用紙 A3 は発行デバイスに無いため、寸法の合う ISO_A3 を使う（297.01×419.99mm）",
             Msg.Japanese.Format("plotport.media_matched_by_size", "A3", "ISO_A3", 297.010651, 419.988983));
         Assert.Equal("デバイス上書きで用紙単位が Inches に変わったため、ページ設定の Millimeters へ戻す",

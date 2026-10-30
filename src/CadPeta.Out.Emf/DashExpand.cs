@@ -3,6 +3,9 @@
 // 折れ線片（Move＋Line 列）へ展開する。曲線（3次ベジェ）は弦との許容誤差で折れ線化して
 // から破線を刻む。プロット経由（PDF印刷経路）の PDF も破線付き曲線を折れ線群で出力しており、
 // この展開はPDF印刷経路と同じ表現に揃える。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Ir;
 
 namespace CadPeta.Out.Emf;
@@ -50,12 +53,9 @@ internal static class DashExpand
                 double step = Math.Min(remain, consume);
                 remain -= step;
                 consume -= step;
+                // 初期位相の消費中は片を作っていない（current は null）ので、片を閉じる処理を含めて共通にできる
                 if (remain <= EpsMm)
-                {
-                    patIdx = (patIdx + 1) % patternMm.Length;
-                    remain = patternMm[patIdx];
-                    inDash = !inDash;
-                }
+                    AdvancePattern();
             }
         }
         ApplyOffset();

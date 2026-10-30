@@ -6,6 +6,10 @@
 // Page.Operations の軽量状態追跡（q/Q/cm/gs/BDC/EMC/w + 描画オペレータ）で補完し、
 // 各パス・各文字レコードへ付与する。PDFBox（正解データ生成器）と数値照合するのが目的。
 // 使い方: dotnet run --project tests/tools/pdf-emf/PdfPigProbe -- <入力.pdf> <出力.json>
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text.Json;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Core;

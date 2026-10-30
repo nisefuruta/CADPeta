@@ -15,6 +15,7 @@ param(
     [switch]$ForceRegen
 )
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot\..\..\common\threshold_case.ps1"
 if (-not (Test-Path $WorkDir)) { New-Item -ItemType Directory -Force $WorkDir | Out-Null }
 if (-not (Test-Path $Exe)) { throw "cadpeta.exe が未ビルド: $Exe" }
 if (-not (Test-Path $GenScript)) { throw "gen_corpus.py が無い: $GenScript" }
@@ -26,19 +27,10 @@ $emf = Join-Path $WorkDir "$tag.emf"
 $outJson = Join-Path $WorkDir "$tag.ungroup.json"
 
 if ($ForceRegen -or -not (Test-Path $pdf)) {
-    $genArgs = @("--n", $N, "--seg", $Seg, "--len", $SegLen, "--out", $pdf)
-    if ($Cell -gt 0) { $genArgs += @("--cell", $Cell) }
-    $genOut = & uv run --no-project python $GenScript @genArgs 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "gen_corpus.py 失敗: $genOut" }
+    New-CorpusPdf $GenScript $N $Seg $SegLen $Cell $pdf
 }
 
-$cliOut = & $Exe $pdf $svg --emf $emf 2>&1
-$cliExit = $LASTEXITCODE
-$cliText = ($cliOut -join "`n")
-if ($cliExit -ne 0) { throw "cadpeta.exe 失敗(exit=$cliExit): $cliText" }
-if ($cliText -match "IR: paths=(\d+)") { $irPaths = [int]$Matches[1] } else { $irPaths = $null }
-if ($cliText -match "EMF: paths=(\d+)") { $emfPaths = [int]$Matches[1] } else { $emfPaths = $null }
-$emfBytes = (Get-Item $emf).Length
+$cli = Convert-PdfWithCadPetaCli $Exe $pdf $svg $emf
 
 $run = Join-Path $PSScriptRoot "run_case_ppt.ps1"
 $ug = & $run -Emf $emf -OutJson $outJson -Route clipboard -TimeoutSec $TimeoutSec
@@ -50,9 +42,9 @@ $record = [ordered]@{
     n = $N
     seg = $Seg
     segLen = $SegLen
-    irPaths = $irPaths
-    emfPaths = $emfPaths
-    emfBytes = $emfBytes
+    irPaths = $cli.IrPaths
+    emfPaths = $cli.EmfPaths
+    emfBytes = $cli.EmfBytes
     ungroupStatus = $ug.status
     leafShapeCount = $ug.leafShapeCount
     hresult = $ug.hresult

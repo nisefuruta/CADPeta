@@ -1,7 +1,8 @@
 // 境界ポート（プラグイン層の SSOT が所有する interface）。CAD 固有の対話・プロット・
 // 用紙実寸取得を、中立型（double・タプル・不透明ハンドル）だけで表現する。各製品の薄い殻が
 // CAD SDK で実装する。ここに CAD 型を持ち込まない（参照方向テストが機械検査する）。
-using CadPeta.Geometry;
+using System;
+using System.Collections.Generic;
 
 namespace CadPeta.Plugin.Shared;
 
@@ -255,7 +256,7 @@ public interface IPlotPort
 /// 選択絞り込みセッション: 選択集合の対象件数・除外内訳と、側DBまたはViewport設定を保持した
 /// 元レイアウトを対象とする範囲プロットポートを提供する。範囲の種別・尺度採否・クロップ矩形の
 /// 判断は通常経路と同じ PlotOrchestrator が <see cref="Plotter"/> に対して行い、
-/// 絞り込みはプロットされる紙空間図形を選択対象だけに限定する。
+/// 絞り込みはプロットされるペーパー空間図形を選択対象だけに限定する。
 /// </summary>
 public interface ISelectionPlotSession : IDisposable
 {

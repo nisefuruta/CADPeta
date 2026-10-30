@@ -12,12 +12,13 @@ CADPeta は AutoCAD 互換の CAD でも動きます（PETAのPDF印刷経路と
   bricscad\  … BricsCAD 用（.NET 8）
   install.bat / uninstall.bat  … 自動読込の登録／解除（ダブルクリックで実行）
   register.ps1 / unregister.ps1  … 上記の本体（PowerShellから直接実行する場合のみ使用）
+  compat_common.ps1  … register.ps1 と unregister.ps1 が読み込む共通の定義（単独では実行しない）
   README-compat.txt（本ファイル）
   WATANABE_Kazufumi.cer / README-signing.txt … 発行元の信頼登録用（下記参照）
 
 
 ■ スクリプトの署名について（実行ポリシーが厳しい環境では先に登録）
-  register.ps1 / unregister.ps1 と各プラグイン DLL は配布元のコード署名証明書で署名しています。
+  register.ps1 / unregister.ps1 / compat_common.ps1 と各プラグイン DLL は配布元のコード署名証明書で署名しています。
   install.bat はプロセス限定の実行許可でregister.ps1を起動するため、通常の環境では
   実行ポリシーの個人設定に関係なく動作します。
   組織がグループポリシーで実行ポリシー（AllSigned等）を強制している環境では、
@@ -39,6 +40,9 @@ CADPeta は AutoCAD 互換の CAD でも動きます（PETAのPDF印刷経路と
   %AppData%\ARES Standard Edition x64\CADPeta\<版>\ へコピーしてから登録します。
   この場所はARESの信頼フォルダのため、読み込み時のセキュリティ確認（信頼できるフォルダにありません）が
   出ず、管理者権限も要りません。zipはどこへ展開しても構いません（Downloads等でも可）。
+  インストール済みの版へもう一度実行すると、<版>フォルダの内容をzipの内容に置き換えます
+  （前の版にだけあったファイルは残りません）。ARESが起動していてDLLが使用中のときは、
+  何も変更せずに終了します。ARESを終了してから、もう一度実行してください。
 
   [DONE]と登録件数が表示されたら、レジストリへの書込みと読み戻し確認は成功です。
   続けて、表示された対象CADをいったん終了してから起動し、コマンド行にPETAと入力してください。
@@ -64,6 +68,9 @@ CADPeta は AutoCAD 互換の CAD でも動きます（PETAのPDF印刷経路と
     powershell -File unregister.ps1 -Product ares
 
   install.bat が作ったものだけを削除します（他の設定には触れません）。詳しくは次節を参照してください。
+  ARESの<版>フォルダは、中に置いたファイルも含めてフォルダごと削除します。インストールやアンインストールが
+  途中で止まったときに残る<版>.newと<版>.oldのフォルダも、同じように削除します。
+  ARESが起動していてDLLが使用中のときは、何も変更せずに終了します。
 
 
 ■ 登録の内容と手動での解除（uninstall.batが使えないときの逃げ道）

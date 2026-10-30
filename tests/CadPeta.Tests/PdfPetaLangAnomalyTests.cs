@@ -1,4 +1,6 @@
 #if NET10_0_OR_GREATER
+using System;
+using System.IO;
 using CadPeta.App;
 using CadPeta.UseCases;
 using Xunit;
@@ -16,12 +18,8 @@ public sealed class PdfPetaLangAnomalyTests
     static MessageCatalogSlot LoadJaSlot(string dir) =>
         MessageCatalogs.LoadFromDir(dir, MessageCatalogs.JapaneseLcid, fallback: null);
 
-    static string NewTempDir()
-    {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPeta_lang_test_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    // 各試験が finally で削除する
+    static string NewTempDir() => new TempFolder().Path;
 
     [Fact]
     public void 読めない差し替えファイルは理由付きで報告する()

@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Ir;
 
 namespace CadPeta.Transforms;

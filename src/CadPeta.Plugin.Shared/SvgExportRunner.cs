@@ -1,5 +1,7 @@
+using System;
+using System.IO;
+using System.Linq;
 using System.Diagnostics;
-using System.Text;
 using CadPeta.Acquire.Common;
 using CadPeta.Ir;
 using CadPeta.UseCases;
@@ -60,7 +62,7 @@ public static class SvgExportRunner
                     DiagnosticsReport.MakeStageSink(scope.Dir, scope.BaseName, log));
             }
             ArtifactFile.WriteAtomically(svgPath, ArtifactKind.Svg,
-                temp => File.WriteAllText(temp, SvgWriter.Write(ir), new UTF8Encoding(false)));
+                temp => File.WriteAllText(temp, SvgWriter.Write(ir), TextEncodings.Utf8NoBom));
             verbose.WriteLine(Msg.Format("data.svg_written", svgPath, ir.Nodes.Count, sw.ElapsedMilliseconds));
             log.WriteLine(Msg.Format("data.done", svgPath, ir.Nodes.Count));
             WriteGradientSummary(diag, log);

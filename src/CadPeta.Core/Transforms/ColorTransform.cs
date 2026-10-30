@@ -6,6 +6,7 @@
 // 色の書き換えは元へ戻せないため、件数と対象を診断ログへ記録する。記録はノード単位ではなく
 // 「対象属性×変換前色→変換後色」の集約（件数付き）とする。実物図面では数万ノードの全色に
 // 触れる一方、変換は色値ごとに決定的で、ノード単位の記録は診断価値を足さずログを肥大させる。
+using System.Collections.Generic;
 using CadPeta.Ir;
 
 namespace CadPeta.Transforms;

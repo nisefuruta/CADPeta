@@ -3,6 +3,8 @@
 // .NET 8/10 は System.Text.Encoding.CodePages パッケージの独自データを使い、
 // ベストフィット変換の縁で写像が食い違い得る。埋め込み表を使えば 3系 TFM・
 // ホスト環境に依らずバイト決定的になる（表の生成手順は tests/tools/cad-typography/gen_cp932_table.ps1）。
+using System;
+using System.IO;
 using System.Reflection;
 
 namespace CadPeta.Glyphs.Shx;

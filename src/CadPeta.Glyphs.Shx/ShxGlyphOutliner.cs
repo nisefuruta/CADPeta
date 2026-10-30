@@ -1,5 +1,7 @@
 // グリフ輪郭ポートの SHX 実装。文字ランをテキスト空間（原点=ベースライン左端、
 // X右・Y下向き、mm、幅係数は未適用）のセグメント列へ展開する。
+using System;
+using System.Collections.Generic;
 using CadPeta.Ir;
 using CadPeta.UseCases;
 
@@ -32,8 +34,8 @@ public sealed class ShxGlyphOutliner : IGlyphOutliner
             return false;
         }
 
-        var mainFont = LoadCached(run.ShxPath);
-        var bigFont = run.BigFontPath != null ? LoadCached(run.BigFontPath) : null;
+        var mainFont = ShxFontFile.LoadCached(run.ShxPath);
+        var bigFont = run.BigFontPath != null ? ShxFontFile.LoadCached(run.BigFontPath) : null;
 
         // above（キャップハイト基準）が無いフォントは文字の輪郭化に使えない（DrawGlyph のスケール計算が
         // ゼロ除算になる）。shapes 形式には shape0 を持たない実物（複雑線種の記号シェイプ集）があり、
@@ -163,5 +165,4 @@ public sealed class ShxGlyphOutliner : IGlyphOutliner
         return endX * scale;
     }
 
-    static ShxFontFile LoadCached(string path) => ShxFontFile.LoadCached(path);
 }

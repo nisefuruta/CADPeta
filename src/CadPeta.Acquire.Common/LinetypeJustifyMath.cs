@@ -23,6 +23,9 @@
 //   （名目パターンを整数周期ちょうどへ伸縮）。円周のホールドアウト3ケース含む10ケースで
 //   ±0.02mm の代数一致を実測確認済み（n は floor ではなく round＝最近接整数と実測確定。
 //   例: 目標円周40mm・P=15mm→ n=3〔floor なら2〕）。
+using System;
+using System.Collections.Generic;
+
 namespace CadPeta.Acquire.Common;
 
 public static class LinetypeJustifyMath

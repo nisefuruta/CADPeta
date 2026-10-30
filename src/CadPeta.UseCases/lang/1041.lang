@@ -115,7 +115,13 @@ plotport.busy=別のプロットが進行中のため開始できない（Proces
 plotport.layout_info=レイアウト: {0}（デバイス={1}、用紙={2}、スタイル={3}）
 plotport.style_none=なし
 plotport.device_failed=PDFデバイス {0} を設定できない（未インストールまたは PC3 の破損。ErrorStatus={1}）
-plotport.media_missing=用紙 {0} は {1} に存在せず、寸法の合う用紙も無いため既定用紙で進める（出力寸法が変わる）
+plotport.media_missing=用紙 {0} を {1} で使えず、寸法の合う用紙も見つからないため既定用紙で進める（出力寸法が変わる）。理由: {2}
+plotport.media_list_failed=用紙の一覧を取得できない（{0}）
+plotport.media_not_found={0} の用紙 {1} 件のうち、寸法を取得できた {2} 件に同じ名前と寸法の用紙が無い（寸法を取得できない最初の用紙: {3}、ErrorStatus={4}）
+plotport.media_not_found_all={0} の用紙 {1} 件に同じ名前と寸法の用紙が無い
+plotport.media_list_empty={0} が用紙の一覧を返さない
+plotport.media_sizes_unavailable={0} の用紙 {1} 件のどれも寸法を取得できない（最初の用紙: {3}、ErrorStatus={4}）
+plotport.media_size_unverified=用紙 {0} を寸法を確かめずに使う（{1}）。出力寸法がページ設定と違う場合がある
 plotport.media_matched_by_size=用紙 {0} は発行デバイスに無いため、寸法の合う {1} を使う（{2:F2}×{3:F2}mm）
 plotport.media_fallback=用紙縮退。{0}（{1:F2}×{2:F2}mm）をA4系の{3}へ一時変換
 plotport.paper_units_restored=デバイス上書きで用紙単位が {0} に変わったため、ページ設定の {1} へ戻す

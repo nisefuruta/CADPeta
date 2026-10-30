@@ -12,6 +12,10 @@
 //
 // CAD SDK 型を持ち込まない純粋関数（単体テスト対象）。各ポートはデバイスの用紙一覧と実寸を
 // 中立型で集めて渡し、選ばれた名前を設定するだけにする。
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using CadPeta.Geometry;
 namespace CadPeta.Plugin.Shared;
 
 /// <summary>対応付けの候補となる用紙（正式名と公称寸法・印刷可能領域。いずれも mm）。</summary>
@@ -30,6 +34,23 @@ public readonly struct PaperMediaCandidate
     public double PageHeightMm { get; }
     public double PrintableWidthMm { get; }
     public double PrintableHeightMm { get; }
+}
+
+/// <summary>
+/// 用紙の対応付けの結果。<see cref="Name"/> は使う用紙の正式名（無ければ null）。
+/// <see cref="SizeVerified"/> は、その用紙の寸法がページ設定の寸法と合うことを確かめたか
+/// （用紙の一覧が取れずにページ設定の用紙名をそのまま試すときは false。呼び出し側が診断に書く）。
+/// </summary>
+public readonly struct PaperMediaResolution
+{
+    public PaperMediaResolution(string? name, bool sizeVerified)
+    {
+        Name = name;
+        SizeVerified = sizeVerified;
+    }
+
+    public string? Name { get; }
+    public bool SizeVerified { get; }
 }
 
 public static class PaperMediaMatcher
@@ -82,23 +103,39 @@ public static class PaperMediaMatcher
     }
 
     /// <summary>
+    /// 寸法で用紙を対応付けられなかった理由の文言のキー。出力先の用紙の名前の数（<paramref name="nameCount"/>）と、
+    /// そのうち寸法を取得できた数（<paramref name="measuredCount"/>）から、一覧が空、どの用紙も寸法を取れない、
+    /// 一部だけ寸法を取れた、すべて寸法を取れた（同じ名前と寸法の用紙が無い）のどれかを選ぶ。
+    /// </summary>
+    public static string MissingReasonKey(int nameCount, int measuredCount) =>
+        nameCount == 0 ? "plotport.media_list_empty"
+        : measuredCount == 0 ? "plotport.media_sizes_unavailable"
+        : measuredCount < nameCount ? "plotport.media_not_found"
+        : "plotport.media_not_found_all";
+
+    /// <summary>
     /// 元デバイスとPDFデバイスで同名の用紙があっても、寸法が一致するときだけ採用する。
     /// CanonicalMediaNameはデバイス固有の名前空間なので、名前だけの一致を同一用紙の根拠にしない。
+    /// ただし用紙の一覧が空（寸法を確かめる手段が無い）のときだけは、元の用紙名を寸法を確かめていない結果として返し、出力先に判定させる。
     /// </summary>
-    public static string? Resolve(string? sourceCanonicalName, double paperWidthMm, double paperHeightMm,
-                                  IEnumerable<PaperMediaCandidate> candidates)
+    public static PaperMediaResolution Resolve(string? sourceCanonicalName, double paperWidthMm, double paperHeightMm,
+                                               IEnumerable<PaperMediaCandidate> candidates)
     {
         if (candidates == null) throw new ArgumentNullException(nameof(candidates));
         var list = candidates.ToList();
+        // 出力先が用紙の一覧を返さないとき（ARES 2020 の .NET の API は PDF の用紙を 0 件で返す）は寸法で選べないので、
+        // ページ設定の用紙名をそのまま試す。使えない名前なら、設定する側（出力先）が拒否する
+        if (list.Count == 0)
+            return new PaperMediaResolution(string.IsNullOrEmpty(sourceCanonicalName) ? null : sourceCanonicalName, sizeVerified: false);
         if (!string.IsNullOrEmpty(sourceCanonicalName))
         {
             var exact = list.FirstOrDefault(c =>
                 string.Equals(c.CanonicalName, sourceCanonicalName, StringComparison.OrdinalIgnoreCase)
                 && (Matches(c.PageWidthMm, c.PageHeightMm, paperWidthMm, paperHeightMm)
                     || Matches(c.PageWidthMm, c.PageHeightMm, paperHeightMm, paperWidthMm)));
-            if (!string.IsNullOrEmpty(exact.CanonicalName)) return exact.CanonicalName;
+            if (!string.IsNullOrEmpty(exact.CanonicalName)) return new PaperMediaResolution(exact.CanonicalName, sizeVerified: true);
         }
-        return SelectByPaperSize(paperWidthMm, paperHeightMm, list);
+        return new PaperMediaResolution(SelectByPaperSize(paperWidthMm, paperHeightMm, list), sizeVerified: true);
     }
 
     /// <summary>
@@ -109,7 +146,7 @@ public static class PaperMediaMatcher
                                          IEnumerable<PaperMediaCandidate> candidates)
     {
         if (candidates == null) throw new ArgumentNullException(nameof(candidates));
-        var valid = candidates.Where(c => Valid(c.PageWidthMm) && Valid(c.PageHeightMm))
+        var valid = candidates.Where(c => Numbers.IsPositiveFinite(c.PageWidthMm) && Numbers.IsPositiveFinite(c.PageHeightMm))
             .OrderBy(c => c.CanonicalName, StringComparer.Ordinal).ToList();
         if (valid.Count == 0) return null;
         var containing = valid.Where(c =>
@@ -135,5 +172,4 @@ public static class PaperMediaMatcher
         w + SizeToleranceMm >= targetW && h + SizeToleranceMm >= targetH;
 
     static double Area(PaperMediaCandidate c) => c.PrintableWidthMm * c.PrintableHeightMm;
-    static bool Valid(double value) => !double.IsNaN(value) && !double.IsInfinity(value) && value > 0;
 }

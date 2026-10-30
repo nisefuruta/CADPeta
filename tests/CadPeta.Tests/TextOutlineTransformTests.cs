@@ -1,5 +1,7 @@
 // 文字アウトライン化の変換段の検証。グリフ輪郭ポートはスタブで置き換え、
 // 変換段の責務（1:1 置換・属性引き継ぎ・失敗時の text 維持・処理ログ）だけを検査する。
+using System;
+using System.Collections.Generic;
 using CadPeta.Ir;
 using CadPeta.UseCases;
 using Xunit;

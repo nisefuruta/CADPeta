@@ -1,6 +1,10 @@
 // SvgWriter（IR の正準直列化）の単体テスト。生成規約の要点を検査する。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Ir;
 using Xunit;
+using static CadPeta.Tests.IrTestBuilders;
 
 namespace CadPeta.Tests;
 
@@ -56,7 +60,7 @@ public class SvgWriterTests
         var ir = new IrDocument { WidthMm = 100, HeightMm = 100 };
         ir.Nodes.Add(new IrPath
         {
-            Segments = new List<IrSegment> { new IrMove(0, 0), new IrLine(10, 10) },
+            Segments = DiagonalSegments(),
             Stroke = new IrRgb(0, 0, 0), StrokeWidthMm = 0.25, DataLayer = "S-WALL",
         });
         ir.Nodes.Add(new IrText { Value = "A", XMm = 5, YMm = 5, FontSizeMm = 3, DataLayer = "S-TEXT" });
@@ -78,16 +82,22 @@ public class SvgWriterTests
         Assert.Contains("data-layer=\"S-TEXT\"", svg); // text 節
     }
 
+    /// <summary>
+    /// 通常出力(除去)が、診断出力(保持)から <paramref name="provenanceAttributePattern"/> に一致する属性だけを機械除去したものと一致する。
+    /// 除去が出所メタデータ以外の属性を変えないことの確認。
+    /// </summary>
+    static void AssertStripChangesOnlyProvenance(IrDocument doc, string provenanceAttributePattern)
+    {
+        var withProvenance = SvgWriter.Write(doc, includeProvenance: true);
+        var without = SvgWriter.Write(doc); // 既定=除去
+        var stripped = System.Text.RegularExpressions.Regex.Replace(withProvenance, provenanceAttributePattern, "");
+        Assert.Equal(stripped, without);
+    }
+
     [Fact]
     public void 除去は出所メタデータ以外の属性を変えない()
     {
-        // 新（除去）＝旧（保持）から data-layer 属性だけを機械除去したものと一致する
-        var doc = LayeredDoc();
-        var withProvenance = SvgWriter.Write(doc, includeProvenance: true);
-        var without = SvgWriter.Write(doc); // 既定=除去
-        var stripped = System.Text.RegularExpressions.Regex.Replace(
-            withProvenance, " data-layer=\"[^\"]*\"", "");
-        Assert.Equal(stripped, without);
+        AssertStripChangesOnlyProvenance(LayeredDoc(), " data-layer=\"[^\"]*\"");
     }
 
     [Fact]
@@ -196,12 +206,7 @@ public class SvgWriterTests
     [Fact]
     public void 出所メタデータ4種の除去は他の属性を変えない()
     {
-        var doc = GroupedDoc();
-        var withProvenance = SvgWriter.Write(doc, includeProvenance: true);
-        var without = SvgWriter.Write(doc);
-        var stripped = System.Text.RegularExpressions.Regex.Replace(
-            withProvenance, " data-(layer|entity|color-method|aci)=\"[^\"]*\"", "");
-        Assert.Equal(stripped, without);
+        AssertStripChangesOnlyProvenance(GroupedDoc(), " data-(layer|entity|color-method|aci)=\"[^\"]*\"");
     }
 
     [Fact]
@@ -231,7 +236,7 @@ public class SvgWriterTests
         var ir = new IrDocument { WidthMm = 100, HeightMm = 100 };
         ir.Nodes.Add(new IrPath
         {
-            Segments = new List<IrSegment> { new IrMove(0, 0), new IrLine(10, 10) },
+            Segments = DiagonalSegments(),
             Stroke = new IrRgb(1, 0, 0),
             StrokeWidthMm = 0.25,
         });

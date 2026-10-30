@@ -1,5 +1,7 @@
 // 選択絞り込みの確認プロンプト（部分出力）。4製品の EditorPort が同文を複製していた
 // のをここへ一本化する。IEditorPort.PromptString だけで構成し、CAD 型に依存しない。
+using System;
+
 namespace CadPeta.Plugin.Shared;
 
 public static class SelectionConfirmPrompts

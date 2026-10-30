@@ -12,7 +12,7 @@
 # プロンプト数が変わったら stdout を読み直して応答列を取り直すこと。
 #
 # -Case AsIs は図面自身の UCS・ビューをそのまま使う（合成条件を被せない）。実物図面の再現に使う。
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$Case = 'B',
     [string]$Dwg,
@@ -23,6 +23,11 @@ param(
     [int]$TimeoutSeconds = 300
 )
 $ErrorActionPreference = 'Stop'
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'window_contract_oracle.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . "$PSScriptRoot\window_contract_cases.ps1"
 
@@ -70,10 +75,7 @@ $scr = Join-Path $work 'oracle.scr'
 (setvar "TILEMODE" 1)
 (setq cpOsmOld (getvar "OSMODE"))
 (setvar "OSMODE" 0)
-(setq cpOldTrusted (getvar "TRUSTEDPATHS"))
-(setvar "TRUSTEDPATHS" (if (= cpOldTrusted "") "$pd" (strcat cpOldTrusted ";" "$pd")))
-(command "_.NETLOAD" "$pl")
-(setvar "TRUSTEDPATHS" cpOldTrusted)
+$((Get-AccoreNetloadLines $probe) -join "`r`n")
 $setupLines
 (defun cpfmt (p) (strcat (rtos (car p) 2 6) "," (rtos (cadr p) 2 6) "," (rtos (caddr p) 2 6)))
 (setq cptf (open "$workFwd/oracle_trans.txt" "w"))
@@ -122,30 +124,9 @@ _Y
 $stdout = Join-Path $work 'accore_stdout.log'
 $stderr = Join-Path $work 'accore_stderr.log'
 . "$PSScriptRoot\..\CadRegGuard.ps1"
-$regGuard = Get-CadRegSnapshot
-$runError = $null
+. "$PSScriptRoot\..\..\common\accore_run.ps1"
 $p = $null
-try {
-    $p = Start-Process -FilePath $acc -ArgumentList @('/i', $dwgCopy, '/s', $scr, '/l', 'ja-JP') `
-          -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
-    if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
-        Stop-Process -Id $p.Id -Force; $p.WaitForExit()
-        throw "accoreconsole が ${TimeoutSeconds}秒で完了しない（$stdout）"
-    }
-    if ($p.ExitCode -ne 0) { throw "accoreconsole が異常終了した: exit=$($p.ExitCode)（$stdout）" }
-}
-catch { $runError = $_ }
-finally {
-    $regReport = Restore-CadRegState $regGuard
-    if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
-}
-if ($runError -and -not $regReport.ok) {
-    throw [AggregateException]::new(
-        'CAD実行失敗に加えてレジストリ復元にも失敗した',
-        [Exception[]]@($runError.Exception, [InvalidOperationException]::new($regReport.mismatch -join '; ')))
-}
-if ($runError) { throw $runError }
-if (-not $regReport.ok) { throw "レジストリ保全の復元検証に失敗: $($regReport.mismatch -join '; ')" }
+Invoke-AccoreConsoleGuardedWithTimeout $acc $dwgCopy $scr $stdout $stderr $TimeoutSeconds ([ref]$p) -StageToTrusted @($probe)
 
 $storedFile = Join-Path $work 'oracle_stored.txt'
 if (-not (Test-Path $storedFile)) {

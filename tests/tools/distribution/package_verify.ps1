@@ -28,6 +28,7 @@ function Get-PackageDefinition([string]$group, [string]$staging, [string]$artifa
                 Source = Join-Path $staging "bundle"
                 Zip = Join-Path $artifacts "CADPeta-AutoCAD-$version.zip"
                 Required = @(
+                    "bundle-files.txt",
                     "CADPeta.bundle/PackageContents.xml",
                     "CADPeta.bundle/Contents/net48/CadPeta.Plugin.Acad.dll",
                     "CADPeta.bundle/Contents/net48/lang/1041.lang",
@@ -75,7 +76,7 @@ function Get-PackageDefinition([string]$group, [string]$staging, [string]$artifa
                     "ijcad/CadPeta.Plugin.Ijcad.dll", "ijcad/lang/1041.lang", "ijcad/lang/1033.lang",
                     "bricscad/CadPeta.Plugin.Bricscad.dll", "bricscad/lang/1041.lang", "bricscad/lang/1033.lang",
                     "install.bat", "uninstall.bat",
-                    "register.ps1", "unregister.ps1", "README-compat.txt",
+                    "register.ps1", "unregister.ps1", "compat_common.ps1", "README-compat.txt",
                     "LICENSE", "THIRD-PARTY-NOTICES.txt"
                 )
             }
@@ -84,17 +85,8 @@ function Get-PackageDefinition([string]$group, [string]$staging, [string]$artifa
     }
 }
 
-function Get-StreamSha256([System.IO.Stream]$stream) {
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try { return ([Convert]::ToHexString($sha.ComputeHash($stream))) }
-    finally { $sha.Dispose() }
-}
-
-function Get-FileSha256([string]$path) {
-    $stream = [IO.File]::OpenRead($path)
-    try { return Get-StreamSha256 $stream }
-    finally { $stream.Dispose() }
-}
+# SHA256 は、試験の補助の 1 か所（test_helpers.ps1 の Get-StreamSha256・Get-FileSha256Shared）で求める
+. (Join-Path $PSScriptRoot '..\common\test_helpers.ps1')
 
 function Assert-SafeEntryName([string]$name, [string]$zipPath) {
     $parts = $name -split "/"
@@ -146,7 +138,7 @@ function Test-OnePackage([string]$group, [hashtable]$definition, [bool]$requireT
     $stagingFiles = @{}
     foreach ($file in Get-ChildItem -LiteralPath $source -Recurse -File) {
         $relative = $file.FullName.Substring($source.Length).TrimStart("\", "/").Replace("\", "/")
-        $stagingFiles[$relative] = Get-FileSha256 $file.FullName
+        $stagingFiles[$relative] = Get-FileSha256Shared $file.FullName
     }
     $missing = @($stagingFiles.Keys | Where-Object { -not $archiveFiles.ContainsKey($_) } | Sort-Object)
     $extra = @($archiveFiles.Keys | Where-Object { -not $stagingFiles.ContainsKey($_) } | Sort-Object)

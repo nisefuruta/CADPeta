@@ -2,6 +2,9 @@
 // build_glyph_chart.lsp が書き出した配置 TSV（CP932）を読み、各行の文字列を
 // ShxGlyphOutliner.TryOutline で輪郭化し、GlyphPlacement.Place で配置して
 // SVG IR（SvgWriter）へ直列化する。TryOutline 失敗時は failReason を表示して異常終了する。
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using CadPeta.Glyphs.Shx;
 using CadPeta.Ir;

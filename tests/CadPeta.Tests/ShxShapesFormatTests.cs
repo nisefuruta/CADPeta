@@ -2,6 +2,9 @@
 // バイト配置は本機実物 ltypeshp.shx（複雑線種の記号シェイプ集）の実測で確定した構造
 // （先頭シェイプ番号・末尾シェイプ番号・エントリ数のヘッダ→(code,length)索引→
 //  (name,NUL,bytecode)の本体連続配置。shape0(code=0)は任意）に従い、合成バイト列で検証する。
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using CadPeta.Glyphs.Shx;
@@ -177,22 +180,14 @@ public class ShxShapesFormatTests
             (65, "A", new byte[] { 1, 0x50 }), // 'A'=0x41=65 として文字コードに直接使う
         });
 
-        string tmpDir = Path.Combine(Path.GetTempPath(), "cadpeta_p3b_shapes");
-        Directory.CreateDirectory(tmpDir);
-        string path = Path.Combine(tmpDir, $"noshape0_{Guid.NewGuid():N}.shx");
+        using var temp = new TempFolder();
+        string path = temp.File("noshape0.shx");
         File.WriteAllBytes(path, data);
-        try
-        {
-            var outliner = new ShxGlyphOutliner();
-            var run = CadPeta.UseCases.GlyphRun.Shx("A", path, null, capHeightMm: 3.0, widthFactor: 1.0, glyphXsMm: null);
-            Assert.False(outliner.TryOutline(run, out var segs, out var fail));
-            Assert.Null(segs);
-            Assert.NotNull(fail);
-            Assert.Contains("above", fail);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
+        var outliner = new ShxGlyphOutliner();
+        var run = CadPeta.UseCases.GlyphRun.Shx("A", path, null, capHeightMm: 3.0, widthFactor: 1.0, glyphXsMm: null);
+        Assert.False(outliner.TryOutline(run, out var segs, out var fail));
+        Assert.Null(segs);
+        Assert.NotNull(fail);
+        Assert.Contains("above", fail);
     }
 }

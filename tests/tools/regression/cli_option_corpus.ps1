@@ -3,6 +3,7 @@
 # 実行前にこのスクリプトで作る）。生成後は COM を確実に Quit し、生成物の実在を確認する。
 # 使い方: pwsh -File tests/tools/regression/cli_option_corpus.ps1
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\..\common\test_helpers.ps1"   # ConvertTo-NativeArgString（Start-Process の引数を引用符で囲む）
 $dir = "$env:TEMP\CadPeta_cli_corpus"
 New-Item -ItemType Directory -Force $dir | Out-Null
 
@@ -63,7 +64,7 @@ $html = Join-Path $dir 'edge_sample.html'
 $edgePdf = Join-Path $dir 'edge_sample.pdf'
 $edge = "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
 if (-not (Test-Path $edge)) { $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe" }
-$p = Start-Process -FilePath $edge -ArgumentList @('--headless=new', '--disable-gpu', "--print-to-pdf=$edgePdf", ([Uri]$html).AbsoluteUri) -PassThru -WindowStyle Hidden
+$p = Start-Process -FilePath $edge -ArgumentList (ConvertTo-NativeArgString @('--headless=new', '--disable-gpu', "--print-to-pdf=$edgePdf", ([Uri]$html).AbsoluteUri)) -PassThru -WindowStyle Hidden
 if (-not $p.WaitForExit(60000)) { Stop-Process -Id $p.Id -Force; $p.WaitForExit() }
 
 foreach ($f in @($wordPdf, $excelPdf, $edgePdf)) {

@@ -16,10 +16,8 @@
     <DefineConstants>$(DefineConstants);CADPETA_ACAD</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadPlotEngineRunner.cs" Link="CadCommon\CadPlotEngineRunner.cs" />
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadSelectionPlotPort.cs" Link="CadCommon\CadSelectionPlotPort.cs" />
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadDataExportCommands.cs" Link="CadCommon\CadDataExportCommands.cs" />
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadHostLanguage.cs" Link="CadCommon\CadHostLanguage.cs" />
+    <!-- 4 製品で共有するソース（#if CADPETA_<製品> で SDK の違いを分ける）。フォルダの全ファイルを読むので、ファイルを足しても 4 つの csproj を直さない -->
+    <Compile Include="..\CadPeta.Plugin.CadCommon\*.cs" LinkBase="CadCommon" />
   </ItemGroup>
 
   <!-- AutoCAD 参照アセンブリ: AutoCAD.NET.Core（accoremgd: PlottingServices・Editor 等）と
@@ -29,8 +27,6 @@
   <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
     <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet48)" ExcludeAssets="runtime" />
     <PackageReference Include="AutoCAD.NET.Model" Version="$(AcadNetVersionNet48)" ExcludeAssets="runtime" />
-    <!-- 診断ログ JSON（設計書§7）。net8/net10 は in-box のため net48 のみパッケージ -->
-    <PackageReference Include="System.Text.Json" Version="$(SystemTextJsonVersion)" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">
     <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet8)" ExcludeAssets="runtime" />

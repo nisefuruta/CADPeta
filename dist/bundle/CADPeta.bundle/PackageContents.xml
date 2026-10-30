@@ -17,7 +17,7 @@
     SchemaVersion="1.0"
     ProductType="Application"
     Name="CADPeta"
-    AppVersion="1.0.0"
+    AppVersion="1.0.1"
     Description="CAD図面をOfficeへベクタ形式で貼り付ける（PETA / PETADIAG）"
     Author="WATANABE Kazufumi"
     ProductCode="{F79DD514-154F-4F75-AB3A-1EF016F21D67}">

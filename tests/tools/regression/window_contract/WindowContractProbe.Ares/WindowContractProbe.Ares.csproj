@@ -16,10 +16,13 @@
     <TargetFrameworks>$(CadPetaAresTfms)</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>WindowContractProbe.Ares</AssemblyName>
     <RootNamespace>CadPeta.Probe.Ares</RootNamespace>
     <DefineConstants>$(DefineConstants);CADPETA_ARES</DefineConstants>
+    <!-- ソースは ..\Shared\WindowContractProbe.cs を 4 製品で共有する。既定の **/*.cs の取り込みを止め、
+         このフォルダの WindowContractProbe.cs（共有化前の旧ソース）をコンパイルしない -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!-- ARES 2027 の実体 DLL（HintPath 直接参照）は埋め込み版数が net8 参照アセンブリの
          互換版数と食い違い MSB3277 になり得る（src/CadPeta.Plugin.Ares と同じ実測パターン）。
          コンパイル専用参照で実害がないため、この既知の警告だけを抑制する -->
@@ -35,6 +38,10 @@
        Teigha.DatabaseServices/Geometry（Layout・PlotSettings・Matrix3d 等）は TD_Mgd*、
        Teigha.PlottingServices（PlotFactory・PlotEngine 等）は FxCoreMgd* が提供する
        （2026-07-16 実 DLL のシンボル確認）。 -->
+  <ItemGroup>
+    <Compile Include="..\Shared\WindowContractProbe.cs" Link="WindowContractProbe.cs" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
     <Reference Include="TD_Mgd_23.1_16">
       <HintPath>$(AresBinDirNet48)\TD_Mgd_23.1_16.dll</HintPath>

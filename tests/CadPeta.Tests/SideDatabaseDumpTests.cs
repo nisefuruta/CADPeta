@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 using CadPeta.Plugin.Shared;
 using Xunit;
@@ -51,39 +53,32 @@ public class SideDatabaseDumpTests
     [Fact]
     public void Metadataを日本語を保持したJSONへ保存する()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPeta_SideDatabaseDumpTests_" + Guid.NewGuid());
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        string stem = Path.Combine(dir, "側DB");
+        SideDatabaseDump.Write(stem, new SideDatabaseMetadata
         {
-            string stem = Path.Combine(dir, "側DB");
-            SideDatabaseDump.Write(stem, new SideDatabaseMetadata
+            Observation = "raw",
+            CreationMethod = "Wblock",
+            EntityCount = 2,
+            EntityTypes = new Dictionary<string, int> { ["Line"] = 2 },
+            Extents = new SideDatabaseExtents
             {
-                Observation = "raw",
-                CreationMethod = "Wblock",
-                EntityCount = 2,
-                EntityTypes = new Dictionary<string, int> { ["Line"] = 2 },
-                Extents = new SideDatabaseExtents
-                {
-                    Min = new[] { 1.0, 2.0, 3.0 },
-                    Max = new[] { 4.0, 5.0, 6.0 },
-                },
-                ExtentsUnavailableCount = 0,
-                Layout = new Dictionary<string, string?> { ["LayoutName"] = "モデル" },
-            });
+                Min = new[] { 1.0, 2.0, 3.0 },
+                Max = new[] { 4.0, 5.0, 6.0 },
+            },
+            ExtentsUnavailableCount = 0,
+            Layout = new Dictionary<string, string?> { ["LayoutName"] = "モデル" },
+        });
 
-            string json = File.ReadAllText(stem + ".raw.json");
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            Assert.Equal("raw", root.GetProperty("observation").GetString());
-            Assert.Equal("Wblock", root.GetProperty("creationMethod").GetString());
-            Assert.Equal(2, root.GetProperty("entityCount").GetInt32());
-            Assert.Equal("モデル", root.GetProperty("layout").GetProperty("LayoutName").GetString());
-            Assert.Contains("モデル", json);
-        }
-        finally
-        {
-            Directory.Delete(dir, true);
-        }
+        string json = File.ReadAllText(stem + ".raw.json");
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        Assert.Equal("raw", root.GetProperty("observation").GetString());
+        Assert.Equal("Wblock", root.GetProperty("creationMethod").GetString());
+        Assert.Equal(2, root.GetProperty("entityCount").GetInt32());
+        Assert.Equal("モデル", root.GetProperty("layout").GetProperty("LayoutName").GetString());
+        Assert.Contains("モデル", json);
     }
 
     [Fact]
@@ -129,5 +124,49 @@ public class SideDatabaseDumpTests
             SideDatabaseSnapshotComparer.Compare(Snapshot(), differentTypes));
         Assert.Equal(SideDatabaseSnapshotMismatch.ExtentsAvailability,
             SideDatabaseSnapshotComparer.Compare(Snapshot(), Snapshot(unavailable: 1)));
+    }
+
+    // 不一致の理由の文は、種類だけでなく元の選択と側DB の値の両方を含み、原因を確かめられること
+    public static TheoryData<SideDatabaseMetadata, string, string, string> 範囲と件数の不一致 => new()
+    {
+        { Snapshot(minX: 1.5), "Extents", "source=(1, 2, 3)-(4, 5, 6)", "side=(1.5, 2, 3)-(4, 5, 6)" },
+        { Snapshot(lineCount: 3), "EntityCount", "source=2", "side=3" },
+    };
+
+    [Theory]
+    [MemberData(nameof(範囲と件数の不一致))]
+    public void 範囲と件数の不一致の説明は元の選択と側DBの値を両方含む(SideDatabaseMetadata side,
+        string kind, string sourceText, string sideText)
+    {
+        string text = SideDatabaseSnapshotComparer.Describe(Snapshot(), side);
+        Assert.StartsWith(kind, text);
+        Assert.Contains(sourceText, text);
+        Assert.Contains(sideText, text);
+    }
+
+    [Fact]
+    public void 型別件数と範囲の取得可否の不一致の説明は両方の値を含む()
+    {
+        var circles = new SideDatabaseMetadata
+        {
+            EntityCount = 2,
+            EntityTypes = new Dictionary<string, int> { ["Circle"] = 2 },
+            Extents = Snapshot().Extents,
+        };
+        string types = SideDatabaseSnapshotComparer.Describe(Snapshot(), circles);
+        Assert.StartsWith("EntityTypes", types);
+        Assert.Contains("source=Line:2", types);
+        Assert.Contains("side=Circle:2", types);
+
+        string availability = SideDatabaseSnapshotComparer.Describe(Snapshot(), Snapshot(unavailable: 1));
+        Assert.StartsWith("ExtentsAvailability", availability);
+        Assert.Contains("source=unavailable:0", availability);
+        Assert.Contains("side=unavailable:1", availability);
+    }
+
+    [Fact]
+    public void 一致するときの説明はNone()
+    {
+        Assert.Equal("None", SideDatabaseSnapshotComparer.Describe(Snapshot(), Snapshot()));
     }
 }

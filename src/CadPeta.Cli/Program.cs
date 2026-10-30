@@ -25,8 +25,10 @@
 //              一時フォルダの EMF を使う）
 // --diag:     診断モード。変換層の各段の前後で IR を SVG としてダンプする
 // 診断ログ（件数と対象）は <出力.svg>.diag.json へ併記する（ファイル出力時のみ）
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using CadPeta.App;
 using CadPeta.Geometry;
@@ -221,7 +223,7 @@ if (outputSvg != null)
     File.WriteAllText(outputSvg + ".diag.json", JsonSerializer.Serialize(diagOut,
         new JsonSerializerOptions { WriteIndented = true,
             Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }),
-        new UTF8Encoding(false));
+        TextEncodings.Utf8NoBom);
     Console.WriteLine($"診断ログ出力: {outputSvg}.diag.json");
 }
 return 0;
@@ -271,7 +273,7 @@ static Action<int, string, IrDocument> MakeDiagSink(string dir, string baseName,
         {
             // 診断ダンプだけが出所メタデータ（data-*）を残す。
             // 通常の SVG 出力（上の File.WriteAllText）は既定＝除去のまま
-            File.WriteAllText(path, SvgWriter.Write(ir, includeProvenance: true), new UTF8Encoding(false));
+            File.WriteAllText(path, SvgWriter.Write(ir, includeProvenance: true), TextEncodings.Utf8NoBom);
             log.WriteLine($"診断ダンプ: {path}");
         }
         catch (Exception ex) when (IsDumpFailure(ex))

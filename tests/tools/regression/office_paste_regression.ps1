@@ -23,9 +23,8 @@ $jsonPath = Join-Path $OutDir "office_paste_regression.json"
 $logPath = Join-Path $OutDir "office_paste_regression.log"
 "" | Set-Content $logPath
 
-# Write-Host を使う（Write-Output は関数の戻り値を汚染する）
-function Log($msg) { $msg | Add-Content $logPath; Write-Host $msg }
-function PtToMm($pt) { return [Math]::Round($pt * 25.4 / 72, 2) }
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+. "$PSScriptRoot\..\common\office_com.ps1"
 
 if (-not (Test-Path $Emf)) { throw "EMF がない: $Emf（clip_verify.ps1 を先に実行すること）" }
 $fileBytes = [IO.File]::ReadAllBytes($Emf)
@@ -89,71 +88,16 @@ function Register-OwnedOfficeApplication([string]$name, $application) {
     return [int]$processId
 }
 
-# 本番（EmfClipboard.SetFromFile）と同一の API 列で登録し、読み戻し照合まで行う
-function Register-Emf {
-    $hemf = [CadPetaPaste.Clip]::GetEnhMetaFileW($Emf)
-    if ($hemf -eq [IntPtr]::Zero) { throw "GetEnhMetaFile 失敗: $Emf" }
-    # PowerShell は $null を空文字列にマーシャルするため、NULL ポインタは [NullString]::Value で渡す
-    $hCopy = [CadPetaPaste.Clip]::CopyEnhMetaFileW($hemf, [NullString]::Value)
-    $null = [CadPetaPaste.Clip]::DeleteEnhMetaFile($hemf)
-    if ($hCopy -eq [IntPtr]::Zero) { throw "CopyEnhMetaFile 失敗" }
-    if (-not [CadPetaPaste.Clip]::OpenClipboard([IntPtr]::Zero)) {
-        $null = [CadPetaPaste.Clip]::DeleteEnhMetaFile($hCopy); throw "OpenClipboard 失敗"
-    }
-    try {
-        $null = [CadPetaPaste.Clip]::EmptyClipboard()
-        if ([CadPetaPaste.Clip]::SetClipboardData($CF_ENHMETAFILE, $hCopy) -eq [IntPtr]::Zero) {
-            $null = [CadPetaPaste.Clip]::DeleteEnhMetaFile($hCopy); throw "SetClipboardData 失敗"
-        }
-    } finally { $null = [CadPetaPaste.Clip]::CloseClipboard() }
-    # 読み戻し照合
-    if (-not [CadPetaPaste.Clip]::OpenClipboard([IntPtr]::Zero)) { throw "OpenClipboard(照合) 失敗" }
-    try {
-        $h = [CadPetaPaste.Clip]::GetClipboardData($CF_ENHMETAFILE)
-        $size = [CadPetaPaste.Clip]::GetEnhMetaFileBits($h, 0, $null)
-        $got = New-Object byte[] $size
-        $null = [CadPetaPaste.Clip]::GetEnhMetaFileBits($h, $size, $got)
-        if (-not [Linq.Enumerable]::SequenceEqual($got, $fileBytes)) { throw "登録内容がファイルと不一致" }
-    } finally { $null = [CadPetaPaste.Clip]::CloseClipboard() }
-    Log "  再登録OK: CF_ENHMETAFILE $($fileBytes.Length) bytes（読み戻し一致）"
-}
 
-function Recurse-Ungroup($shape) {
-    $queue = New-Object System.Collections.ArrayList
-    $queue.Add($shape) | Out-Null
-    $leaves = New-Object System.Collections.ArrayList
-    $firstError = $null
-    $anySuccess = $false
-    while ($queue.Count -gt 0) {
-        $s = $queue[0]; $queue.RemoveAt(0)
-        try {
-            $range = $s.Ungroup()
-            $anySuccess = $true
-            for ($i = 1; $i -le $range.Count; $i++) { $queue.Add($range.Item($i)) | Out-Null }
-        } catch {
-            if ($null -eq $firstError) { $firstError = $_.Exception.Message }
-            $leaves.Add($s) | Out-Null
-        }
-    }
-    if (-not $anySuccess) { return @{ success = $false; error = $firstError; leafCount = 0; leaves = @() } }
-    return @{ success = $true; error = $null; leafCount = $leaves.Count; leaves = @($leaves) }
-}
 
-# 文字の取得・書換: Excel は TextFrame.Characters()、PowerPoint は TextFrame.TextRange
-function Get-ShapeText($s, $app) {
-    try {
-        if ($app -eq "Excel") { return $s.TextFrame.Characters().Text }
-        else { return $s.TextFrame.TextRange.Text }
-    } catch { return $null }
-}
 function Set-ShapeText($s, $app, $text) {
     if ($app -eq "Excel") { $s.TextFrame.Characters().Text = $text }
     else { $s.TextFrame.TextRange.Text = $text }
 }
 
 function Measure-Case($case, $shape, $doUngroup, $app) {
-    $case.widthMm = PtToMm $shape.Width
-    $case.heightMm = PtToMm $shape.Height
+    $case.widthMm = PtToMm $shape.Width -Digits 2
+    $case.heightMm = PtToMm $shape.Height -Digits 2
     Log "  size: $($case.widthMm) x $($case.heightMm) mm"
     if ($doUngroup) {
         $ug = Recurse-Ungroup $shape
@@ -204,7 +148,8 @@ try {
             if ($route -eq "file") {
                 $shape = $ws.Shapes.AddPicture($Emf, 0, -1, 10, 10, -1, -1)
             } else {
-                Register-Emf
+                Register-Emf ([CadPetaPaste.Clip]) $Emf $fileBytes $CF_ENHMETAFILE
+                Log "  再登録OK: CF_ENHMETAFILE $($fileBytes.Length) bytes（読み戻し一致）"
                 try { $ws.PasteSpecial("図 (拡張メタファイル)"); $case.pasteMethod = "PasteSpecial(JP)" }
                 catch { $ws.PasteSpecial("Picture (Enhanced Metafile)"); $case.pasteMethod = "PasteSpecial(EN)" }
                 $shape = $ws.Shapes.Item($ws.Shapes.Count)
@@ -252,7 +197,8 @@ try {
             if ($route -eq "file") {
                 $shape = $slide.Shapes.AddPicture($Emf, 0, -1, 10, 10)
             } else {
-                Register-Emf
+                Register-Emf ([CadPetaPaste.Clip]) $Emf $fileBytes $CF_ENHMETAFILE
+                Log "  再登録OK: CF_ENHMETAFILE $($fileBytes.Length) bytes（読み戻し一致）"
                 $shape = $slide.Shapes.PasteSpecial(2).Item(1)  # ppPasteEnhancedMetafile
             }
             $case = Measure-Case $case $shape $true "PowerPoint"
@@ -303,7 +249,8 @@ try {
             if ($route -eq "file") {
                 $shape = $doc.Shapes.AddPicture($Emf, $false, $true, 10, 10)
             } else {
-                Register-Emf
+                Register-Emf ([CadPetaPaste.Clip]) $Emf $fileBytes $CF_ENHMETAFILE
+                Log "  再登録OK: CF_ENHMETAFILE $($fileBytes.Length) bytes（読み戻し一致）"
                 $word.Selection.PasteSpecial([Type]::Missing, [Type]::Missing, [Type]::Missing, [Type]::Missing, 9)
                 if ($doc.Shapes.Count -gt 0) { $shape = $doc.Shapes.Item($doc.Shapes.Count) }
                 else { $shape = $doc.InlineShapes.Item($doc.InlineShapes.Count) }

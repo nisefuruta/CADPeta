@@ -2,6 +2,9 @@
 
 配布 zip を作り、YubiKey で署名し、GitHub Releases へ公開するまでの手順。判断の分岐が多い
 署名段を取り違えないための基準。バージョンは `X.Y.Z`（初回は `1.0.0`）。
+版番号は `dist/bundle/CADPeta.bundle/PackageContents.xml` の `AppVersion` の 1 か所で決める。DLL の版はビルドのときにこの値から決まり、
+`build_dist.ps1` と `sign_dist.ps1` は `-Version` を省くとこの値（sign_dist は build_dist が manifest.txt に書いた値）を使う。
+違う `-Version` を渡すと、何も作らず、何も署名せずに止まる。
 
 すべての `.ps1` は **pwsh（PowerShell 7）** で実行する。`powershell.exe`（5.1）は日本語コメントの
 UTF-8 を CP932 誤読してパースエラーになる。
@@ -48,6 +51,7 @@ pwsh -NoProfile -File dist/build_dist.ps1 -Only all -Version X.Y.Z
 ```
 
 `dist/staging/`（未署名 PE）、`dist/artifacts/*.zip`（未署名）、`manifest.txt`（HEAD と SHA-256）を出力する。
+`dist/staging/sign-record.json` には、署名する自作のファイルごとの SHA-256 を記録する（署名の段で照合する）。
 
 互換 CAD 本体が無い端末でビルドする場合は、先に参照 DLL キャッシュを用意する:
 
@@ -59,7 +63,13 @@ pwsh -NoProfile -File dist/build_dist.ps1 -Only all -Version X.Y.Z
 ## 2. 署名（署名端末）
 
 ビルド端末から `dist/`（`dist/staging/` を含む）を署名端末へ運ぶ。再ビルドは不要（署名は staging の
-PE を対象にする）。YubiKey を挿して:
+PE を対象にする）。署名する前に `-WhatIf` で、署名する対象と照合の結果を確かめられる（秘密鍵を使わず、何も変えない）:
+
+```
+pwsh -NoProfile -File dist/sign_dist.ps1 -Only all -Version X.Y.Z -WhatIf
+```
+
+YubiKey を挿して次を実行すると、計画を表示してから確認を求める（確認の画面を出せない実行では `-Confirm:$false` が要る）:
 
 ```
 pwsh -NoProfile -File dist/sign_dist.ps1 -Only all -Version X.Y.Z
@@ -80,6 +90,22 @@ Windows に無い）。PE も `.ps1` も `signtool` で署名し、いずれも�
 未署名のファイルだけを対象に既定 3 回まで試行を繰り返す（`-RetryCount` で変えられる）。
 それでも残った場合はファイル名を挙げて止まる。YubiKey を挿し直して同じコマンドを実行すれば、
 署名済みのファイルを飛ばして続きから再開するので、済んだ分の PIN／タッチはやり直さない。
+
+署名の前に、staging の自作のファイルを `sign-record.json` と照合する。未署名のファイルは組み立てたときの値と、
+署名済みのファイルは署名の後に記録した値と一致しなければ、何も署名せずに止まる（staging のファイルが
+組み立てた後に置き換えられた場合）。署名済みと記録したファイルの署名を検証できないときも止まる。
+
+staging のファイルはその場で書き換えない。署名は `dist/staging/sign-work` の一時ファイルで行い、検証が通ったら
+署名後の値を記録に書いてから、名前の変更で置き換える。同梱文書の差し替えと記録の保存も、一時ファイルに書いて
+ディスクへ書き出してから置き換える。そのため、署名の途中でプロセスが止まった場合（例外、Ctrl+C、強制終了）は、
+同じコマンドを実行すれば続きから再開できる。電源断と OS のクラッシュでは、名前の変更がディスクに書かれたかを
+保証しないので、`build_dist.ps1` で staging を作り直してから署名し直す。
+
+zip は一時の名前で作り、zip を作る直前の staging と作った zip の中の署名したファイル（DLL・exe・.ps1）が、記録した署名済みの値と一致してから
+成功の名前にする。一致しなければ、成功の名前の zip を残さずに止まる（検証の後に、staging のファイルが同じ署名者の別の版へ置き換えられた場合）。
+
+同じ staging に対して `sign_dist.ps1` を同時に実行することはできない。実行の間は `dist/staging/sign.lock` を
+排他で開いておき、別の実行が開いていれば、何も変えずに止まる。
 
 ## 2-1. 署名の後で文書だけを直したとき
 

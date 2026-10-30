@@ -4,15 +4,19 @@
 #   - SVG ページ寸法: PDF と一致すること
 #   - 診断: NoMatchingSize だけが用紙縮退（A4フォールバック）を報告し、「既定用紙で進める」は全ケース禁止
 #   - 前後状態: Layout DBObject 非変更・レジストリ復元・入力DWG不変は selection_plot_matrix.ps1 が判定する
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$Ver = '2026',
     [string]$OutRoot = "$env:TEMP\CadPeta_page_setup_pairwise",
-    [string]$Config = 'Debug',
     [int]$TimeoutSeconds = 180
 )
 
 $ErrorActionPreference = 'Stop'
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'page_setup_pairwise_matrix.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $runner = Join-Path $PSScriptRoot 'selection_plot_matrix.ps1'
 . "$PSScriptRoot\page_setup_pairwise_cases.ps1"
 # 被覆が崩れたケース表のまま実機を回さない
@@ -61,7 +65,7 @@ function Get-PdfPageInfo([string]$path) {
 
 $summaries = @()
 foreach ($case in Get-CadPetaPageSetupPairwiseCases) {
-    & $runner -Ver $Ver -OutRoot $OutRoot -Config $Config -TimeoutSeconds $TimeoutSeconds `
+    & $runner -Confirm:$false -Ver $Ver -OutRoot $OutRoot -TimeoutSeconds $TimeoutSeconds `
         -Command PETA -Space $case.Space -PageSetupCase $case.Id
 
     $work = Join-Path $OutRoot ("PETA-$($case.Space)-psp-" + $case.Id.ToLowerInvariant())

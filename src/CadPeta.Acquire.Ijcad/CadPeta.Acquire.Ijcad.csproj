@@ -25,8 +25,8 @@
   <!-- 4製品同文の取得本体は CadCommon の共有ソース（#if 分岐＋using エイリアスで SDK 差を
        吸収）。製品固有の API 差は本プロジェクト直下の LinetypeShapeUprightCompat.cs が持つ -->
   <ItemGroup>
-    <Compile Include="..\CadPeta.Acquire.CadCommon\CadIrAcquirer.cs" Link="CadCommon\CadIrAcquirer.cs" />
-    <Compile Include="..\CadPeta.Acquire.CadCommon\CadTextMapper.cs" Link="CadCommon\CadTextMapper.cs" />
+    <!-- 4 製品で共有するソース（#if CADPETA_<製品> で SDK の違いを分ける）。フォルダの全ファイルを読むので、ファイルを足しても 4 つの csproj を直さない -->
+    <Compile Include="..\CadPeta.Acquire.CadCommon\*.cs" LinkBase="CadCommon" />
   </ItemGroup>
 
   <!-- IJCAD 参照アセンブリ: 利用者所有の本体 DLL への直接参照であり、ビルドには IJCAD の

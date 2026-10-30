@@ -1,9 +1,11 @@
 // 色変換の単体テスト。
 // 変換規則（純白維持・ISO 32000-1 輝度式・置換先行・画像対象外）と診断ログの集約記録を
 // 検査する。
+using System;
 using CadPeta.Ir;
 using CadPeta.Transforms;
 using Xunit;
+using static CadPeta.Tests.IrTestBuilders;
 
 namespace CadPeta.Tests;
 
@@ -11,18 +13,11 @@ public class ColorTransformTests
 {
     static IrPath Path(IrRgb? stroke, IrRgb? fill) => new()
     {
-        Segments = new List<IrSegment> { new IrMove(0, 0), new IrLine(10, 10) },
+        Segments = DiagonalSegments(),
         Stroke = stroke,
         StrokeWidthMm = stroke != null ? 0.25 : 0,
         Fill = fill,
     };
-
-    static IrDocument Doc(params IrNode[] nodes)
-    {
-        var ir = new IrDocument { WidthMm = 100, HeightMm = 100 };
-        ir.Nodes.AddRange(nodes);
-        return ir;
-    }
 
     static readonly IrRgb White = new(1, 1, 1);
     static readonly IrRgb Black = new(0, 0, 0);
@@ -35,7 +30,7 @@ public class ColorTransformTests
         var wipeout = Path(null, White);              // ワイプアウト＝白塗り（隠蔽の意味を保つ）
         var redLine = Path(Red, null);
         var text = new IrText { Value = "A", XMm = 5, YMm = 5, FontSizeMm = 3, Fill = new IrRgb(0, 0, 1) };
-        var ir = Doc(wipeout, redLine, text);
+        var ir = Square100Page(wipeout, redLine, text);
 
         ColorTransform.Apply(ir, ColorMode.Monochrome, NoReplace, new IrDiagnostics());
 
@@ -49,7 +44,7 @@ public class ColorTransformTests
     {
         // 純緑: Gray = 0.59（ISO 32000-1 §10.4.2）→ 8bit 150
         var green = Path(new IrRgb(0, 1, 0), null);
-        var ir = Doc(green);
+        var ir = Square100Page(green);
 
         ColorTransform.Apply(ir, ColorMode.Grayscale, NoReplace, new IrDiagnostics());
 
@@ -64,7 +59,7 @@ public class ColorTransformTests
         // 赤→白へ置換してからモノクロ化 → 赤だった要素だけ白で残る
         var red = Path(Red, null);
         var blue = Path(new IrRgb(0, 0, 1), null);
-        var ir = Doc(red, blue);
+        var ir = Square100Page(red, blue);
 
         ColorTransform.Apply(ir, ColorMode.Monochrome,
             new[] { new ColorReplacement(Red, White) }, new IrDiagnostics());
@@ -77,7 +72,7 @@ public class ColorTransformTests
     public void 置換は最初の一致だけを適用し連鎖しない()
     {
         var a = Path(Red, null);
-        var ir = Doc(a);
+        var ir = Square100Page(a);
         var green = new IrRgb(0, 1, 0);
         var blue = new IrRgb(0, 0, 1);
 
@@ -93,7 +88,7 @@ public class ColorTransformTests
     public void 量子化後に不変な変換は記録しない()
     {
         var black = Path(Black, null);
-        var ir = Doc(black);
+        var ir = Square100Page(black);
         var diag = new IrDiagnostics();
 
         ColorTransform.Apply(ir, ColorMode.Monochrome, NoReplace, diag);
@@ -106,7 +101,7 @@ public class ColorTransformTests
     public void 画像は対象外として診断ログに記録する()
     {
         var image = new IrImage { XMm = 0, YMm = 0, WidthMm = 10, HeightMm = 10, PngBytes = new byte[] { 1 } };
-        var ir = Doc(image);
+        var ir = Square100Page(image);
         var diag = new IrDiagnostics();
 
         ColorTransform.Apply(ir, ColorMode.Monochrome, NoReplace, diag);
@@ -119,7 +114,7 @@ public class ColorTransformTests
     [Fact]
     public void 診断ログは色ごとの集約で件数を記録する()
     {
-        var ir = Doc(Path(Red, null), Path(Red, null), Path(new IrRgb(0, 0, 1), null));
+        var ir = Square100Page(Path(Red, null), Path(Red, null), Path(new IrRgb(0, 0, 1), null));
         var diag = new IrDiagnostics();
 
         ColorTransform.Apply(ir, ColorMode.Monochrome, NoReplace, diag);
@@ -138,7 +133,7 @@ public class ColorTransformTests
         var p = Path(Red, new IrRgb(1, 0, 0));
         p.StrokeOpacity = 0.5;
         p.FillOpacity = 0.3;
-        var ir = Doc(p);
+        var ir = Square100Page(p);
 
         ColorTransform.Apply(ir, ColorMode.Monochrome, NoReplace, new IrDiagnostics());
 

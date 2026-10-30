@@ -38,17 +38,11 @@ CADPeta 本体は MIT ライセンスです（同梱の LICENSE を参照）。
    同梱アセンブリ（同梱の有無は配布物・対象フレームワークにより異なる）:
      System.Drawing.Common.dll                    （net8 / net10 プラグイン・CLI）
      Microsoft.Win32.SystemEvents.dll             （net8 / net10）
-     System.Text.Json.dll                         （net48 プラグイン）
-     System.Text.Encodings.Web.dll                （net48 プラグイン）
      Microsoft.Bcl.HashCode.dll                   （net48 プラグイン）
-     Microsoft.Bcl.AsyncInterfaces.dll            （net48 プラグイン）
      System.Memory.dll                            （net48 プラグイン）
      System.Buffers.dll                           （net48 プラグイン）
      System.Numerics.Vectors.dll                  （net48 プラグイン）
      System.Runtime.CompilerServices.Unsafe.dll   （net48 プラグイン）
-     System.Threading.Tasks.Extensions.dll        （net48 プラグイン）
-     System.IO.Pipelines.dll                      （net48 プラグイン）
-     System.ValueTuple.dll                         （net48 プラグイン）
 
 
 =======================================================================

@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using CadPeta.Plugin.Shared;
 using Xunit;
 

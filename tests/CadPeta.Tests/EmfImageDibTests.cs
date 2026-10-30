@@ -2,6 +2,7 @@
 // 申し送り#2（画像 DIB の 32bpp 無圧縮肥大の解消、2026-07-08）で 32bpp→24bpp 化した際の
 // 二つの落とし穴を固定する: ①行末の DWORD パディング（24bpp は 幅×3 が4境界に乗らないと
 // 行ごとにズレてせん断する）②アルファ事前合成後の RGB がビット不変＝画素無損失であること。
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using CadPeta.Out.Emf;

@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using CadPeta.UseCases;
 using Xunit;
 
@@ -55,8 +59,8 @@ public sealed class ArtifactRecoveryTests
             string? secondOut = ArtifactRecovery.PreserveEmf(second, recovered);
             Assert.NotNull(secondOut);
             Assert.NotEqual(firstOut, secondOut);
-            Assert.Equal(1u, ReadU32(File.ReadAllBytes(firstOut!), 56));
-            Assert.Equal(2u, ReadU32(File.ReadAllBytes(secondOut!), 56));
+            Assert.Equal(1u, MinimalArtifactBytes.ReadU32(File.ReadAllBytes(firstOut!), 56));
+            Assert.Equal(2u, MinimalArtifactBytes.ReadU32(File.ReadAllBytes(secondOut!), 56));
         }
         finally
         {
@@ -69,7 +73,8 @@ public sealed class ArtifactRecoveryTests
     public void PreserveEmf_RejectsRootOutsideCadPetaTemp()
     {
         string work = Path.Combine(ArtifactScope.DefaultTempRoot, Guid.NewGuid().ToString("N"));
-        string outside = Path.Combine(Path.GetTempPath(), "OutsideCadPeta", Guid.NewGuid().ToString("N"));
+        using var outsideTemp = new TempFolder(); // 製品の一時フォルダ(%TEMP%\CadPeta)の外
+        string outside = outsideTemp.File("OutsideCadPeta");
         Directory.CreateDirectory(work);
         var warnings = new List<string>();
         try
@@ -83,7 +88,6 @@ public sealed class ArtifactRecoveryTests
         finally
         {
             if (Directory.Exists(work)) Directory.Delete(work, true);
-            if (Directory.Exists(outside)) Directory.Delete(outside, true);
         }
     }
 
@@ -114,6 +118,4 @@ public sealed class ArtifactRecoveryTests
 
     static void WriteValidEmf(string path, uint marker) =>
         File.WriteAllBytes(path, MinimalArtifactBytes.Emf(marker));
-
-    static uint ReadU32(byte[] b, int o) => MinimalArtifactBytes.ReadU32(b, o);
 }

@@ -4,6 +4,8 @@
 // 再配列は z順（描画順）を変えるため、レイヤが交錯する実物図面では見た目が崩れ得る
 // （実測済み）。そのため既定オフの明示オプションとし、適用時は元へ戻せない処理として
 // レイヤ数と移動要素数を診断ログへ記録する。
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Ir;
 
 namespace CadPeta.Transforms;

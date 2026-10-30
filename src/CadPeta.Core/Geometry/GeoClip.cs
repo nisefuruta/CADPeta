@@ -5,6 +5,9 @@
 // - ストローク: 線分は Liang-Barsky で切断。ベジェは全内なら保持・全外なら破棄、
 //   境界交差時のみ折れ線化して切断（非可逆、呼び出し側が診断ログに記録する）
 // - 塗り: サブパス（リング）単位で Sutherland-Hodgman。境界交差リングは折れ線化する
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Ir;
 
 namespace CadPeta.Geometry;
@@ -44,6 +47,12 @@ public static class GeoClip
         return minx <= maxx ? new[] { minx, miny, maxx, maxy } : new[] { 0.0, 0, 0, 0 };
     }
 
+    /// <summary>診断に書く bbox の文字列（mm、小数 1 桁）。</summary>
+    public static string BboxText(double[] b) =>
+        // string.Create(IFormatProvider,…) は netstandard2.0 に無いため等価の Invariant で書く
+        FormattableString.Invariant(
+            $"bbox_mm=({b[0]:F1},{b[1]:F1})-({b[2]:F1},{b[3]:F1})");
+
     /// <summary>クリップ定義が軸平行矩形か判定する（Move/Line/Close のみ・全辺が軸平行）。</summary>
     public static bool IsAxisRect(IReadOnlyList<IrSegment> segs, out RectMm rect)
     {
@@ -68,17 +77,27 @@ public static class GeoClip
         return true;
     }
 
+    /// <summary>
+    /// 幾何の全体が矩形の内側か外側にあるときの結果（内側なら segs をそのまま、外側なら null）を返して true。
+    /// 矩形の境界をまたぐときは false で、呼び出し側が切断する。modified は幾何が変わるか（内側以外）。
+    /// flattened（曲線を折れ線にしたか）は、ここでは常に false で、切断する呼び出し側が決める。
+    /// </summary>
+    static bool TryWholeClip(List<IrSegment> segs, RectMm r, out List<IrSegment>? whole, out bool modified, out bool flattened)
+    {
+        flattened = false;
+        var bb = Bbox(segs);
+        modified = !r.ContainsBbox(bb);
+        whole = modified ? null : segs;
+        return !modified || !r.OverlapsBbox(bb);
+    }
+
     // ---------- ストロークのクリップ ----------
 
     /// <summary>ストローク幾何を矩形で切断する。null=全体がクリップ外。</summary>
     public static List<IrSegment>? ClipStroke(List<IrSegment> segs, RectMm r,
                                               out bool modified, out bool flattened)
     {
-        modified = false; flattened = false;
-        var bb = Bbox(segs);
-        if (r.ContainsBbox(bb)) return segs;
-        modified = true;
-        if (!r.OverlapsBbox(bb)) return null;
+        if (TryWholeClip(segs, r, out var whole, out modified, out flattened)) return whole;
 
         var res = new List<IrSegment>();
         double sx = 0, sy = 0, cx = 0, cy = 0;      // サブパス始点・論理カレント
@@ -171,11 +190,7 @@ public static class GeoClip
     public static List<IrSegment>? ClipFill(List<IrSegment> segs, RectMm r,
                                             out bool modified, out bool flattened)
     {
-        modified = false; flattened = false;
-        var bb = Bbox(segs);
-        if (r.ContainsBbox(bb)) return segs;
-        modified = true;
-        if (!r.OverlapsBbox(bb)) return null;
+        if (TryWholeClip(segs, r, out var whole, out modified, out flattened)) return whole;
 
         var res = new List<IrSegment>();
         bool flat = false;

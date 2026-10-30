@@ -3,6 +3,9 @@
 //
 // 座標系: 単位は mm、Y軸は下向き正（CAD/PDF 座標からの反転は取得側の責務）。
 // 描画順（z順）は IrDocument.Nodes のリスト順で保存する（ワイプアウト＝白塗りの成立条件）。
+using System;
+using System.Collections.Generic;
+using CadPeta.Geometry;
 namespace CadPeta.Ir;
 
 using System.Globalization;
@@ -10,8 +13,10 @@ using System.Globalization;
 /// <summary>RGB色（各成分 0..1）。</summary>
 public readonly record struct IrRgb(double R, double G, double B)
 {
-    public (int R, int G, int B) ToRgb8() =>
-        ((int)Math.Round(R * 255), (int)Math.Round(G * 255), (int)Math.Round(B * 255));
+    /// <summary>0..1 の成分を 0..255 の整数へ丸める。範囲の外の値は端へ寄せる。</summary>
+    public static byte ToByte(double component) => (byte)Math.Max(0, Math.Min(255, Math.Round(component * 255)));
+
+    public (int R, int G, int B) ToRgb8() => (ToByte(R), ToByte(G), ToByte(B));
 
     public string ToHex()
     {
@@ -104,19 +109,19 @@ public readonly record struct IrMatrix(double A, double B, double C, double D, d
     /// <summary>逆アフィン変換。非有限または相対的に特異な行列なら false を返す。</summary>
     public bool TryInverse(out IrMatrix inverse)
     {
-        if (!Finite(A) || !Finite(B) || !Finite(C) || !Finite(D) || !Finite(E) || !Finite(F))
+        if (!Numbers.IsFinite(A) || !Numbers.IsFinite(B) || !Numbers.IsFinite(C) || !Numbers.IsFinite(D) || !Numbers.IsFinite(E) || !Numbers.IsFinite(F))
         {
             inverse = default;
             return false;
         }
         double scale = Math.Max(Math.Max(Math.Abs(A), Math.Abs(B)), Math.Max(Math.Abs(C), Math.Abs(D)));
-        if (!(scale > 0) || !Finite(scale))
+        if (!(scale > 0) || !Numbers.IsFinite(scale))
         {
             inverse = default;
             return false;
         }
         double normalizedDet = (A / scale) * (D / scale) - (B / scale) * (C / scale);
-        if (!Finite(normalizedDet) || Math.Abs(normalizedDet) <= RelativeInverseDeterminantTolerance)
+        if (!Numbers.IsFinite(normalizedDet) || Math.Abs(normalizedDet) <= RelativeInverseDeterminantTolerance)
         {
             inverse = default;
             return false;
@@ -124,13 +129,11 @@ public readonly record struct IrMatrix(double A, double B, double C, double D, d
         double det = Det;
         inverse = new IrMatrix(D / det, -B / det, -C / det, A / det,
             (C * F - D * E) / det, (B * E - A * F) / det);
-        if (Finite(inverse.A) && Finite(inverse.B) && Finite(inverse.C)
-            && Finite(inverse.D) && Finite(inverse.E) && Finite(inverse.F)) return true;
+        if (Numbers.IsFinite(inverse.A) && Numbers.IsFinite(inverse.B) && Numbers.IsFinite(inverse.C)
+            && Numbers.IsFinite(inverse.D) && Numbers.IsFinite(inverse.E) && Numbers.IsFinite(inverse.F)) return true;
         inverse = default;
         return false;
     }
-
-    static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
 
     /// <summary>相似変換（等方スケール×回転。反転を含む）か。真なら線幅・文字が歪みなく写る。
     /// 列ベクトル長の一致と直交で判定する（許容は相対 1e-9: 行列演算の丸め誤差レベル）。</summary>

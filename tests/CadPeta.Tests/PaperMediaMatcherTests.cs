@@ -3,6 +3,8 @@
 // 候補の値は AutoCAD 2026 の "AutoCAD PDF (High Quality Print).pc3" が実際に返した公称寸法
 // （tests/tools/regression/window_contract の計測器 PROBEMEDIA の出力）を使う。
 // レイアウト側の 297.010651×419.988983 も実物図面（A3・DocuWorks Printer）の実測値である。
+using System;
+using System.Linq;
 using CadPeta.Plugin.Shared;
 using Xunit;
 
@@ -95,7 +97,7 @@ public class PaperMediaMatcherTests
             new PaperMediaCandidate("A3", 279.4, 215.9, 270, 200),
             new PaperMediaCandidate("PDF_A3", 420, 297, 420, 297),
         };
-        Assert.Equal("PDF_A3", PaperMediaMatcher.Resolve("A3", 420, 297, candidates));
+        Assert.Equal(new PaperMediaResolution("PDF_A3", sizeVerified: true), PaperMediaMatcher.Resolve("A3", 420, 297, candidates));
     }
 
     [Fact]
@@ -106,7 +108,35 @@ public class PaperMediaMatcherTests
             new PaperMediaCandidate("A3", 420, 297, 410, 287),
             new PaperMediaCandidate("別名", 420, 297, 420, 297),
         };
-        Assert.Equal("A3", PaperMediaMatcher.Resolve("A3", 420, 297, candidates));
+        Assert.Equal(new PaperMediaResolution("A3", sizeVerified: true), PaperMediaMatcher.Resolve("A3", 420, 297, candidates));
+    }
+
+    // ARES 2020 の .NET の API は、出力先を PDF にした後の用紙の一覧を 0 件で返す（COM では同じ出力先に 101 件ある。
+    // 2026-10-25 実測）。一覧が無いと寸法で選べないので、ページ設定の用紙名をそのまま試す（使えるかは出力先が判定する）。
+    // 寸法は確かめていないので、そのことを返す（呼び出し側が診断に書く）
+    [Fact]
+    public void 用紙の一覧が空なら_ページ設定の用紙名を寸法を確かめずに試す()
+    {
+        Assert.Equal(new PaperMediaResolution("ISO_full_bleed_A3_(420.00_x_297.00_MM)", sizeVerified: false),
+            PaperMediaMatcher.Resolve("ISO_full_bleed_A3_(420.00_x_297.00_MM)", 420, 297, Array.Empty<PaperMediaCandidate>()));
+    }
+
+    // 寸法で対応付けられなかった理由は、用紙の一覧の状況に合わせる（一覧が空、どの用紙も寸法を取れない、
+    // 一部だけ寸法を取れた、すべて寸法を取れた）。寸法を確かめずに用紙名を使ったときの診断にも、この理由を書く
+    [Theory]
+    [InlineData(0, 0, "plotport.media_list_empty")]
+    [InlineData(101, 0, "plotport.media_sizes_unavailable")]
+    [InlineData(101, 99, "plotport.media_not_found")]
+    [InlineData(101, 101, "plotport.media_not_found_all")]
+    public void 寸法で対応付けられなかった理由は用紙の一覧の状況に合わせる(int nameCount, int measuredCount, string expectedKey)
+    {
+        Assert.Equal(expectedKey, PaperMediaMatcher.MissingReasonKey(nameCount, measuredCount));
+    }
+
+    [Fact]
+    public void 用紙の一覧もページ設定の用紙名も無ければ_用紙を選ばない()
+    {
+        Assert.Null(PaperMediaMatcher.Resolve("", 420, 297, Array.Empty<PaperMediaCandidate>()).Name);
     }
 
     [Fact]

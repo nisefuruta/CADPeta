@@ -7,6 +7,7 @@
 // - 窓は印刷可能領域へ尺度 s で配置され、中央合わせ（SetPlotCentered=true）
 // - 用紙座標は左下原点・Y上向き（プロット座標系）、IR 座標はページ左上原点・Y下向き
 // - プロット回転（PlotRotation）は「用紙→表示ページ」の四半回転として写す
+using System;
 using CadPeta.Geometry;
 
 namespace CadPeta.Plugin.Shared;

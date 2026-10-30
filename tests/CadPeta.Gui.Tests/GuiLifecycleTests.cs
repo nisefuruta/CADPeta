@@ -1,4 +1,5 @@
-using CadPeta.Gui;
+using System;
+using System.IO;
 using Xunit;
 
 namespace CadPeta.Gui.Tests;
@@ -49,8 +50,10 @@ public sealed class GuiLifecycleTests
     [Fact]
     public void Startup_removes_unlocked_empty_crash_residue_immediately()
     {
-        string root = Path.Combine(Path.GetTempPath(), "cadpeta", "gui");
-        Directory.CreateDirectory(root);
+        // セッションの保存先(GuiSession が決めるフォルダ)は製品の固定の場所で、試験の一時フォルダに置き換えられない。
+        // 先に 1 つ作ったセッションの親フォルダから、その場所を知る。
+        using var existing = new GuiSession();
+        string root = Path.GetDirectoryName(existing.DirectoryPath)!;
         string residue = Path.Combine(root, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(residue);
         File.WriteAllBytes(Path.Combine(residue, "session.lock"), Array.Empty<byte>());

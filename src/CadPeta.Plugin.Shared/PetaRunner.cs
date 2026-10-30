@@ -3,9 +3,10 @@
 // 絞り込みはプロット対象を側DB（選択オブジェクトだけの複製）へ差し替えるだけで、範囲・尺度・
 // クロップの判断は PlotOrchestrator の単一実装を全経路で共有する。
 // CAD 固有処理は IEditorPort・IPlotPort と取得デリゲートに委ね、ここには CAD 型が現れない。
+using System;
+using System.Linq;
 using System.Diagnostics;
 using System.IO;
-using System.Text;
 using CadPeta.Ir;
 using CadPeta.Transforms;
 using CadPeta.UseCases;
@@ -156,7 +157,7 @@ public static class PetaRunner
             if (effectiveFileOutput)
             {
                 ArtifactFile.WriteAtomically(svgPath, ArtifactKind.Svg,
-                    temp => File.WriteAllText(temp, SvgWriter.Write(ir), new UTF8Encoding(false)));
+                    temp => File.WriteAllText(temp, SvgWriter.Write(ir), TextEncodings.Utf8NoBom));
                 verbose.WriteLine(Msg.Format("runner.svg_written", svgPath));
             }
 

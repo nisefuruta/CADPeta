@@ -4,6 +4,8 @@
 // 継続オプション（余白(M)等と同種）で、先選択は絞り込みの初期値になる。
 // 表示文言は言語カタログ（Msg）から引く。キーワードの判定はグローバル名（All 等）のままで、
 // 言語で割れない。
+using System;
+using System.Linq;
 using System.IO;
 using System.Globalization;
 using CadPeta.Ir;
@@ -96,31 +98,14 @@ public static class RangePrompt
                             ? "range.filter_set" : "range.filter_cleared"));
                         continue;
                     }
-                    if (r.Keyword == PluginDefaults.KeywordMargin)
+                    if (TryApplySharedKeyword(ed, log, choice, r.Keyword!) is bool applied)
                     {
-                        double margin = choice.MarginMm;
-                        if (!TryPromptMargin(ed, log, ref margin))
-                            return false;
-                        choice.MarginMm = margin;
-                        continue;
-                    }
-                    if (r.Keyword == PluginDefaults.KeywordLayer)
-                    {
-                        choice.GroupByLayer = !choice.GroupByLayer;
-                        ed.WriteLine(Msg.Text(choice.GroupByLayer ? "toggle.layer.on" : "toggle.layer.off"));
-                        continue;
-                    }
-                    if (r.Keyword == PluginDefaults.KeywordTextOutline)
-                    {
-                        choice.TextOutline = !choice.TextOutline;
-                        ed.WriteLine(Msg.Text(choice.TextOutline ? "toggle.outline.on" : "toggle.outline.off"));
+                        if (!applied) return false;
                         continue;
                     }
                     if (r.Keyword == PluginDefaults.KeywordFileOutput)
                     {
-                        choice.FileOutput = !choice.FileOutput;
-                        ed.WriteLine(Msg.Text(choice.FileOutput
-                            ? "toggle.file_output.on" : "toggle.file_output.off"));
+                        ReportToggle(ed, choice.FileOutput = !choice.FileOutput, "toggle.file_output.on", "toggle.file_output.off");
                         continue;
                     }
                     if (r.Keyword == PluginDefaults.KeywordEmfBackground)
@@ -203,30 +188,14 @@ public static class RangePrompt
                     log.WriteLine(Msg.Format("range.unknown_keyword", result.Keyword!));
                     continue;
                 }
-                if (result.Keyword == PluginDefaults.KeywordMargin)
+                if (TryApplySharedKeyword(ed, log, choice, result.Keyword!) is bool applied)
                 {
-                    double margin = choice.MarginMm;
-                    if (!TryPromptMargin(ed, log, ref margin))
-                        return false;
-                    choice.MarginMm = margin;
-                    continue;
-                }
-                if (result.Keyword == PluginDefaults.KeywordLayer)
-                {
-                    choice.GroupByLayer = !choice.GroupByLayer;
-                    ed.WriteLine(Msg.Text(choice.GroupByLayer ? "toggle.layer.on" : "toggle.layer.off"));
+                    if (!applied) return false;
                     continue;
                 }
                 if (result.Keyword == PluginDefaults.KeywordShxSubstitute)
                 {
-                    choice.ShxSubstitute = !choice.ShxSubstitute;
-                    ed.WriteLine(Msg.Text(choice.ShxSubstitute ? "toggle.shx.on" : "toggle.shx.off"));
-                    continue;
-                }
-                if (result.Keyword == PluginDefaults.KeywordTextOutline)
-                {
-                    choice.TextOutline = !choice.TextOutline;
-                    ed.WriteLine(Msg.Text(choice.TextOutline ? "toggle.outline.on" : "toggle.outline.off"));
+                    ReportToggle(ed, choice.ShxSubstitute = !choice.ShxSubstitute, "toggle.shx.on", "toggle.shx.off");
                     continue;
                 }
                 if (result.Keyword == PluginDefaults.KeywordGradientDpi)
@@ -247,6 +216,35 @@ public static class RangePrompt
     }
 
     /// <summary>余白（mm）の入力。キャンセルは false（コマンド中止）。</summary>
+    /// <summary>
+    /// 範囲の入力と尺度の入力の両方が示すキーワード（余白・画層ごとのグループ化・文字の輪郭化）を処理する。
+    /// 片方の入力だけが示すキーワードはここで扱わない（示していないキーワードを受け付けない約束のため）。
+    /// 該当しないキーワードは null、処理したら true、利用者が取り消したら false を返す。
+    /// </summary>
+    static bool? TryApplySharedKeyword(IEditorPort ed, TextWriter log, RangeChoice choice, string keyword)
+    {
+        if (keyword == PluginDefaults.KeywordMargin)
+        {
+            double margin = choice.MarginMm;
+            if (!TryPromptMargin(ed, log, ref margin))
+                return false;
+            choice.MarginMm = margin;
+            return true;
+        }
+        if (keyword == PluginDefaults.KeywordLayer)
+            return ReportToggle(ed, choice.GroupByLayer = !choice.GroupByLayer, "toggle.layer.on", "toggle.layer.off");
+        if (keyword == PluginDefaults.KeywordTextOutline)
+            return ReportToggle(ed, choice.TextOutline = !choice.TextOutline, "toggle.outline.on", "toggle.outline.off");
+        return null;
+    }
+
+    /// <summary>オン・オフを切り替えた後の状態をコマンドラインへ知らせる。キーワードを処理したことを表す true を返す。</summary>
+    static bool ReportToggle(IEditorPort ed, bool now, string onKey, string offKey)
+    {
+        ed.WriteLine(Msg.Text(now ? onKey : offKey));
+        return true;
+    }
+
     static bool TryPromptMargin(IEditorPort ed, TextWriter log, ref double marginMm)
     {
         var result = ed.PromptDouble(Msg.Text("scale.margin_prompt"), Array.Empty<PromptKeyword>(),

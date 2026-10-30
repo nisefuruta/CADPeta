@@ -19,6 +19,7 @@
 // 潰れる。CAD 自身も窓プロットを中止するため、ここでも誤った成果物を出さずに報告する。
 //
 // CAD SDK 型を持ち込まない（各ポートが SDK 値を中立型へ移して渡す）。単体テスト対象。
+using System;
 using CadPeta.Geometry;
 
 namespace CadPeta.Plugin.Shared;
@@ -39,9 +40,8 @@ public readonly struct Vec3
     public double Dot(Vec3 o) => X * o.X + Y * o.Y + Z * o.Z;
     public Vec3 Cross(Vec3 o) => new(Y * o.Z - Z * o.Y, Z * o.X - X * o.Z, X * o.Y - Y * o.X);
     public double Length => Math.Sqrt(Dot(this));
-    public bool IsFinite => IsFiniteValue(X) && IsFiniteValue(Y) && IsFiniteValue(Z);
+    public bool IsFinite => Numbers.IsFinite(X) && Numbers.IsFinite(Y) && Numbers.IsFinite(Z);
 
-    static bool IsFiniteValue(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
 
     /// <summary>単位ベクトル。長さ0は方向が定義できないため呼び出し側が事前に弾く。</summary>
     public Vec3 Normalized()
@@ -178,7 +178,7 @@ public static class WindowPickMapper
         if (!frame.UcsOrigin.IsFinite || !frame.UcsXAxis.IsFinite
             || !frame.UcsYAxis.IsFinite || !frame.UcsZAxis.IsFinite
             || !frame.ViewTargetWcs.IsFinite || !frame.ViewDirectionWcs.IsFinite
-            || double.IsNaN(frame.ViewTwistRad) || double.IsInfinity(frame.ViewTwistRad))
+            || !Numbers.IsFinite(frame.ViewTwistRad))
             throw new ArgumentException("座標変換フレームに有限でない値がある");
 
         var x = frame.UcsXAxis;

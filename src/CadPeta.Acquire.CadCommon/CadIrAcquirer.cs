@@ -7,19 +7,24 @@
 //
 // - 座標系: 図面単位→mm（尺度 1:N で k=1/N 倍）、Y軸反転（CAD 上向き正→IR 下向き正）は
 //   本アダプタの責務。回転角も同時に符号反転する
-// - ByLayer/ByBlock の色・透過・線種・線量りは取得時に実効値へ解決し、解決前の指定方法を
+// - ByLayer/ByBlock の色・透過・線種・線の太さは取得時に実効値へ解決し、解決前の指定方法を
 //   data-color-method に記録する。ACI/TrueColor の区別は Color オブジェクトの種別判定で行い
 //   推測を含まない
 // - ブロック参照は変換行列付きグループ（IrGroup）に展開する。行列は文書写像 D（k倍＋Y反転）で
 //   共役変換し、子ノードは常に「ローカル座標を D で写した値」を持つ（入れ子も同じ規則）
-// - 線量り（lineweight）は用紙上の絶対幅のためグループ拡大率で割って格納する
+// - 線の太さ（lineweight）は用紙上の絶対幅のためグループ拡大率で割って格納する
 //   （SVG のグループ変換で拡大されて元の絶対幅に戻る）。ポリライン幅は図面単位の幾何のため
 //   k 倍だけ行い、グループ変換に任せる。破線パターン（LTSCALE・線種尺度が生む長さ）と
-//   複雑線種の記号（寸法・オフセット・出現距離）は線量りと同じく用紙上の絶対値のため、
+//   複雑線種の記号（寸法・オフセット・出現距離）は線の太さと同じく用紙上の絶対値のため、
 //   曲線長との比較・格納の直前でグループ拡大率で割る（ブロック挿入尺度2で記号が実測4倍近く
 //   肥大・個数が半減する欠陥の是正、2026-07-10）
 // - 未対応エンティティは分解（Explode）で構成要素へ展開して写像し、分解できない類型は
 //   件数と対象を診断ログへ記録してスキップする（1個の特殊オブジェクトで全体を失敗させない）
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
 #if CADPETA_ACAD
 using Autodesk.AutoCAD.Colors;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -108,7 +113,7 @@ public sealed class CadIrAcquirer
         if (scaleDenominator <= 0)
             throw new ArgumentOutOfRangeException(nameof(scaleDenominator),
                 $"尺度 1:N の N は正の値を指定する: {scaleDenominator}");
-        if (!(gradientDpi > 0) || double.IsNaN(gradientDpi) || double.IsInfinity(gradientDpi))
+        if (!CadPeta.Geometry.Numbers.IsPositiveFinite(gradientDpi))
             throw new ArgumentOutOfRangeException(nameof(gradientDpi), "グラデーションDPIは正の有限値が必要");
 
         double k = 1.0 / scaleDenominator;
@@ -227,7 +232,7 @@ public sealed class CadIrAcquirer
         public IrMatrix DocumentFromLocal = IrMatrix.Identity;
         /// <summary>文字写像の設定と取得1回のあいだ共有する状態（SHX パス解決キャッシュ等）。</summary>
         public CadTextMapper.TextMapContext TextCtx = null!;
-        /// <summary>ここまでのグループ変換の等方スケール積。線量り（絶対幅）の格納値の補正に使う。</summary>
+        /// <summary>ここまでのグループ変換の等方スケール積。線の太さ（絶対幅）の格納値の補正に使う。</summary>
         public double GroupScale = 1.0;
         /// <summary>ブロック文脈の実効レイヤ。レイヤ「0」の子はこのレイヤを継承する。</summary>
         public string? BlockLayer;
@@ -463,7 +468,7 @@ public sealed class CadIrAcquirer
     }
 
     /// <summary>ポリライン幅（図面単位）を解決する。可変幅は中心線＋平均幅で近似し、
-    /// 近似した旨を診断ログへ記録する。幅なし（線量り任せ）は0を返す。</summary>
+    /// 近似した旨を診断ログへ記録する。幅なし（線の太さ任せ）は0を返す。</summary>
     static double ResolvePolylineWidthDu(SdkPolyline pl, int n, Ctx ctx)
     {
         double cw = pl.ConstantWidth;
@@ -709,6 +714,10 @@ public sealed class CadIrAcquirer
         sink.Add(p);
     }
 
+    /// <summary>ブロックを展開するグループ（ブロック参照・寸法）の、スタイル・実効の画層・ブロック定義。</summary>
+    (ResolvedStyle Style, string EffLayer, BlockTableRecord Block) ResolveBlockGroupInputs(Entity owner, ObjectId blockId, Ctx ctx) =>
+        (ResolveStyleFor(owner, ctx), EffLayer(owner, ctx), (BlockTableRecord)ctx.Tr.GetObject(blockId, OpenMode.ForRead));
+
     void MapBlockReference(BlockReference br, Ctx ctx, List<IrNode> sink, int depth)
     {
         if (depth >= MaxExplodeDepth)
@@ -716,9 +725,7 @@ public sealed class CadIrAcquirer
             ctx.Diag.Add("構造SVG書き出し: 入れ子深さ上限のスキップ", DxfName(br));
             return;
         }
-        var st = ResolveStyleFor(br, ctx);
-        string effLayer = EffLayer(br, ctx);
-        var btr = (BlockTableRecord)ctx.Tr.GetObject(br.BlockTableRecord, OpenMode.ForRead);
+        var (st, effLayer, btr) = ResolveBlockGroupInputs(br, br.BlockTableRecord, ctx);
 
         var g = new IrGroup
         {
@@ -759,9 +766,7 @@ public sealed class CadIrAcquirer
             MapByExplode(dim, ctx, sink, depth);
             return;
         }
-        var st = ResolveStyleFor(dim, ctx);
-        string effLayer = EffLayer(dim, ctx);
-        var btr = (BlockTableRecord)ctx.Tr.GetObject(dim.DimBlockId, OpenMode.ForRead);
+        var (st, effLayer, btr) = ResolveBlockGroupInputs(dim, dim.DimBlockId, ctx);
         var g = new IrGroup
         {
             DataLayer = effLayer,
@@ -833,7 +838,7 @@ public sealed class CadIrAcquirer
         }
     }
 
-    // ---------- スタイル解決（色・透過・線種・線量り） ----------
+    // ---------- スタイル解決（色・透過・線種・線の太さ） ----------
 
     internal sealed record ResolvedStyle(IrRgb Rgb, string ColorMethod, int? Aci, double Opacity,
                                          double[]? DashDu, double LineweightMm);
@@ -918,17 +923,28 @@ public sealed class CadIrAcquirer
         return t.IsByAlpha ? t.Alpha / 255.0 : 1.0;
     }
 
-    double[]? ResolveLinetype(Entity ent, Ctx ctx)
+    /// <summary>
+    /// エンティティの実効の線種の記録。ByLayer は画層の線種の記録に置き換える。ByBlock は記録をそのまま返し、
+    /// <paramref name="byBlock"/> を true にする（ブロック挿入側の線種を引き継ぐ扱いは呼び出し側が決める）。
+    /// </summary>
+    LinetypeTableRecord EffectiveLinetypeRecord(Entity ent, Ctx ctx, out bool byBlock)
     {
-        ObjectId ltId = ent.LinetypeId;
-        double entScale = ent.LinetypeScale;
-        var ltrRec = (LinetypeTableRecord)ctx.Tr.GetObject(ltId, OpenMode.ForRead);
+        var ltrRec = (LinetypeTableRecord)ctx.Tr.GetObject(ent.LinetypeId, OpenMode.ForRead);
+        byBlock = false;
         if (ltrRec.Name.Equals("ByLayer", StringComparison.OrdinalIgnoreCase))
         {
             var layer = (LayerTableRecord)ctx.Tr.GetObject(ResolveLayerId(ent, ctx), OpenMode.ForRead);
-            ltrRec = (LinetypeTableRecord)ctx.Tr.GetObject(layer.LinetypeObjectId, OpenMode.ForRead);
+            return (LinetypeTableRecord)ctx.Tr.GetObject(layer.LinetypeObjectId, OpenMode.ForRead);
         }
-        else if (ltrRec.Name.Equals("ByBlock", StringComparison.OrdinalIgnoreCase))
+        byBlock = ltrRec.Name.Equals("ByBlock", StringComparison.OrdinalIgnoreCase);
+        return ltrRec;
+    }
+
+    double[]? ResolveLinetype(Entity ent, Ctx ctx)
+    {
+        double entScale = ent.LinetypeScale;
+        var ltrRec = EffectiveLinetypeRecord(ent, ctx, out bool byBlock);
+        if (byBlock)
         {
             // ブロック外の ByBlock は実線として描画される
             if (ctx.ByBlock == null)
@@ -1040,15 +1056,9 @@ public sealed class CadIrAcquirer
     /// </summary>
     (List<LinetypeSymbolElem> Symbols, double PatternLenDu)? ResolveLinetypeSymbols(Entity ent, Ctx ctx)
     {
-        ObjectId ltId = ent.LinetypeId;
         double entScale = ent.LinetypeScale;
-        var ltrRec = (LinetypeTableRecord)ctx.Tr.GetObject(ltId, OpenMode.ForRead);
-        if (ltrRec.Name.Equals("ByLayer", StringComparison.OrdinalIgnoreCase))
-        {
-            var layer = (LayerTableRecord)ctx.Tr.GetObject(ResolveLayerId(ent, ctx), OpenMode.ForRead);
-            ltrRec = (LinetypeTableRecord)ctx.Tr.GetObject(layer.LinetypeObjectId, OpenMode.ForRead);
-        }
-        else if (ltrRec.Name.Equals("ByBlock", StringComparison.OrdinalIgnoreCase))
+        var ltrRec = EffectiveLinetypeRecord(ent, ctx, out bool byBlock);
+        if (byBlock)
         {
             // ByBlock はブロック挿入側の数値パターンだけを引き継ぐ既存規則（ResolveLinetype 参照）。
             // 記号を持つ線種を直接 ByBlock 指定する図面は実測でも未確認のため対象外とする
@@ -1251,7 +1261,7 @@ public sealed class CadIrAcquirer
 
         double tx = deriv.X / tlen, ty = deriv.Y / tlen;
         double nx = -ty, ny = tx; // 接線を90°反時計回りした左法線（AutoCAD の X=接線・Y=左法線 規約）
-        // オフセット・寸法は用紙上の絶対値（線量りと同じ性質）のため、ローカル曲線点 pt へ
+        // オフセット・寸法は用紙上の絶対値（線の太さと同じ性質）のため、ローカル曲線点 pt へ
         // 足し込む前にグループ拡大率で割る（挿入尺度1では割っても値は変わらない）
         double offXDu = sym.OffsetXDu / ctx.GroupScale;
         double offYDu = sym.OffsetYDu / ctx.GroupScale;
@@ -1313,7 +1323,7 @@ public sealed class CadIrAcquirer
 
         // シェイプ設計単位 → mm。文字と異なり above 基準の正規化を行わない
         // （線種の S= はシェイプ設計単位への直接倍率。ShxShapeOutliner のコメント参照）。
-        // 記号の寸法は用紙上の絶対値（線量りと同じ性質）のため、グループ拡大率で割って格納する
+        // 記号の寸法は用紙上の絶対値（線の太さと同じ性質）のため、グループ拡大率で割って格納する
         double scaleMm = sym.ScaleDu * ctx.GeomScale / ctx.GroupScale;
         var textSpace = new List<IrSegment>(raw.Count);
         foreach (var s in raw)
@@ -1361,7 +1371,7 @@ public sealed class CadIrAcquirer
         }
         if (lw == LineWeight.ByLineWeightDefault || lw == LineWeight.ByLayer || lw == LineWeight.ByBlock)
         {
-            // 既定線量り。LWDEFAULT はセッション設定（1/100mm）
+            // 既定線の太さ。LWDEFAULT はセッション設定（1/100mm）
             var v = SdkApplication.GetSystemVariable("LWDEFAULT");
             lw = (LineWeight)Convert.ToInt32(v);
         }
@@ -1397,7 +1407,7 @@ public sealed class CadIrAcquirer
         {
             p.Stroke = st.Rgb;
             p.StrokeOpacity = st.Opacity;
-            // 線量りは用紙上の絶対幅。グループ変換の拡大率で割って格納し、描画で元へ戻す
+            // 線の太さは用紙上の絶対幅。グループ変換の拡大率で割って格納し、描画で元へ戻す
             p.StrokeWidthMm = st.LineweightMm / ctx.GroupScale;
             if (applyDashJustify)
                 p.StrokeDashMm = JustifyDashDu(ent, st.DashDu, ctx)?.Select(d => d * ctx.GeomScale).ToArray();
@@ -1410,7 +1420,7 @@ public sealed class CadIrAcquirer
     /// （開いた曲線=両端の実線片を調整、閉じた曲線=整数周期へ伸縮。docs/02 §2）。
     /// dashDu が実線（null）ならそのまま null。Curve として扱えない stroke 対象は
     /// 現状存在しないため、防御的に無調整（名目パターン）へフォールバックする。
-    /// dashDu は用紙上の絶対長（線量りと同じ性質）だが、曲線長 lengthDu はブロック定義の
+    /// dashDu は用紙上の絶対長（線の太さと同じ性質）だが、曲線長 lengthDu はブロック定義の
     /// ローカル図面単位（グループ変換前）のため、比較の前にグループ拡大率で割って単位を揃える
     /// （揃えないとブロック挿入尺度ぶん周期数がずれる。挿入尺度1では割っても値は変わらない）。
     /// </summary>

@@ -1,5 +1,7 @@
 // 構造SVG書き出し用の曲線近似の単体テスト。バルジ円弧は実図面の entget 値
 // （TESTCHART2.dwg のポリライン、2026-07-09 実測）を正解に使う。
+using System;
+using System.Collections.Generic;
 using CadPeta.Acquire.Common;
 using CadPeta.Ir;
 using Xunit;
@@ -9,21 +11,6 @@ namespace CadPeta.Tests;
 public class CurveApproxTests
 {
     static (double X, double Y) Identity(double x, double y) => (x, y);
-
-    static (double X, double Y) EvalCubicChain(List<IrSegment> segs, double t01)
-    {
-        // 連結ベジェ列を一様パラメータで評価する（検証用の粗い評価で十分）
-        var cubics = segs.OfType<IrCubic>().ToList();
-        var start = (IrMove)segs[0];
-        double scaled = t01 * cubics.Count;
-        int i = Math.Min(cubics.Count - 1, (int)scaled);
-        double t = scaled - i;
-        (double X, double Y) p0 = i == 0 ? (start.X, start.Y) : (cubics[i - 1].X, cubics[i - 1].Y);
-        var c = cubics[i];
-        double u = 1 - t;
-        return (u * u * u * p0.X + 3 * u * u * t * c.X1 + 3 * u * t * t * c.X2 + t * t * t * c.X,
-                u * u * u * p0.Y + 3 * u * u * t * c.Y1 + 3 * u * t * t * c.Y2 + t * t * t * c.Y);
-    }
 
     [Fact]
     public void バルジ円弧は実図面の弧と一致する()
@@ -44,14 +31,14 @@ public class CurveApproxTests
         const double cx = 125.16666667, cy = 228.5, r = 13.17615672;
         for (double t = 0; t <= 1.0001; t += 0.1)
         {
-            var p = EvalCubicChain(segs, Math.Min(t, 1));
+            var p = CubicChain.Eval(segs, Math.Min(t, 1));
             double d = Math.Sqrt((p.X - cx) * (p.X - cx) + (p.Y - cy) * (p.Y - cy));
             Assert.True(Math.Abs(d - r) < 0.01,
                 $"t={t:F1} で円から {Math.Abs(d - r):F4} ずれた（ベジェ近似誤差の許容 0.01 超）");
         }
 
         // 弧の中点は弦より上（ドーム）= 中心・掃引方向の符号検証
-        var mid = EvalCubicChain(segs, 0.5);
+        var mid = CubicChain.Eval(segs, 0.5);
         double chordYAtMid = (241 + 236) / 2.0;
         Assert.True(mid.Y > chordYAtMid,
             $"弧の中点 y={mid.Y:F2} が弦 y={chordYAtMid:F2} より下（膨らむ側が逆）");
@@ -63,7 +50,7 @@ public class CurveApproxTests
         // DXF 仕様: 正=反時計回り。(0,0)→(10,0) の進行で反時計回りの弧は下側を通る
         var segs = new List<IrSegment> { new IrMove(0, 0) };
         CurveApprox.BulgeArc(segs, Identity, 0, 0, 10, 0, 0.5);
-        var mid = EvalCubicChain(segs, 0.5);
+        var mid = CubicChain.Eval(segs, 0.5);
         Assert.True(mid.Y < 0, $"反時計回りの弧の中点 y={mid.Y:F2} が上側（掃引が逆）");
         // サジッタ = b·弦/2 = 2.5
         Assert.Equal(-2.5, mid.Y, 2);

@@ -6,6 +6,9 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
   <ItemGroup><ProjectReference Include="..\..\src\CadPeta.Gui\CadPeta.Gui.csproj" /></ItemGroup>
-  <!-- 最小成果物バイト列はCadPeta.Testsと同一定義をリンク共有し、複製を持たない -->
-  <ItemGroup><Compile Include="..\CadPeta.Tests\MinimalArtifactBytes.cs" Link="MinimalArtifactBytes.cs" /></ItemGroup>
+  <!-- 最小成果物バイト列と一時フォルダはCadPeta.Testsと同一定義をリンク共有し、複製を持たない -->
+  <ItemGroup>
+    <Compile Include="..\CadPeta.Tests\MinimalArtifactBytes.cs" Link="MinimalArtifactBytes.cs" />
+    <Compile Include="..\CadPeta.Tests\TempFolder.cs" Link="TempFolder.cs" />
+  </ItemGroup>
 </Project>

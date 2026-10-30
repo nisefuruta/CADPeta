@@ -1,8 +1,9 @@
 // PlotOrchestrator（PDF印刷経路の判断ロジック）の port 境界テスト。偽の IPlotPort を差し込み、
 // 尺度採否（フィット vs ページ設定尺度維持）・窓クロップ矩形の算出・呼び出し順を検査する。
 // 実機プロット（AutoCAD＋PDFドライバ）を持たない環境でもPDF印刷経路の中核判断を機械検証できる。
+using System;
+using System.Collections.Generic;
 using System.IO;
-using CadPeta.Geometry;
 using CadPeta.Plugin.Shared;
 using Xunit;
 

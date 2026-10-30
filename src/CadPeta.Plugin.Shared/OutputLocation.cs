@@ -1,6 +1,7 @@
 // 出力先の決定（既定は図面と同じフォルダ、書き込み不可・未保存時は利用者へ問い合わせ、
 // 無応答なら %TEMP%\CadPeta へ退避）。CAD 依存（保存状態・図面パス・文字列入力）は
 // IEditorPort 越しに得て、フォルダ判定・生成は中立な IO で行う。
+using System;
 using System.IO;
 
 namespace CadPeta.Plugin.Shared;

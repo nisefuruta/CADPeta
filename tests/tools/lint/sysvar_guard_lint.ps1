@@ -18,13 +18,17 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $script:CadPetaSysvarNames = 'FILEDIA|OSMODE|SECURELOAD|TRUSTEDPATHS|PLOTTRANSPARENCYOVERRIDE'
+# 信頼済みのフォルダへコピーした DLL・LISP を読み込む .scr の行を作る関数（common/test_helpers.ps1）。コピーは CadRegGuard の
+# Get-CadRegSnapshot -StageToTrusted が行うので、呼ぶ側は CadRegGuard.ps1 を使う
+$script:CadPetaTrustedLinesPattern = '\bGet-Accore(TrustedFolder|Netload|LoadLisp)Lines\b'
 $script:CadPetaSysvarWritePattern =
-    "(setvar\s+[`"']($script:CadPetaSysvarNames)[`"']|SetVariable\s*\(\s*[`"']($script:CadPetaSysvarNames)[`"'])"
+    "(setvar\s+[`"']($script:CadPetaSysvarNames)[`"']|SetVariable\s*\(\s*[`"']($script:CadPetaSysvarNames)[`"']|$script:CadPetaTrustedLinesPattern)"
 # CadRegGuard の dot-source（AutoCAD 系の合格条件）
 $script:CadPetaGuardPattern = 'CadRegGuard\.ps1'
-# in-session 復元の読み戻し検証（互換CAD例外の合格条件）。peta_window_rotation_compat.ps1 の
-# RESTORE ループが正のパターンで、SetVariable 後に GetVariable の再読値を照合していること。
-$script:CadPetaVerifiedRestorePattern = '\$readBack"?\s+-ne\s+'
+# in-session 復元の読み戻し検証（互換CAD例外の合格条件）。SetVariable 後に GetVariable の再読値を照合する
+# 実装は common/compat_cad_com.ps1 の Restore-CadSystemVariables にあり（$readBack の照合がそのファイルの合格条件）、
+# 互換CAD GUI ハーネスはその関数を呼ぶことが合格条件。
+$script:CadPetaVerifiedRestorePattern = '\$readBack"?\s+-ne\s+|Restore-CadSystemVariables\b'
 
 # 互換CAD GUI ハーネス。value は例外の根拠（違反表示にも使う）。
 $script:CadPetaCompatExceptions = @{
@@ -32,6 +36,7 @@ $script:CadPetaCompatExceptions = @{
     'regression/peta_option_smoke_compat.ps1' = '互換CAD GUI。別レジストリハイブのため in-session 読み戻し検証復元'
     'regression/window_contract/window_contract_compat.ps1' = '互換CAD GUI。別レジストリハイブのため in-session 読み戻し検証復元'
     'pdf-emf/gradient_compat_e2e.ps1' = '互換CAD GUI。別レジストリハイブのため in-session 読み戻し検証復元'
+    'common/compat_cad_com.ps1' = '互換CAD GUI ハーネス共有の復元実装（Restore-CadSystemVariables）。読み戻し検証の本体'
 }
 
 function Get-CadPetaSysvarLintViolations([string]$rootDir) {
@@ -44,6 +49,7 @@ function Get-CadPetaSysvarLintViolations([string]$rootDir) {
         $relative = $file.FullName.Substring($rootFull.Length).TrimStart('\', '/').Replace('\', '/')
         if ($relative -like 'lint/*') { continue }                     # lint 自身
         if ($relative -eq 'regression/CadRegGuard.ps1') { continue }   # ガード実装本体
+        if ($relative -eq 'common/test_helpers.ps1') { continue }      # 読み込みの行を作る関数の定義（呼ぶ側を検査する）
         $text = Get-Content -LiteralPath $file.FullName -Raw
         if ($text -notmatch $script:CadPetaSysvarWritePattern) { continue }
         if ($text -match $script:CadPetaGuardPattern) { continue }
@@ -82,10 +88,15 @@ $scr = '(setvar "SECURELOAD" 0)'
         Set-Content -LiteralPath (Join-Path $work 'readonly.ps1') -Encoding UTF8 -Value @'
 $scr = '(princ (getvar "SECURELOAD"))'
 '@
+        # 4) 信頼済みのフォルダへのコピーを読み込む行を作る関数を、ガード（コピーと削除）無しで呼ぶ → 違反
+        Set-Content -LiteralPath (Join-Path $work 'bare_netload.ps1') -Encoding UTF8 -Value @'
+$lines = Get-AccoreNetloadLines $plugin
+'@
         $violations = @(Get-CadPetaSysvarLintViolations $work)
         $expectedMissing = @($script:CadPetaCompatExceptions.Keys).Count   # 一時dirには例外ファイルが無い
         $bare = @($violations | Where-Object { $_ -like 'bare.ps1:*' })
         if ($bare.Count -ne 1) { throw "自己試験失敗: 裸変更を1件として検出しなかった: $($violations -join '; ')" }
+        if (@($violations | Where-Object { $_ -like 'bare_netload.ps1:*' }).Count -ne 1) { throw "自己試験失敗: ガード無しの Get-AccoreNetloadLines を検出しなかった: $($violations -join '; ')" }
         if (@($violations | Where-Object { $_ -like 'guarded.ps1:*' -or $_ -like 'readonly.ps1:*' }).Count -ne 0) {
             throw "自己試験失敗: ガード付き・読取のみを誤検出した: $($violations -join '; ')"
         }

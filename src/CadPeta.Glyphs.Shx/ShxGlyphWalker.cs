@@ -17,6 +17,9 @@
 //   opcode 11（フラクショナル弧）・13（複数バルジ弧）は本機実物 27,373 グリフで一度も出現せず
 //   （docs/validation/architecture-decisions.md §2.3）、11 は Autodesk 公式資料の1例（55°→95°の変換例）のみを
 //   根拠に独立に式を導出したため信頼度が低いことを明記する。
+using System;
+using System.Collections.Generic;
+using System.IO;
 using CadPeta.Ir;
 
 namespace CadPeta.Glyphs.Shx;
@@ -186,12 +189,8 @@ sealed class ShxGlyphWalker
                         break;
                     case 9: // XY変位列、(0,0)で終端
                         i++;
-                        while (true)
+                        while (ReadDisplacement(data, ref i, "code9(XY変位列)", out int rdx, out int rdy))
                         {
-                            RequireBytes(data, i, 2, "code9(XY変位列)");
-                            int rdx = data[i], rdy = data[i + 1];
-                            i += 2;
-                            if (rdx == 0 && rdy == 0) break;
                             st.X += ToSByte(rdx) * st.Scale;
                             st.Y += ToSByte(rdy) * st.Scale;
                             if (st.PenDown) EmitPoint(st, segs);
@@ -302,28 +301,42 @@ sealed class ShxGlyphWalker
 
     static int HandleOctantArc(byte[] data, int i, PenState st, List<IrSegment> segs)
     {
-        i++;
-        RequireBytes(data, i, 2, "code10(オクタント弧)");
+        i = ArgumentsStart(data, i, 2, "code10(オクタント弧)");
         int radiusByte = data[i];
         int flagByte = data[i + 1];
         i += 2;
 
         double r = radiusByte * st.Scale;
-        // フラグバイトのビット割り付け（Autodesk公式資料 "Code 00A: Octant Arc"）:
-        // bit7=方向（1=時計回り）、bit4-6=開始オクタント(0-7)、bit0-2=オクタント数(0=8個=全周)。
-        int startOctant = (flagByte & 0x70) >> 4;
-        int count = flagByte & 0x07;
-        bool clockwise = (flagByte & 0x80) != 0;
-
-        double totalOctants = count == 0 ? 8 : count;
+        var (startOctant, totalOctants, clockwise) = DecodeOctantFlags(flagByte);
         double startAngle = startOctant * OctantRadians;
-        double span = totalOctants * OctantRadians;
-        double endAngle = startAngle + (clockwise ? -span : span);
+        EmitArcFromPen(r, startAngle, totalOctants * OctantRadians, clockwise, st, segs);
+        return i;
+    }
 
+    /// <summary>命令のバイトを読み飛ばし、続く <paramref name="count"/> バイトの引数があることを確かめて、引数の先頭の位置を返す。</summary>
+    static int ArgumentsStart(byte[] data, int i, int count, string what)
+    {
+        RequireBytes(data, i + 1, count, what);
+        return i + 1;
+    }
+
+    /// <summary>
+    /// オクタント弧（code10・code11 共通）のフラグバイト。ビット割り付けは Autodesk 公式資料 "Code 00A: Octant Arc":
+    /// bit7=方向（1=時計回り）、bit4-6=開始オクタント(0-7)、bit0-2=オクタント数(0=8個=全周)。
+    /// </summary>
+    static (int StartOctant, double TotalOctants, bool Clockwise) DecodeOctantFlags(int flagByte)
+    {
+        int count = flagByte & 0x07;
+        return ((flagByte & 0x70) >> 4, count == 0 ? 8 : count, (flagByte & 0x80) != 0);
+    }
+
+    /// <summary>現在のペン位置を弧の始点として、半径・開始角・掃引の大きさ・向きから中心を求めて弧を出す。</summary>
+    static void EmitArcFromPen(double r, double startAngle, double span, bool clockwise, PenState st, List<IrSegment> segs)
+    {
+        double endAngle = startAngle + (clockwise ? -span : span);
         double cx = st.X - r * Math.Cos(startAngle);
         double cy = st.Y - r * Math.Sin(startAngle);
         EmitArc(cx, cy, r, startAngle, endAngle, st, segs);
-        return i;
     }
 
     // -----------------------------------------------------------------
@@ -332,8 +345,7 @@ sealed class ShxGlyphWalker
 
     static int HandleFractionalArc(byte[] data, int i, PenState st, List<IrSegment> segs)
     {
-        i++;
-        RequireBytes(data, i, 5, "code11(フラクショナル弧)");
+        i = ArgumentsStart(data, i, 5, "code11(フラクショナル弧)");
         int startOffset = data[i];
         int endOffset = data[i + 1];
         int highRadius = data[i + 2];
@@ -343,10 +355,7 @@ sealed class ShxGlyphWalker
 
         // 半径は上位バイト×256+下位バイト（Autodesk公式資料の記述どおり）。
         double r = (highRadius * 256 + radiusLow) * st.Scale;
-        int startOctant = (flagByte & 0x70) >> 4;
-        int count = flagByte & 0x07;
-        bool clockwise = (flagByte & 0x80) != 0;
-        double totalOctants = count == 0 ? 8 : count;
+        var (startOctant, totalOctants, clockwise) = DecodeOctantFlags(flagByte);
 
         // オフセットは「オクタント境界からの度数×256/45」で符号化される（公式資料の例:
         // 55°→95°の弧、開始オクタント境界45°から10°＝(10*256/45)=56、終了は90°境界から
@@ -355,11 +364,7 @@ sealed class ShxGlyphWalker
         double frac = OctantRadians / 256.0;
         double startAngle = startOctant * OctantRadians + startOffset * frac;
         double span = totalOctants * OctantRadians + (endOffset - startOffset) * frac;
-        double endAngle = startAngle + (clockwise ? -span : span);
-
-        double cx = st.X - r * Math.Cos(startAngle);
-        double cy = st.Y - r * Math.Sin(startAngle);
-        EmitArc(cx, cy, r, startAngle, endAngle, st, segs);
+        EmitArcFromPen(r, startAngle, span, clockwise, st, segs);
         return i;
     }
 
@@ -369,39 +374,45 @@ sealed class ShxGlyphWalker
 
     static int HandleBulgeArc(byte[] data, int i, PenState st, List<IrSegment> segs)
     {
-        i++;
-        RequireBytes(data, i, 3, "code12(バルジ弧)");
+        i = ArgumentsStart(data, i, 3, "code12(バルジ弧)");
         int rdx = data[i], rdy = data[i + 1];
         int bulgeRaw = ToSByte(data[i + 2]);
         i += 3;
-        double dx = ToSByte(rdx) * st.Scale, dy = ToSByte(rdy) * st.Scale;
-        ApplyBulgeSegment(dx, dy, bulgeRaw, st, segs);
+        ApplyBulgeSegment(rdx, rdy, bulgeRaw, st, segs);
         return i;
     }
 
     static int HandleBulgeArcSequence(byte[] data, int i, PenState st, List<IrSegment> segs)
     {
         i++;
-        while (true)
+        // (0,0) で終端。終端の組には bulge バイトが無い
+        while (ReadDisplacement(data, ref i, "code13(バルジ弧列)", out int rdx, out int rdy))
         {
-            RequireBytes(data, i, 2, "code13(バルジ弧列)");
-            int rdx = data[i], rdy = data[i + 1];
-            i += 2;
-            if (rdx == 0 && rdy == 0) break; // 終端。bulgeバイトは読まない
             RequireBytes(data, i, 1, "code13(バルジ弧列)のbulgeバイト");
             int bulgeRaw = ToSByte(data[i]);
             i += 1;
-            double dx = ToSByte(rdx) * st.Scale, dy = ToSByte(rdy) * st.Scale;
-            ApplyBulgeSegment(dx, dy, bulgeRaw, st, segs);
+            ApplyBulgeSegment(rdx, rdy, bulgeRaw, st, segs);
         }
         return i;
     }
 
+    /// <summary>XY 変位列（code9・code13）の 1 組（符号付きバイト 2 つ）を読み、i を進める。(0,0) は列の終端で false を返す。</summary>
+    static bool ReadDisplacement(byte[] data, ref int i, string what, out int rdx, out int rdy)
+    {
+        RequireBytes(data, i, 2, what);
+        rdx = data[i];
+        rdy = data[i + 1];
+        i += 2;
+        return !(rdx == 0 && rdy == 0);
+    }
+
     /// <summary>変位(dx,dy)とバルジ値からペンを1区間進める。bulge=0 は直線（バルジ=0は直線という
     /// 仕様どおり）。バルジ→円弧の変換は DXF ポリラインのバルジと同一の標準幾何
-    /// （bulge=tan(内角/4)、半円=1.0 に相当するバイト値127）で、本ファイルで独立に導出した。</summary>
-    static void ApplyBulgeSegment(double dx, double dy, int bulgeRaw, PenState st, List<IrSegment> segs)
+    /// （bulge=tan(内角/4)、半円=1.0 に相当するバイト値127）で、本ファイルで独立に導出した。
+    /// 変位はファイルの符号付きバイトのまま受け取り、現在のスケールを掛ける。</summary>
+    static void ApplyBulgeSegment(int rdx, int rdy, int bulgeRaw, PenState st, List<IrSegment> segs)
     {
+        double dx = ToSByte(rdx) * st.Scale, dy = ToSByte(rdy) * st.Scale;
         double newX = st.X + dx, newY = st.Y + dy;
         if (bulgeRaw == 0)
         {
@@ -433,31 +444,32 @@ sealed class ShxGlyphWalker
     // code7: サブシェイプ呼出
     // -----------------------------------------------------------------
 
+    /// <summary>
+    /// code7 のサブシェイプ番号のバイト数。unifont は 16bit の文字コードで 2 バイト。shapes 形式は 1 バイト
+    /// （unifontの16bit文字コードと異なり0-255の範囲。公式のシェイプ定義規約でシェイプ番号がこの範囲に
+    /// 制限されることに基づく。本機実物 ltypeshp.shx の6シェイプはこの命令を一度も使わず実測できていない
+    /// 〔opcode7 の出現ゼロ。信頼度が低い前提であることを明記する〕）。ビッグフォントは先頭のバイトで形式が
+    /// 変わるので null（呼び出し側が解釈する）。解釈と読み飛ばし（SkipOne）が同じ規則を使う。
+    /// </summary>
+    int? SubshapeCodeBytes() => _fontKind switch
+    {
+        ShxFontKind.Unifont => 2,
+        ShxFontKind.Shapes => 1,
+        _ => null,
+    };
+
     int HandleSubshape(byte[] data, int i, PenState st, List<IrSegment> segs, int depth)
     {
         i++; // 7自体
         RequireBytes(data, i, 1, "code7(サブシェイプ呼出)");
 
-        if (_fontKind == ShxFontKind.Unifont)
+        if (SubshapeCodeBytes() is int codeBytes)
         {
-            RequireBytes(data, i, 2, "code7(サブシェイプ呼出、unifont 2バイト番号)");
-            int code = (data[i] << 8) | data[i + 1];
-            i += 2;
+            RequireBytes(data, i, codeBytes, codeBytes == 2 ? "code7(サブシェイプ呼出、unifont 2バイト番号)" : "code7(サブシェイプ呼出)");
+            int code = codeBytes == 2 ? (data[i] << 8) | data[i + 1] : data[i];
+            i += codeBytes;
             byte[] sub = ResolveOrThrow(code);
             // 現在のペン位置・スケール・ペン状態を引き継いで再帰的に描画する。
-            WalkInto(sub, st, segs, depth + 1);
-            return i;
-        }
-
-        if (_fontKind == ShxFontKind.Shapes)
-        {
-            // shapes 形式のシェイプ番号は1バイト（unifontの16bit文字コードと異なり0-255の範囲。
-            // 公式のシェイプ定義規約でシェイプ番号がこの範囲に制限されることに基づく）。
-            // 本機実物 ltypeshp.shx の6シェイプはこの命令を一度も使わず実測できていない
-            // （opcode7 の出現ゼロ。信頼度が低い前提であることを明記する）。
-            int code = data[i];
-            i++;
-            byte[] sub = ResolveOrThrow(code);
             WalkInto(sub, st, segs, depth + 1);
             return i;
         }
@@ -570,8 +582,7 @@ sealed class ShxGlyphWalker
         if (cb == 7)
         {
             i++;
-            if (_fontKind == ShxFontKind.Unifont) return i + 2;
-            if (_fontKind == ShxFontKind.Shapes) return i + 1;
+            if (SubshapeCodeBytes() is int codeBytes) return i + codeBytes;
             RequireBytes(data, i, 1, "code14直後のcode7スキップ");
             int subcode = data[i];
             if (subcode == 0)
@@ -586,13 +597,8 @@ sealed class ShxGlyphWalker
         if (cb == 9)
         {
             int j = i + 1;
-            while (true)
-            {
-                RequireBytes(data, j, 2, "code14直後のcode9スキップ");
-                int dx = data[j], dy = data[j + 1];
-                j += 2;
-                if (dx == 0 && dy == 0) return j;
-            }
+            while (ReadDisplacement(data, ref j, "code14直後のcode9スキップ", out _, out _)) { }
+            return j;
         }
         if (cb == 10) return i + 3;
         if (cb == 11) return i + 6;
@@ -600,14 +606,8 @@ sealed class ShxGlyphWalker
         if (cb == 13)
         {
             int j = i + 1;
-            while (true)
-            {
-                RequireBytes(data, j, 2, "code14直後のcode13スキップ");
-                int dx = data[j], dy = data[j + 1];
-                j += 2;
-                if (dx == 0 && dy == 0) return j;
-                j += 1;
-            }
+            while (ReadDisplacement(data, ref j, "code14直後のcode13スキップ", out _, out _)) j += 1; // 各組の後の bulge バイト
+            return j;
         }
         return i + 1; // vector命令(16-255)
     }

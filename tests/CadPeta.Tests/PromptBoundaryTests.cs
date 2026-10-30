@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+using System.Linq;
 using System.Text.Json;
 using CadPeta.Plugin.Shared;
 using Xunit;

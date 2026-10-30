@@ -15,7 +15,7 @@
 param(
     [ValidateSet("all", "bundle", "cli", "gui", "compat")]
     [string]$Only = "all",
-    [string]$Version = "1.0.0",
+    [string]$Version = "",          # 渡さなければ PackageContents.xml の AppVersion（版番号の原本）
     [string]$Config = "Release",
     [switch]$AllowDirty,           # dirty な worktree でも確認せず続行する（非対話・意図的なとき）
     [switch]$DiscardSignedStaging  # 署名済み staging を確認せず作り直す（非対話・意図的なとき）
@@ -27,10 +27,24 @@ $staging = Join-Path $dist "staging"
 $artifacts = Join-Path $dist "artifacts"
 $license = Join-Path $root "LICENSE"
 $notices = Join-Path $root "THIRD-PARTY-NOTICES.txt"
+# 版番号の原本は PackageContents.xml の AppVersion。DLL の版もビルドのときにこの値から決まる（src/Directory.Build.props）。
+# 違う版を渡されたら、zip の名前と中身の版が食い違うので、何も作らずに止める
+$appVersion = ([xml](Get-Content -LiteralPath (Join-Path $dist "bundle\CADPeta.bundle\PackageContents.xml") -Raw -Encoding UTF8)).DocumentElement.GetAttribute("AppVersion")
+if (-not $appVersion) { throw "PackageContents.xml の AppVersion を読めない" }
+if (-not $Version) { $Version = $appVersion }
+elseif ($Version -ne $appVersion) { throw "-Version ($Version) が PackageContents.xml の AppVersion ($appVersion) と違う。版は AppVersion で決める" }
 
 # README・.bat・LICENSE・信頼登録ファイルなど、署名しない同梱ファイルの定義と複製。
 # sign_dist.ps1 が署名後の差し替えで同じ定義を使う（dist_docs.ps1）。
 . (Join-Path $PSScriptRoot "dist_docs.ps1")
+# 自作の DLL に開発機のパスと失敗の注入が残っていないことの検査（dll_path_check.ps1）。配布のビルドは
+# -p:ContinuousIntegrationBuild=true でパスを /_/ に置き換える（props に置かないのは、[CallerFilePath] でソースの
+# フォルダを読む試験のビルドまで置き換えないため）
+. (Join-Path $PSScriptRoot "dll_path_check.ps1")
+# プラグインのビルドの定義（build_e2e.ps1 と共有する。dist_build.ps1）
+. (Join-Path $PSScriptRoot "dist_build.ps1")
+# 署名する自作のファイルの定義と内容の記録（sign_dist.ps1 と共通。sign_record.ps1）
+. (Join-Path $PSScriptRoot "sign_record.ps1")
 
 # 実行時に再配布する DLL に AutoCAD/互換CAD の参照アセンブリが混入していないことを機械検査する
 # （compile 専用参照は ExcludeAssets=runtime で除外されている前提の裏取り。混入は配布事故）
@@ -55,6 +69,11 @@ function Assert-NoForbidden([string]$dir, [string]$label) {
     if ($hit) {
         throw "[$label] CAD 本体の参照 DLL が混入している: $($hit.Name -join ', ')（ExcludeAssets=runtime を確認）"
     }
+}
+
+# ファイルの大きさを MB（小数第 2 位まで）で返す。完成メッセージの表示に使う。
+function Get-FileSizeMb([string]$path) {
+    [Math]::Round((Get-Item $path).Length / 1MB, 2)
 }
 
 function New-CleanDir([string]$p) {
@@ -123,8 +142,7 @@ function Build-Bundle {
     Require-Notices
     $proj = Join-Path $root "src\CadPeta.Plugin.Acad\CadPeta.Plugin.Acad.csproj"
     Write-Host "[bundle] プラグインを3系ビルド..." -ForegroundColor Cyan
-    & dotnet build $proj -c $Config -m:1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "プラグインのビルドに失敗" }
+    Invoke-DistBuild $proj $Config
 
     $tfmMap = @{ "net48" = "net48"; "net8" = "net8.0-windows"; "net10" = "net10.0-windows" }
     $bundleStage = Join-Path $staging "bundle\CADPeta.bundle"
@@ -140,6 +158,8 @@ function Build-Bundle {
         Copy-Item "$src\*.dll" $dstContents
         Copy-LangFiles (Join-Path $src "lang") $dstContents "bundle/$short"
         Assert-LangFiles $dstContents "bundle/$short"
+        Assert-ReleaseOwnAssemblies $dstContents "bundle/$short"
+        if ($short -eq "net48") { Assert-ConsistentAssemblyReferences $dstContents "bundle/$short" }
         # PackageContents.xml が指す本体 DLL の実在を確認
         if (-not (Test-Path (Join-Path $dstContents "CadPeta.Plugin.Acad.dll"))) {
             throw "本体 DLL が Contents\$short に無い"
@@ -149,12 +169,13 @@ function Build-Bundle {
     # bundle と並べる install/uninstall/README/ライセンス/信頼登録ファイル
     $zipRoot = Join-Path $staging "bundle"
     Copy-DistDocs "bundle" $zipRoot $dist $root | Out-Null
+    Write-BundleFileList $zipRoot
 
     New-Item -ItemType Directory -Force $artifacts | Out-Null
     $zip = Join-Path $artifacts "CADPeta-AutoCAD-$Version.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path "$zipRoot\*" -DestinationPath $zip
-    $mb = [Math]::Round((Get-Item $zip).Length / 1MB, 2)
+    $mb = Get-FileSizeMb $zip
     Write-Host "[bundle] 完成: $zip ($mb MB)" -ForegroundColor Green
 }
 
@@ -168,7 +189,7 @@ function Build-Cli {
     # framework-dependent（ランタイム非同梱）・単一ファイル。要 .NET 10 ランタイム
     # 参照グラフの複数経路が同じ netstandard 出力を同時生成すると deps.json が競合するため、
     # 他の配布ビルドと同じく単一ノードで実行する。
-    & dotnet publish $proj -c $Config -r win-x64 --self-contained false -m:1 `
+    & dotnet publish $proj -c $Config -r win-x64 --self-contained false -m:1 $DistCiProperty `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:DebugType=None -p:DebugSymbols=false -o $pubDir | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "CLI の publish に失敗" }
@@ -197,8 +218,8 @@ function Build-Cli {
     $zip = Join-Path $artifacts "CADPeta-CLI-$Version.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path "$zipRoot\*" -DestinationPath $zip
-    $exeMb = [Math]::Round((Get-Item $exe).Length / 1MB, 2)
-    $zipMb = [Math]::Round((Get-Item $zip).Length / 1MB, 2)
+    $exeMb = Get-FileSizeMb $exe
+    $zipMb = Get-FileSizeMb $zip
     Write-Host "[cli] 完成: $zip (zip $zipMb MB / exe $exeMb MB)" -ForegroundColor Green
 }
 
@@ -209,7 +230,7 @@ function Build-Gui {
     $pubDir = Join-Path $staging "gui\publish"
     New-CleanDir $pubDir
     Write-Host "[gui] framework-dependent 単一ファイルで publish..." -ForegroundColor Cyan
-    & dotnet publish $proj -c $Config -r win-x64 --self-contained false -m:1 `
+    & dotnet publish $proj -c $Config -r win-x64 --self-contained false -m:1 $DistCiProperty `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:DebugType=None -p:DebugSymbols=false -o $pubDir | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "GUI の publish に失敗" }
@@ -231,8 +252,8 @@ function Build-Gui {
     $zip = Join-Path $artifacts "CADPeta-GUI-$Version.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path "$zipRoot\*" -DestinationPath $zip
-    $exeMb = [Math]::Round((Get-Item $exe).Length / 1MB, 2)
-    $zipMb = [Math]::Round((Get-Item $zip).Length / 1MB, 2)
+    $exeMb = Get-FileSizeMb $exe
+    $zipMb = Get-FileSizeMb $zip
     Write-Host "[gui] 完成: $zip (zip $zipMb MB / exe $exeMb MB)" -ForegroundColor Green
 }
 
@@ -258,13 +279,12 @@ function Build-Compat {
         $proj = Join-Path $root "src\$($p.Proj)\$($p.Proj).csproj"
         Write-Host "[compat] $($p.Sub) をビルド..." -ForegroundColor Cyan
         $binBase = "bin"
-        $buildArgs = @($proj, "-c", $Config, "-m:1")
+        $properties = @()
         if ($p.AresYear) {
-            $buildArgs += "-p:AresSdkYearNet48=$($p.AresYear)"
+            $properties += "-p:AresSdkYearNet48=$($p.AresYear)"
             $binBase = "bin\ares$($p.AresYear)"
         }
-        & dotnet build @buildArgs | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "$($p.Sub) のビルドに失敗" }
+        Invoke-DistBuild $proj $Config $properties
         $src = Join-Path $root "src\$($p.Proj)\$binBase\$Config\$($p.Tfm)"
         if (-not (Test-Path $src)) { throw "ビルド出力が無い: $src" }
         Assert-NoForbidden $src "compat/$($p.Sub)"
@@ -273,19 +293,22 @@ function Build-Compat {
         Copy-Item "$src\*.dll" $dst
         Copy-LangFiles (Join-Path $src "lang") $dst "compat/$($p.Sub)"
         Assert-LangFiles $dst "compat/$($p.Sub)"
+        Assert-ReleaseOwnAssemblies $dst "compat/$($p.Sub)"
+        if ($p.Tfm -eq "net48") { Assert-ConsistentAssemblyReferences $dst "compat/$($p.Sub)" }
         if (-not (Test-Path (Join-Path $dst $p.Dll))) { throw "本体 DLL が $($p.Sub) に無い" }
     }
-    # register.ps1／unregister.ps1 は署名対象なので、署名後に差し替えない dist_docs.ps1 の
-    # 外側でここだけが複製する。
-    Copy-Item (Join-Path $dist "compat\register.ps1") $zipRoot
-    Copy-Item (Join-Path $dist "compat\unregister.ps1") $zipRoot
+    # register.ps1／unregister.ps1 と、両者が読み込む compat_common.ps1 は署名対象なので、
+    # 署名後に差し替えない dist_docs.ps1 の外側でここだけが複製する。
+    foreach ($script in "register.ps1", "unregister.ps1", "compat_common.ps1") {
+        Copy-Item (Join-Path $dist "compat\$script") $zipRoot
+    }
     Copy-DistDocs "compat" $zipRoot $dist $root | Out-Null
 
     New-Item -ItemType Directory -Force $artifacts | Out-Null
     $zip = Join-Path $artifacts "CADPeta-CompatCAD-$Version.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path "$zipRoot\*" -DestinationPath $zip
-    $mb = [Math]::Round((Get-Item $zip).Length / 1MB, 2)
+    $mb = Get-FileSizeMb $zip
     Write-Host "[compat] 完成: $zip ($mb MB)" -ForegroundColor Green
 }
 
@@ -322,7 +345,8 @@ function Write-Manifest([string]$headCommit, [string[]]$builtZips) {
 # 署名済み staging を消す前に意図を確認する。
 function Confirm-StagingDiscard {
     if (-not (Test-Path $staging)) { return }
-    $signed = Get-ChildItem $staging -Recurse -File -Include *.dll, *.exe, *.ps1 -ErrorAction SilentlyContinue |
+    # 署名するのは自作のファイルだけ。Microsoft などの第三者の DLL は配布元の署名を持つので、判定に含めない
+    $signed = Get-ChildItem $staging -Recurse -File -Include 'CadPeta.*.dll', 'cadpeta*.exe', '*.ps1' -ErrorAction SilentlyContinue |
         Where-Object { (Get-AuthenticodeSignature -FilePath $_.FullName).SignerCertificate } |
         Select-Object -First 1
     if (-not $signed) { return }
@@ -364,6 +388,10 @@ switch ($Only) {
     "all"    { Build-Bundle; Build-Cli; Build-Gui; Build-Compat }
 }
 
+# sign_dist.ps1 が署名の前に照合するため、署名する自作のファイルごとの SHA256 を staging の記録に書く
+$builtTargets = if ($Only -eq "all") { @("bundle", "cli", "gui", "compat") } else { @($Only) }
+Write-SignRecord $staging $builtTargets
+
 # 圧縮前 staging の検査だけでは、Compress-Archive の欠落・破損を検出できない。
 # 作成した ZIP を開き直し、全収録バイトが staging と一致することを共通関門で確認する。
 $packageVerifier = Join-Path $root "tests\tools\distribution\package_verify.ps1"
@@ -377,6 +405,5 @@ $zipMap = @{
     gui     = Join-Path $artifacts "CADPeta-GUI-$Version.zip"
     compat  = Join-Path $artifacts "CADPeta-CompatCAD-$Version.zip"
 }
-$builtTargets = if ($Only -eq "all") { @("bundle", "cli", "gui", "compat") } else { @($Only) }
 $builtZips = $builtTargets | ForEach-Object { $zipMap[$_] }
 Write-Manifest $headCommit $builtZips

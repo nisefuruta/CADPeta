@@ -19,13 +19,16 @@
 // - 描画オペレータと Page.Paths は 1:1（EndPath はクリップ確定時のみエントリ）
 // - Letter.TextSequence はテキスト表示オペレータ単位の 1 始まり連番
 // - Form を depth-first 展開した描画操作は Page.Paths / Letters / GetImages の抽出順と 1:1
-using System.Globalization;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using CadPeta.Acquire.Common;
+using CadPeta.Geometry;
 using CadPeta.Ir;
 using CadPeta.UseCases;
 using UglyToad.PdfPig;
-using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.Graphics.Colors;
 using UglyToad.PdfPig.Graphics.Operations;
@@ -80,7 +83,7 @@ public sealed class PdfIrAcquirer : IIrAcquirer
         }
     }
 
-    const double Pt2Mm = 25.4 / 72.0; // 1pt = 1/72 inch、1 inch = 25.4mm（PDF の単位系）
+    const double Pt2Mm = Units.MmPerInch / Units.PtPerInch; // PDF の 1pt を mm へ
     // PDF Tz（水平スケーリング）は % 値。100 が標準幅（PDF 32000-1 9.3.4）
     const double TzPercentBase = 100.0;
     // SVG に PDF の「線幅0=デバイス最細線」の概念がないため、最細線は固定幅へ置換する
@@ -396,15 +399,7 @@ public sealed class PdfIrAcquirer : IIrAcquirer
             (List<IrSegment> segs, double[] bboxMm) ToSegments(IReadOnlyList<PdfSubpath> subpaths)
             {
                 var segs = new List<IrSegment>();
-                double minx = double.MaxValue, miny = double.MaxValue;
-                double maxx = double.MinValue, maxy = double.MinValue;
                 PdfPoint? cur = null;
-                void Upd(double x, double y)
-                {
-                    minx = Math.Min(minx, x); maxx = Math.Max(maxx, x);
-                    miny = Math.Min(miny, y); maxy = Math.Max(maxy, y);
-                }
-                void Emit(IrSegment s, double x, double y) { segs.Add(s); Upd(x, y); }
                 foreach (var sp in subpaths)
                 {
                     foreach (var cmd in sp.Commands)
@@ -412,8 +407,7 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                         switch (cmd)
                         {
                             case PdfSubpath.Move m:
-                                Emit(new IrMove(Xmm(m.Location.X), Ymm(m.Location.Y)),
-                                     Xmm(m.Location.X), Ymm(m.Location.Y));
+                                segs.Add(new IrMove(Xmm(m.Location.X), Ymm(m.Location.Y)));
                                 cur = m.Location;
                                 break;
                             case PdfSubpath.Line l:
@@ -421,9 +415,8 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                                 const double JoinTolPt = 1e-6;
                                 if (cur == null || Math.Abs(cur.Value.X - l.From.X) > JoinTolPt
                                                 || Math.Abs(cur.Value.Y - l.From.Y) > JoinTolPt)
-                                    Emit(new IrMove(Xmm(l.From.X), Ymm(l.From.Y)),
-                                         Xmm(l.From.X), Ymm(l.From.Y));
-                                Emit(new IrLine(Xmm(l.To.X), Ymm(l.To.Y)), Xmm(l.To.X), Ymm(l.To.Y));
+                                    segs.Add(new IrMove(Xmm(l.From.X), Ymm(l.From.Y)));
+                                segs.Add(new IrLine(Xmm(l.To.X), Ymm(l.To.Y)));
                                 cur = l.To;
                                 break;
                             case PdfSubpath.CubicBezierCurve b:
@@ -431,9 +424,6 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                                     Xmm(b.FirstControlPoint.X), Ymm(b.FirstControlPoint.Y),
                                     Xmm(b.SecondControlPoint.X), Ymm(b.SecondControlPoint.Y),
                                     Xmm(b.EndPoint.X), Ymm(b.EndPoint.Y)));
-                                Upd(Xmm(b.FirstControlPoint.X), Ymm(b.FirstControlPoint.Y));
-                                Upd(Xmm(b.SecondControlPoint.X), Ymm(b.SecondControlPoint.Y));
-                                Upd(Xmm(b.EndPoint.X), Ymm(b.EndPoint.Y));
                                 cur = b.EndPoint;
                                 break;
                             case PdfSubpath.QuadraticBezierCurve q:
@@ -446,7 +436,6 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                                 double c2y = q.EndPoint.Y + 2.0 / 3.0 * (q.ControlPoint.Y - q.EndPoint.Y);
                                 segs.Add(new IrCubic(Xmm(c1x), Ymm(c1y), Xmm(c2x), Ymm(c2y),
                                                      Xmm(q.EndPoint.X), Ymm(q.EndPoint.Y)));
-                                Upd(Xmm(q.EndPoint.X), Ymm(q.EndPoint.Y));
                                 cur = q.EndPoint;
                                 break;
                             }
@@ -456,13 +445,8 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                         }
                     }
                 }
-                return (segs, minx <= maxx ? new[] { minx, miny, maxx, maxy } : new[] { 0.0, 0, 0, 0 });
+                return (segs, GeoClip.Bbox(segs));
             }
-
-            static string BboxStr(double[] b) =>
-                // string.Create(IFormatProvider,…) は net48 に無いため等価の Invariant で書く
-                FormattableString.Invariant(
-                    $"bbox_mm=({b[0]:F1},{b[1]:F1})-({b[2]:F1},{b[3]:F1})");
 
             static IrRgb ToIr(IColor c)
             {
@@ -504,19 +488,19 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                     if (p.IsFilled)
                     {
                         if (p.FillColor == null)
-                            diag.Add("既定色の補完（色未設定→黒）", $"path seq={pathIdx} fill {BboxStr(bbox)}");
+                            diag.Add("既定色の補完（色未設定→黒）", $"path seq={pathIdx} fill {GeoClip.BboxText(bbox)}");
                         node.Fill = p.FillColor != null ? ToIr(p.FillColor) : new IrRgb(0, 0, 0);
                     }
                     if (p.IsStroked)
                     {
                         if (p.StrokeColor == null)
-                            diag.Add("既定色の補完（色未設定→黒）", $"path seq={pathIdx} stroke {BboxStr(bbox)}");
+                            diag.Add("既定色の補完（色未設定→黒）", $"path seq={pathIdx} stroke {GeoClip.BboxText(bbox)}");
                         node.Stroke = p.StrokeColor != null ? ToIr(p.StrokeColor) : new IrRgb(0, 0, 0);
                         double lwMm = st.lwDevPt * Pt2Mm;
                         if (lwMm <= 0)
                         {
                             diag.Add($"最細線の固定幅置換（線幅0→{HairlineMm}mm）",
-                                     $"path seq={pathIdx} {BboxStr(bbox)}");
+                                     $"path seq={pathIdx} {GeoClip.BboxText(bbox)}");
                             lwMm = HairlineMm;
                         }
                         node.StrokeWidthMm = lwMm;
@@ -664,7 +648,7 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                     hMm = (maxY - minY) * Pt2Mm;
                     if (isQuarter) rotatedImages++;
                     else diag.Add("プロファイル外: 非直角回転の画像（無回転で軸平行bboxへ近似配置）",
-                                  $"image seq={imgIdx} rot={bounds.Rotation:F1}° {BboxStr(bboxMm)}");
+                                  $"image seq={imgIdx} rot={bounds.Rotation:F1}° {GeoClip.BboxText(bboxMm)}");
                 }
                 byte[] png = PdfImageDecoder.ComposePng(im, doc, out bool hadSMask,
                                                         isQuarter ? quarterCcw : 0);
@@ -680,7 +664,7 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                 }));
                 if (hadSMask)
                     diag.Add("SOLID×透過の画像化を継承（SMask合成PNGの埋め込み、非可逆JPEG由来）",
-                             $"image seq={imgIdx} {im.WidthInSamples}x{im.HeightInSamples}px {BboxStr(bboxMm)}");
+                             $"image seq={imgIdx} {im.WidthInSamples}x{im.HeightInSamples}px {GeoClip.BboxText(bboxMm)}");
                 // ca 未表現の診断は添字対応が信用できるときだけ出す（不整合時は ist=default で ca=0 に
                 // なり偽の透過警告を撒くため）。不整合自体は上のガード診断で既に記録済み。
                 if (imgHasState && ist.ca < 1.0)

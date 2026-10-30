@@ -1,5 +1,3 @@
-(setvar "SECURELOAD" 0)
-(load "C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/justify_check/probe_style.lsp")
+(load "C:/Tools/ACAD/lisp/probe_style.lsp")
 (c:PROBESTYLE "C:/Users/wk/repo/CADPeta/tests/tools/cad-typography/justify_check/probe_style_dump.txt")
-(setvar "SECURELOAD" 1)
 _.QUIT _Y

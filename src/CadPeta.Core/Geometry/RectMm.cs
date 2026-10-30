@@ -1,4 +1,6 @@
 // 軸平行矩形（mm）。事前クリップ（EMF出力）とクロップ変換が共用する。
+using System;
+
 namespace CadPeta.Geometry;
 
 public readonly record struct RectMm(double X0, double Y0, double X1, double Y1)

@@ -36,7 +36,7 @@ $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 Get-ChildItem $OutDir -Filter "*.pdf" -ErrorAction SilentlyContinue | Remove-Item -Force
 
-function PtToMm([double]$pt) { return $pt * 25.4 / 72.0 }
+function PtToMmUnrounded([double]$pt) { return $pt * 25.4 / 72.0 }
 
 # 分解は再帰。Office は入れ子グループを返すため、葉に至るまで Ungroup を繰り返す
 function Expand-Leaves($shape) {
@@ -116,8 +116,8 @@ try {
     }
     "=== $(Split-Path $Emf -Leaf)（経路: $(if ($Clipboard) { 'クリップボード貼付' } else { 'ファイル挿入' })） ==="
     # 分解すると親図形は消えるため、寸法は分解前に控える（後で読むと 0 が記録される）
-    $widthMm = PtToMm $shape.Width
-    $heightMm = PtToMm $shape.Height
+    $widthMm = PtToMmUnrounded $shape.Width
+    $heightMm = PtToMmUnrounded $shape.Height
     "分解前の親図形: {0:F3} x {1:F3} mm" -f $widthMm, $heightMm
 
     # 分解の前後で同一のページ設定にする（差が図形以外から出ないようにする）

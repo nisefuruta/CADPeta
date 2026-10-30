@@ -22,6 +22,9 @@ $ErrorActionPreference = "Stop"
 if ($PSVersionTable.PSEdition -ne "Desktop") {
     throw "Windows PowerShell 5.1（.NET Framework）で実行すること。現在: $($PSVersionTable.PSEdition)"
 }
+# Get-FileHash を使う前に PSModulePath を直す（pwsh から cmd などを経由して起動したとき）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+Repair-WindowsPowerShellModulePath
 
 $enc = [System.Text.Encoding]::GetEncoding(
     932,

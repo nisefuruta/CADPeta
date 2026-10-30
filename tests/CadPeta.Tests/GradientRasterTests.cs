@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using System.Drawing;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -55,7 +57,7 @@ public class GradientRasterTests
         double medianLimit = root.GetProperty("MedianErrorLimitLevels").GetDouble();
         double p95Limit = root.GetProperty("P95ErrorLimitLevels").GetDouble();
         double rmseLimit = root.GetProperty("RmseLimitLevels").GetDouble();
-        string repositoryRoot = FindRepositoryRoot();
+        string repositoryRoot = RepositoryPaths.Root();
 
         foreach (JsonElement chart in root.GetProperty("Charts").EnumerateArray())
         {
@@ -106,7 +108,7 @@ public class GradientRasterTests
     [Fact]
     public void ラスタ化は穴をstraightAlphaへ焼き込み寸法と予算を返す()
     {
-        var request = BasicRequest() with
+        var request = GradientTestRequests.Basic() with
         {
             Boundary = new IrSegment[]
             {
@@ -130,7 +132,7 @@ public class GradientRasterTests
     [Fact]
     public void 同一入力のPNGは全TFM共通のバイト列になる()
     {
-        GradientHatchResult result = GradientRasterizer.Rasterize(BasicRequest());
+        GradientHatchResult result = GradientRasterizer.Rasterize(GradientTestRequests.Basic());
         Assert.Equal(GradientHatchStatus.Rasterized, result.Status);
         Assert.Equal(RasterPngCrossTfmGoldenSha256, Sha256(result.PngBytes));
     }
@@ -138,7 +140,7 @@ public class GradientRasterTests
     [Fact]
     public void 画素上限はDPIを決定的に下げ最低DPI未満なら代表色へ縮退する()
     {
-        GradientHatchResult reduced = GradientRasterizer.Rasterize(BasicRequest() with
+        GradientHatchResult reduced = GradientRasterizer.Rasterize(GradientTestRequests.Basic() with
         {
             RequestedDpi = 100, AvailablePixels = 100, MinimumDpi = 1,
         });
@@ -146,7 +148,7 @@ public class GradientRasterTests
         Assert.True(reduced.ActualDpi < 100);
         Assert.NotNull(reduced.DpiReductionReason);
 
-        GradientHatchResult fallback = GradientRasterizer.Rasterize(BasicRequest() with
+        GradientHatchResult fallback = GradientRasterizer.Rasterize(GradientTestRequests.Basic() with
         {
             RequestedDpi = 100, AvailablePixels = 4, MinimumDpi = 10,
         });
@@ -159,17 +161,17 @@ public class GradientRasterTests
     public void 不正定義と特異行列は安全に終了する()
     {
         Assert.Equal(GradientHatchStatus.SkippedInvalid,
-            GradientRasterizer.Rasterize(BasicRequest() with { Stops = Array.Empty<GradientStop>() }).Status);
+            GradientRasterizer.Rasterize(GradientTestRequests.Basic() with { Stops = Array.Empty<GradientStop>() }).Status);
         Assert.Equal(GradientFallbackKind.UnknownShape,
-            GradientRasterizer.Rasterize(BasicRequest() with { GradientName = "UNKNOWN" }).FallbackKind);
+            GradientRasterizer.Rasterize(GradientTestRequests.Basic() with { GradientName = "UNKNOWN" }).FallbackKind);
         Assert.Equal(GradientHatchStatus.SolidFallback,
-            GradientRasterizer.Rasterize(BasicRequest() with
+            GradientRasterizer.Rasterize(GradientTestRequests.Basic() with
             { DocumentFromLocal = new IrMatrix(1, 0, 2, 0, 0, 0) }).Status);
         Assert.Equal(GradientFallbackKind.InvalidDefinition,
-            GradientRasterizer.Rasterize(BasicRequest() with
+            GradientRasterizer.Rasterize(GradientTestRequests.Basic() with
             { DocumentFromLocal = new IrMatrix(1, 0, 2, 0, 0, 0) }).FallbackKind);
         Assert.Equal(GradientHatchStatus.SkippedInvalid,
-            GradientRasterizer.Rasterize(BasicRequest() with
+            GradientRasterizer.Rasterize(GradientTestRequests.Basic() with
             {
                 Boundary = new IrSegment[]
                 {
@@ -188,29 +190,8 @@ public class GradientRasterTests
         Assert.Equal(4, budget.RemainingPixels);
     }
 
-    static GradientHatchRequest BasicRequest() => new()
-    {
-        GradientName = "LINEAR",
-        Stops = new[] { new GradientStop(0, new IrRgb(0, 0, 0)), new GradientStop(1, new IrRgb(1, 1, 1)) },
-        Boundary = new IrSegment[]
-        {
-            new IrMove(0, 0), new IrLine(25.4, 0), new IrLine(25.4, 25.4), new IrLine(0, 25.4), new IrClose(),
-        },
-        RequestedDpi = 10,
-        MinimumDpi = 1,
-        MaxDimensionPx = 32767,
-        AvailablePixels = 1_000_000,
-    };
-
     static double Percentile(double[] sorted, double fraction) =>
         sorted[(int)Math.Min(sorted.Length - 1, Math.Round((sorted.Length - 1) * fraction))];
-
-    static string FindRepositoryRoot()
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory != null; directory = directory.Parent)
-            if (File.Exists(Path.Combine(directory.FullName, "CadPeta.sln"))) return directory.FullName;
-        throw new DirectoryNotFoundException("CadPeta.sln を親ディレクトリから発見できない");
-    }
 
     static string Sha256(string path)
     {

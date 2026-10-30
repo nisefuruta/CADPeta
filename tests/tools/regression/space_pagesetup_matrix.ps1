@@ -1,17 +1,21 @@
 # 同一DWGの Model/Paper に非対称なページ設定を与え、Layout内MSPACEがModel設定を使うことを検査する。
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$Ver = '2026',
     [string]$OutRoot = "$env:TEMP\CadPeta_space_pagesetup",
-    [string]$Config = 'Debug',
     [int]$TimeoutSeconds = 180
 )
 
 $ErrorActionPreference = 'Stop'
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'space_pagesetup_matrix.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $runner = Join-Path $PSScriptRoot 'selection_plot_matrix.ps1'
 
 foreach ($space in 'Model', 'LayoutModel', 'Paper') {
-    & $runner -Ver $Ver -OutRoot $OutRoot -Config $Config -TimeoutSeconds $TimeoutSeconds `
+    & $runner -Confirm:$false -Ver $Ver -OutRoot $OutRoot -TimeoutSeconds $TimeoutSeconds `
         -Command PETA -Space $space -AsymmetricPageSettings
 }
 

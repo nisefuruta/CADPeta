@@ -3,7 +3,9 @@ rem CADPeta compat-CAD (ARES / IJCAD / BricsCAD) auto-load removal.
 rem No administrator rights required. Delegates to unregister.ps1 next to this file.
 rem This window always stays open until you press a key, even on failure.
 rem Japanese guide: see README-compat.txt
-setlocal
+rem Delayed expansion is turned off: when the parent cmd was started with /V:ON (or DelayedExpansion is 1 in the registry),
+rem an exclamation mark in a path would be removed by delayed expansion.
+setlocal EnableExtensions DisableDelayedExpansion
 set "PS1=%~dp0unregister.ps1"
 set "PSEXE=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 

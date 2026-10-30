@@ -1,6 +1,7 @@
 // 複雑線種の記号（シェイプ・文字）展開の純粋計算部分の単体テスト。
 // 角度解決の意味論（R=/A=/U=）は acadiso.lin 実物＋自作の実験線種を entget で実測して確定した
 // （tests/tools/cad-typography/linetype_symbol_check、2026-07-10）。
+using System;
 using CadPeta.Acquire.Common;
 using Xunit;
 

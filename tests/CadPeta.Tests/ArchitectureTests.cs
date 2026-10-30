@@ -1,5 +1,7 @@
 // 参照方向の機械検査（内核は外部参照ゼロ、アダプタは内側へ一方向のみという設計方針を検査する）。
 // csproj のコメント規約を、ビルド成果物のアセンブリ参照で裏取りする。
+using System;
+using System.Linq;
 using System.Reflection;
 using Xunit;
 
@@ -12,6 +14,83 @@ public class ArchitectureTests
 
     static bool IsBcl(string name) =>
         name == "System" || name.StartsWith("System.") || name == "netstandard" || name == "mscorlib";
+
+    /// <summary>
+    /// どの製品 CAD の SDK にも依存しない層（内核・ユースケース層・PDF印刷経路/EMF/PDF/PNG アダプタ・SHX解釈器・取得アダプタ共有計算層）。
+    /// </summary>
+    static Assembly[] CadNeutralLayers() => new[]
+    {
+        typeof(Ir.IrDocument).Assembly,
+        typeof(UseCases.ConvertPipeline).Assembly,
+        typeof(Acquire.Pdf.PdfIrAcquirer).Assembly,
+        typeof(Out.Emf.EmfWriter).Assembly,
+        typeof(Out.Pdf.PdfWriter).Assembly,
+        typeof(Out.Png.PngWriter).Assembly,
+        typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly,
+        typeof(Acquire.Common.CurveApprox).Assembly,
+    };
+
+    /// <summary>AutoCAD 版の取得アダプタ（構造SVG書き出し）。</summary>
+    static Assembly AcadAcquirer() => typeof(Acquire.Acad.CadIrAcquirer).Assembly;
+
+    /// <summary>AutoCAD 版のプラグイン合成ルート。</summary>
+    static Assembly AcadPlugin() => typeof(Plugin.Acad.PetaCommand).Assembly;
+
+    /// <summary>ARES 版の取得アダプタ。</summary>
+    static Assembly AresAcquirer() => typeof(Acquire.Ares.CadIrAcquirer).Assembly;
+
+    /// <summary>ARES 版のプラグイン合成ルート。</summary>
+    static Assembly AresPlugin() => typeof(Plugin.Ares.PetaCommand).Assembly;
+
+    /// <summary>CAD 非依存の層と、AutoCAD 版の取得アダプタ・合成ルート。</summary>
+    static Assembly[] CadNeutralLayersAndAcad() =>
+        CadNeutralLayers().Concat(new[] { AcadAcquirer(), AcadPlugin() }).ToArray();
+
+    /// <summary>
+    /// ある製品 CAD の SDK 参照が、その製品のプラグイン合成ルートと取得アダプタだけにあることを検査する。
+    /// <paramref name="otherLayers"/> のどのアセンブリもその製品の参照を持たず、
+    /// プラグインは内側ポート（ユースケース層）越しに結線した上でその製品の参照を持ち、
+    /// 取得アダプタは内核 IR へ写像した上でその製品の参照を持つ。
+    /// </summary>
+    static void AssertVendorReferencesConfined(string vendorName, Predicate<string> isVendor,
+        Assembly[] otherLayers, Assembly plugin, Assembly acquirer)
+    {
+        foreach (var asm in otherLayers)
+            Assert.All(RefNames(asm), r => Assert.False(isVendor(r),
+                $"{asm.GetName().Name} が {vendorName} アセンブリを参照: {r}"));
+
+        // プラグインは合成ルートとして内側ポート（ユースケース層）越しに結線する
+        var pluginRefs = RefNames(plugin);
+        Assert.Contains("CadPeta.UseCases", pluginRefs);
+        Assert.Contains(pluginRefs, isVendor);
+
+        // 取得アダプタは製品 API を内核 IR へ写像する層で、その製品の参照を持つ
+        var acquirerRefs = RefNames(acquirer);
+        Assert.Contains("CadPeta.Core", acquirerRefs);
+        Assert.Contains(acquirerRefs, isVendor);
+    }
+
+    /// <summary>ある製品のアダプタとプラグインのプロジェクトが、<paramref name="otherLayers"/> のどれからも参照されない。</summary>
+    static void AssertProductNotReferenced(string acquirerName, string pluginName, Assembly[] otherLayers)
+    {
+        foreach (var asm in otherLayers)
+        {
+            Assert.DoesNotContain(acquirerName, RefNames(asm));
+            Assert.DoesNotContain(pluginName, RefNames(asm));
+        }
+    }
+
+    /// <summary>アセンブリのメソッドに P/Invoke（PinvokeImpl 属性）が無い。P/Invoke はアセンブリ参照に現れないため、参照検査とは別にメソッド属性で検査する。</summary>
+    static void AssertNoPInvoke(params Assembly[] assemblies)
+    {
+        foreach (var asm in assemblies)
+        foreach (var type in asm.GetTypes())
+        foreach (var m in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic |
+                                          BindingFlags.Static | BindingFlags.Instance |
+                                          BindingFlags.DeclaredOnly))
+            Assert.False((m.Attributes & MethodAttributes.PinvokeImpl) != 0,
+                $"{asm.GetName().Name} に P/Invoke がある: {type.FullName}.{m.Name}");
+    }
 
     [Fact]
     public void 内核は外部アセンブリを参照しない()
@@ -72,13 +151,7 @@ public class ArchitectureTests
     public void PDF出力はPInvokeを持たない()
     {
         // 自前の最小PDFライタのみで完結させる方針（GDI等のWin32依存はEMF/PNG出力に閉じる）の検査。
-        var asm = typeof(Out.Pdf.PdfWriter).Assembly;
-        foreach (var type in asm.GetTypes())
-        foreach (var m in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic |
-                                          BindingFlags.Static | BindingFlags.Instance |
-                                          BindingFlags.DeclaredOnly))
-            Assert.False((m.Attributes & MethodAttributes.PinvokeImpl) != 0,
-                $"CadPeta.Out.Pdf に P/Invoke がある: {type.FullName}.{m.Name}");
+        AssertNoPInvoke(typeof(Out.Pdf.PdfWriter).Assembly);
     }
 
     /// <summary>AutoCAD 参照アセンブリ名（NuGet AutoCAD.NET.Core / .Model の実体）。</summary>
@@ -92,30 +165,7 @@ public class ArchitectureTests
     {
         // 内核・ユースケース層・PDF印刷経路/EMF/PDF/PNG アダプタ・SHX解釈器・取得アダプタ共有計算層に
         // AutoCAD の型が現れてはならない
-        var inner = new[]
-        {
-            typeof(Ir.IrDocument).Assembly,
-            typeof(UseCases.ConvertPipeline).Assembly,
-            typeof(Acquire.Pdf.PdfIrAcquirer).Assembly,
-            typeof(Out.Emf.EmfWriter).Assembly,
-            typeof(Out.Pdf.PdfWriter).Assembly,
-            typeof(Out.Png.PngWriter).Assembly,
-            typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly,
-            typeof(Acquire.Common.CurveApprox).Assembly,
-        };
-        foreach (var asm in inner)
-            Assert.All(RefNames(asm), r => Assert.False(IsAutocad(r),
-                $"{asm.GetName().Name} が AutoCAD アセンブリを参照: {r}"));
-
-        // プラグインは合成ルートとして内側ポート（ユースケース層）越しに結線する
-        var pluginRefs = RefNames(typeof(Plugin.Acad.PetaCommand).Assembly);
-        Assert.Contains("CadPeta.UseCases", pluginRefs);
-        Assert.Contains(pluginRefs, IsAutocad);
-
-        // 構造SVG書き出しの取得アダプタは AutoCAD API を内核 IR へ写像する層で、AutoCAD 参照を持つ
-        var acadRefs = RefNames(typeof(Acquire.Acad.CadIrAcquirer).Assembly);
-        Assert.Contains("CadPeta.Core", acadRefs);
-        Assert.Contains(acadRefs, IsAutocad);
+        AssertVendorReferencesConfined("AutoCAD", IsAutocad, CadNeutralLayers(), AcadPlugin(), AcadAcquirer());
     }
 
     /// <summary>ARES 参照アセンブリ名（HintPath 参照の実体。互換CAD第一対象）。</summary>
@@ -129,55 +179,13 @@ public class ArchitectureTests
     {
         // 内核・ユースケース層・PDF印刷経路/EMF/PDF/PNG アダプタ・SHX解釈器・取得アダプタ共有計算層・
         // AutoCAD版の合成ルートと構造SVG書き出しアダプタに ARES の型が現れてはならない
-        var inner = new[]
-        {
-            typeof(Ir.IrDocument).Assembly,
-            typeof(UseCases.ConvertPipeline).Assembly,
-            typeof(Acquire.Pdf.PdfIrAcquirer).Assembly,
-            typeof(Acquire.Acad.CadIrAcquirer).Assembly,
-            typeof(Out.Emf.EmfWriter).Assembly,
-            typeof(Out.Pdf.PdfWriter).Assembly,
-            typeof(Out.Png.PngWriter).Assembly,
-            typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly,
-            typeof(Acquire.Common.CurveApprox).Assembly,
-            typeof(Plugin.Acad.PetaCommand).Assembly,
-        };
-        foreach (var asm in inner)
-            Assert.All(RefNames(asm), r => Assert.False(IsAres(r),
-                $"{asm.GetName().Name} が ARES アセンブリを参照: {r}"));
-
-        // プラグインは合成ルートとして内側ポート（ユースケース層）越しに結線する
-        var pluginRefs = RefNames(typeof(Plugin.Ares.PetaCommand).Assembly);
-        Assert.Contains("CadPeta.UseCases", pluginRefs);
-        Assert.Contains(pluginRefs, IsAres);
-
-        // 構造SVG書き出し（互換CAD第一対象）取得アダプタは ARES API を内核 IR へ写像する層で、ARES 参照を持つ
-        var aresRefs = RefNames(typeof(Acquire.Ares.CadIrAcquirer).Assembly);
-        Assert.Contains("CadPeta.Core", aresRefs);
-        Assert.Contains(aresRefs, IsAres);
+        AssertVendorReferencesConfined("ARES", IsAres, CadNeutralLayersAndAcad(), AresPlugin(), AresAcquirer());
     }
 
     [Fact]
     public void Aresプロジェクトは内核と共有計算層と他アダプタから参照されない()
     {
-        var inner = new[]
-        {
-            typeof(Ir.IrDocument).Assembly,
-            typeof(UseCases.ConvertPipeline).Assembly,
-            typeof(Acquire.Pdf.PdfIrAcquirer).Assembly,
-            typeof(Acquire.Acad.CadIrAcquirer).Assembly,
-            typeof(Out.Emf.EmfWriter).Assembly,
-            typeof(Out.Pdf.PdfWriter).Assembly,
-            typeof(Out.Png.PngWriter).Assembly,
-            typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly,
-            typeof(Acquire.Common.CurveApprox).Assembly,
-            typeof(Plugin.Acad.PetaCommand).Assembly,
-        };
-        foreach (var asm in inner)
-        {
-            Assert.DoesNotContain("CadPeta.Acquire.Ares", RefNames(asm));
-            Assert.DoesNotContain("CadPeta.Plugin.Ares", RefNames(asm));
-        }
+        AssertProductNotReferenced("CadPeta.Acquire.Ares", "CadPeta.Plugin.Ares", CadNeutralLayersAndAcad());
     }
 
     // CadPeta.Acquire.Ijcad / CadPeta.Plugin.Ijcad は net8 単一ターゲット。net48 コンシューマは
@@ -191,68 +199,32 @@ public class ArchitectureTests
     static bool IsIjcad(string name) =>
         IjcadAssemblyNames.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
 
+    static Assembly IjcadAcquirer() => typeof(Acquire.Ijcad.CadIrAcquirer).Assembly;
+
+    static Assembly IjcadPlugin() => typeof(Plugin.Ijcad.PetaCommand).Assembly;
+
+    static Assembly BricscadAcquirer() => typeof(Acquire.Bricscad.CadIrAcquirer).Assembly;
+
+    static Assembly BricscadPlugin() => typeof(Plugin.Bricscad.PetaCommand).Assembly;
+
+    /// <summary>CAD 非依存の層と、AutoCAD 版・ARES 版の取得アダプタ・合成ルート。</summary>
+    static Assembly[] CadNeutralLayersAndAcadAndAres() =>
+        CadNeutralLayersAndAcad().Concat(new[] { AresAcquirer(), AresPlugin() }).ToArray();
+
     [Fact]
     public void IJCAD参照はプラグイン合成ルートと構造SVG書き出しアダプタだけに置く()
     {
         // 内核・ユースケース層・PDF印刷経路/EMF/PDF/PNG アダプタ・SHX解釈器・取得アダプタ共有計算層・
         // AutoCAD版/ARES版/BricsCAD版の合成ルートと構造SVG書き出しアダプタに IJCAD の型が現れてはならない
-        var inner = new[]
-        {
-            typeof(Ir.IrDocument).Assembly,
-            typeof(UseCases.ConvertPipeline).Assembly,
-            typeof(Acquire.Pdf.PdfIrAcquirer).Assembly,
-            typeof(Acquire.Acad.CadIrAcquirer).Assembly,
-            typeof(Out.Emf.EmfWriter).Assembly,
-            typeof(Out.Pdf.PdfWriter).Assembly,
-            typeof(Out.Png.PngWriter).Assembly,
-            typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly,
-            typeof(Acquire.Common.CurveApprox).Assembly,
-            typeof(Plugin.Acad.PetaCommand).Assembly,
-            typeof(Acquire.Ares.CadIrAcquirer).Assembly,
-            typeof(Plugin.Ares.PetaCommand).Assembly,
-            typeof(Acquire.Bricscad.CadIrAcquirer).Assembly,
-            typeof(Plugin.Bricscad.PetaCommand).Assembly,
-        };
-        foreach (var asm in inner)
-            Assert.All(RefNames(asm), r => Assert.False(IsIjcad(r),
-                $"{asm.GetName().Name} が IJCAD アセンブリを参照: {r}"));
-
-        // プラグインは合成ルートとして内側ポート（ユースケース層）越しに結線する
-        var pluginRefs = RefNames(typeof(Plugin.Ijcad.PetaCommand).Assembly);
-        Assert.Contains("CadPeta.UseCases", pluginRefs);
-        Assert.Contains(pluginRefs, IsIjcad);
-
-        // 構造SVG書き出し（互換CAD第二対象）取得アダプタは IJCAD API を内核 IR へ写像する層で、IJCAD 参照を持つ
-        var ijcadRefs = RefNames(typeof(Acquire.Ijcad.CadIrAcquirer).Assembly);
-        Assert.Contains("CadPeta.Core", ijcadRefs);
-        Assert.Contains(ijcadRefs, IsIjcad);
+        var others = CadNeutralLayersAndAcadAndAres().Concat(new[] { BricscadAcquirer(), BricscadPlugin() }).ToArray();
+        AssertVendorReferencesConfined("IJCAD", IsIjcad, others, IjcadPlugin(), IjcadAcquirer());
     }
 
     [Fact]
     public void Ijcadプロジェクトは内核と共有計算層と他アダプタから参照されない()
     {
-        var inner = new[]
-        {
-            typeof(Ir.IrDocument).Assembly,
-            typeof(UseCases.ConvertPipeline).Assembly,
-            typeof(Acquire.Pdf.PdfIrAcquirer).Assembly,
-            typeof(Acquire.Acad.CadIrAcquirer).Assembly,
-            typeof(Out.Emf.EmfWriter).Assembly,
-            typeof(Out.Pdf.PdfWriter).Assembly,
-            typeof(Out.Png.PngWriter).Assembly,
-            typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly,
-            typeof(Acquire.Common.CurveApprox).Assembly,
-            typeof(Plugin.Acad.PetaCommand).Assembly,
-            typeof(Acquire.Ares.CadIrAcquirer).Assembly,
-            typeof(Plugin.Ares.PetaCommand).Assembly,
-            typeof(Acquire.Bricscad.CadIrAcquirer).Assembly,
-            typeof(Plugin.Bricscad.PetaCommand).Assembly,
-        };
-        foreach (var asm in inner)
-        {
-            Assert.DoesNotContain("CadPeta.Acquire.Ijcad", RefNames(asm));
-            Assert.DoesNotContain("CadPeta.Plugin.Ijcad", RefNames(asm));
-        }
+        var others = CadNeutralLayersAndAcadAndAres().Concat(new[] { BricscadAcquirer(), BricscadPlugin() }).ToArray();
+        AssertProductNotReferenced("CadPeta.Acquire.Ijcad", "CadPeta.Plugin.Ijcad", others);
     }
 
     /// <summary>BricsCAD 参照アセンブリ名（HintPath 参照の実体。互換CAD第三対象）。</summary>
@@ -268,64 +240,15 @@ public class ArchitectureTests
         // AutoCAD版/ARES版/IJCAD版の合成ルートと構造SVG書き出しアダプタに BricsCAD の型が現れてはならない。
         // BricsCAD の TD_Mgd（"TD_Mgd_23.1_16" とは完全一致比較のため衝突しない。IsAres 参照）は
         // ARES の DB 系と同じ Teigha.* 名前空間だが実体アセンブリ名は異なる
-        var inner = new[]
-        {
-            typeof(Ir.IrDocument).Assembly,
-            typeof(UseCases.ConvertPipeline).Assembly,
-            typeof(Acquire.Pdf.PdfIrAcquirer).Assembly,
-            typeof(Acquire.Acad.CadIrAcquirer).Assembly,
-            typeof(Out.Emf.EmfWriter).Assembly,
-            typeof(Out.Pdf.PdfWriter).Assembly,
-            typeof(Out.Png.PngWriter).Assembly,
-            typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly,
-            typeof(Acquire.Common.CurveApprox).Assembly,
-            typeof(Plugin.Acad.PetaCommand).Assembly,
-            typeof(Acquire.Ares.CadIrAcquirer).Assembly,
-            typeof(Plugin.Ares.PetaCommand).Assembly,
-            typeof(Acquire.Ijcad.CadIrAcquirer).Assembly,
-            typeof(Plugin.Ijcad.PetaCommand).Assembly,
-        };
-        foreach (var asm in inner)
-            Assert.All(RefNames(asm), r => Assert.False(IsBricscad(r),
-                $"{asm.GetName().Name} が BricsCAD アセンブリを参照: {r}"));
-
-        // プラグインは合成ルートとして内側ポート（ユースケース層）越しに結線する
-        var pluginRefs = RefNames(typeof(Plugin.Bricscad.PetaCommand).Assembly);
-        Assert.Contains("CadPeta.UseCases", pluginRefs);
-        Assert.Contains(pluginRefs, IsBricscad);
-
-        // 構造SVG書き出し（互換CAD第三対象）取得アダプタは BricsCAD API を内核 IR へ写像する層で、
-        // BricsCAD 参照を持つ
-        var bricscadRefs = RefNames(typeof(Acquire.Bricscad.CadIrAcquirer).Assembly);
-        Assert.Contains("CadPeta.Core", bricscadRefs);
-        Assert.Contains(bricscadRefs, IsBricscad);
+        var others = CadNeutralLayersAndAcadAndAres().Concat(new[] { IjcadAcquirer(), IjcadPlugin() }).ToArray();
+        AssertVendorReferencesConfined("BricsCAD", IsBricscad, others, BricscadPlugin(), BricscadAcquirer());
     }
 
     [Fact]
     public void Bricscadプロジェクトは内核と共有計算層と他アダプタから参照されない()
     {
-        var inner = new[]
-        {
-            typeof(Ir.IrDocument).Assembly,
-            typeof(UseCases.ConvertPipeline).Assembly,
-            typeof(Acquire.Pdf.PdfIrAcquirer).Assembly,
-            typeof(Acquire.Acad.CadIrAcquirer).Assembly,
-            typeof(Out.Emf.EmfWriter).Assembly,
-            typeof(Out.Pdf.PdfWriter).Assembly,
-            typeof(Out.Png.PngWriter).Assembly,
-            typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly,
-            typeof(Acquire.Common.CurveApprox).Assembly,
-            typeof(Plugin.Acad.PetaCommand).Assembly,
-            typeof(Acquire.Ares.CadIrAcquirer).Assembly,
-            typeof(Plugin.Ares.PetaCommand).Assembly,
-            typeof(Acquire.Ijcad.CadIrAcquirer).Assembly,
-            typeof(Plugin.Ijcad.PetaCommand).Assembly,
-        };
-        foreach (var asm in inner)
-        {
-            Assert.DoesNotContain("CadPeta.Acquire.Bricscad", RefNames(asm));
-            Assert.DoesNotContain("CadPeta.Plugin.Bricscad", RefNames(asm));
-        }
+        var others = CadNeutralLayersAndAcadAndAres().Concat(new[] { IjcadAcquirer(), IjcadPlugin() }).ToArray();
+        AssertProductNotReferenced("CadPeta.Acquire.Bricscad", "CadPeta.Plugin.Bricscad", others);
     }
 #endif
 
@@ -334,18 +257,7 @@ public class ArchitectureTests
     {
         // Win32 依存（GDI・クリップボード等の DllImport）はアダプタ層に閉じる。
         // P/Invoke はアセンブリ参照に現れないため、参照検査とは別にメソッド属性で検査する
-        var inner = new[]
-        {
-            typeof(Ir.IrDocument).Assembly,
-            typeof(UseCases.ConvertPipeline).Assembly,
-        };
-        foreach (var asm in inner)
-        foreach (var type in asm.GetTypes())
-        foreach (var m in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic |
-                                          BindingFlags.Static | BindingFlags.Instance |
-                                          BindingFlags.DeclaredOnly))
-            Assert.False((m.Attributes & MethodAttributes.PinvokeImpl) != 0,
-                $"{asm.GetName().Name} に P/Invoke がある: {type.FullName}.{m.Name}");
+        AssertNoPInvoke(typeof(Ir.IrDocument).Assembly, typeof(UseCases.ConvertPipeline).Assembly);
     }
 
     [Fact]
@@ -353,18 +265,7 @@ public class ArchitectureTests
     {
         // 内核・アダプタ・共有計算層は、プラグインの合成ルート（製品別の薄い殻）にも
         // プラグイン層の単一情報源（Plugin.Shared＝取得アダプタより上の合成層）にも依存しない
-        var inner = new[]
-        {
-            typeof(Ir.IrDocument).Assembly,
-            typeof(UseCases.ConvertPipeline).Assembly,
-            typeof(Acquire.Pdf.PdfIrAcquirer).Assembly,
-            typeof(Acquire.Acad.CadIrAcquirer).Assembly,
-            typeof(Out.Emf.EmfWriter).Assembly,
-            typeof(Out.Pdf.PdfWriter).Assembly,
-            typeof(Out.Png.PngWriter).Assembly,
-            typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly,
-            typeof(Acquire.Common.CurveApprox).Assembly,
-        };
+        var inner = CadNeutralLayers().Append(AcadAcquirer());
         foreach (var asm in inner)
         {
             Assert.DoesNotContain("CadPeta.Plugin.Acad", RefNames(asm));
@@ -400,13 +301,7 @@ public class ArchitectureTests
     public void 共有プラグイン層はPInvokeを持たない()
     {
         // Win32 依存（GDI・クリップボード等）は殻・アダプタ層に閉じ、共有層は純粋に保つ。
-        var asm = typeof(Plugin.Shared.PetaRunner).Assembly;
-        foreach (var type in asm.GetTypes())
-        foreach (var m in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic |
-                                          BindingFlags.Static | BindingFlags.Instance |
-                                          BindingFlags.DeclaredOnly))
-            Assert.False((m.Attributes & MethodAttributes.PinvokeImpl) != 0,
-                $"CadPeta.Plugin.Shared に P/Invoke がある: {type.FullName}.{m.Name}");
+        AssertNoPInvoke(typeof(Plugin.Shared.PetaRunner).Assembly);
     }
 
     [Fact]
@@ -423,13 +318,7 @@ public class ArchitectureTests
     public void SHX解釈器はPInvokeを持たない()
     {
         // 自前のバイナリ解釈器のみで完結させる方針（Win32 依存はアダプタ層に閉じる）の検査。
-        var asm = typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly;
-        foreach (var type in asm.GetTypes())
-        foreach (var m in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic |
-                                          BindingFlags.Static | BindingFlags.Instance |
-                                          BindingFlags.DeclaredOnly))
-            Assert.False((m.Attributes & MethodAttributes.PinvokeImpl) != 0,
-                $"CadPeta.Glyphs.Shx に P/Invoke がある: {type.FullName}.{m.Name}");
+        AssertNoPInvoke(typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly);
     }
 
     [Fact]

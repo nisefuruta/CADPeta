@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 #if CADPETA_ACAD
 using Autodesk.AutoCAD.DatabaseServices;
 using CadApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;

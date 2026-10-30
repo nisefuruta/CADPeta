@@ -3,6 +3,7 @@
 using CadPeta.Ir;
 using CadPeta.Transforms;
 using Xunit;
+using static CadPeta.Tests.IrTestBuilders;
 
 namespace CadPeta.Tests;
 
@@ -10,24 +11,17 @@ public class LayerGroupTransformTests
 {
     static IrPath P(string? layer) => new()
     {
-        Segments = new List<IrSegment> { new IrMove(0, 0), new IrLine(10, 10) },
+        Segments = DiagonalSegments(),
         Stroke = new IrRgb(0, 0, 0),
         StrokeWidthMm = 0.25,
         DataLayer = layer,
     };
 
-    static IrDocument Doc(params IrNode[] nodes)
-    {
-        var ir = new IrDocument { WidthMm = 100, HeightMm = 100 };
-        ir.Nodes.AddRange(nodes);
-        return ir;
-    }
-
     [Fact]
     public void レイヤ初出順に再配列しグループ境界を設定する()
     {
         var a1 = P("A"); var b1 = P("B"); var a2 = P("A"); var c1 = P("C");
-        var ir = Doc(a1, b1, a2, c1);
+        var ir = Square100Page(a1, b1, a2, c1);
 
         int moved = LayerGroupTransform.Apply(ir, new IrDiagnostics());
 
@@ -42,7 +36,7 @@ public class LayerGroupTransformTests
     public void グループ内は元の相対順を保存する()
     {
         var a1 = P("A"); var b1 = P("B"); var a2 = P("A"); var b2 = P("B"); var a3 = P("A");
-        var ir = Doc(a1, b1, a2, b2, a3);
+        var ir = Square100Page(a1, b1, a2, b2, a3);
 
         LayerGroupTransform.Apply(ir, new IrDiagnostics());
 
@@ -53,7 +47,7 @@ public class LayerGroupTransformTests
     public void 無レイヤ要素は専用グループ標示になる()
     {
         var n1 = P(null); var a1 = P("A");
-        var ir = Doc(n1, a1);
+        var ir = Square100Page(n1, a1);
 
         LayerGroupTransform.Apply(ir, new IrDiagnostics());
 
@@ -67,7 +61,7 @@ public class LayerGroupTransformTests
     [Fact]
     public void 交錯がなければ移動要素数はゼロ()
     {
-        var ir = Doc(P("A"), P("A"), P("B"), P("B"));
+        var ir = Square100Page(P("A"), P("A"), P("B"), P("B"));
 
         int moved = LayerGroupTransform.Apply(ir, new IrDiagnostics());
 
@@ -78,7 +72,7 @@ public class LayerGroupTransformTests
     [Fact]
     public void 診断ログにレイヤ数と移動要素数を記録する()
     {
-        var ir = Doc(P("A"), P("B"), P("A"));
+        var ir = Square100Page(P("A"), P("B"), P("A"));
         var diag = new IrDiagnostics();
 
         LayerGroupTransform.Apply(ir, diag);

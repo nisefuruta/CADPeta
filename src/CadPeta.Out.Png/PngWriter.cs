@@ -8,9 +8,14 @@
 //   呼び出し（パス座標・グループ変換行列・フォントサイズ・線幅・破線長）へ IR の mm 値を
 //   そのまま渡す（EMF の LX/LY 一括変換・PDF のページ先頭 cm と同じ考え方）。
 //   IR・ビットマップともY軸下向きのため、PDFと異なりY反転は不要
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using CadPeta.Geometry;
 using CadPeta.Ir;
 using CadPeta.UseCases;
 
@@ -21,7 +26,6 @@ public sealed class PngWriter : IIrOutput
     /// <summary>既定DPI。Chromeヘッダレスレンダとの画素比較検証で実績のある値。</summary>
     public const double DefaultDpi = 150.0;
 
-    const double MmPerInch = 25.4;
     // 幅係数を掛けない（等倍とみなす）帯。GDI+ の Font/Pen は幅係数の専用パラメータを
     // 持たないため ScaleTransform で表現するが、丸め誤差程度の差で余計な変換を足さない
     const double WidthFactorTol = 0.001;
@@ -47,7 +51,7 @@ public sealed class PngWriter : IIrOutput
         if (Path.GetDirectoryName(path) is { Length: > 0 } dir)
             Directory.CreateDirectory(dir);
 
-        double pxPerMm = _dpi / MmPerInch;
+        double pxPerMm = _dpi / Units.MmPerInch;
         int widthPx = Math.Max(1, (int)Math.Round(ir.WidthMm * pxPerMm));
         int heightPx = Math.Max(1, (int)Math.Round(ir.HeightMm * pxPerMm));
 

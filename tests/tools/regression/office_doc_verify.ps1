@@ -7,19 +7,24 @@
 # 使い方: pwsh tests/tools/regression/office_doc_verify.ps1 [-Dwg <図面>] [-AcadRoot <AutoCADフォルダ>]
 # 出力:   %TEMP%\CadPeta_doc_verify\ に成果物・office_doc_verify.json・ss1〜ss5 の PNG
 # 注意:   クリップボードを上書きし、Excel/PowerPoint/Word を可視起動する（保存はしない）
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$Dwg = "$PSScriptRoot\..\..\assets\testcharts\TESTCHART2_layout.dwg",
     [string]$Ctab = "PETA_A3",
     [double]$IntendWmm = 420.16,
     [double]$IntendHmm = 297.04,
     [string]$AcadRoot = "C:\Program Files\Autodesk\AutoCAD 2026",
-    [string]$Tfm = "net8.0-windows",
-    [string]$Config = "Debug"
+    [string]$Tfm = "net8.0-windows"
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'office_doc_verify.ps1' ''
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
-$plugin = "$repo\src\CadPeta.Plugin.Acad\bin\$Config\$Tfm\CadPeta.Plugin.Acad.dll"
-if (-not (Test-Path $plugin)) { throw "プラグインが未ビルド: $plugin（dotnet build CadPeta.sln を先に実行すること）" }
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$plugin = (Get-E2ePluginPath Acad $Tfm)
 $work = Join-Path $env:TEMP "CadPeta_doc_verify"
 New-Item -ItemType Directory -Force $work | Out-Null
 Get-ChildItem $work | Remove-Item -Force -ErrorAction SilentlyContinue
@@ -28,10 +33,8 @@ Get-ChildItem $work | Remove-Item -Force -ErrorAction SilentlyContinue
 $dwgCopy = Join-Path $work ([IO.Path]::GetFileName($Dwg))
 Copy-Item $Dwg $dwgCopy -Force
 @"
-(setvar "SECURELOAD" 0)
 (setvar "CTAB" "$Ctab")
-NETLOAD
-$plugin
+$((Get-AccoreNetloadLines $plugin) -join "`r`n")
 PETA
 
 _.QUIT _Y
@@ -40,31 +43,27 @@ _.QUIT _Y
 # accoreconsole のタイムアウト・強制終了でも永続 sysvar（SECURELOAD 等）を利用者プロファイルへ
 # 残さない包括ガード（対象は accoreconsole 実行区間のみ。後続の Office COM 区間は CAD レジストリに触れない）
 . "$PSScriptRoot\CadRegGuard.ps1"
-$regGuard = Get-CadRegSnapshot
+$regGuard = Get-CadRegSnapshot -StageToTrusted @($plugin) -AcadVersion (Get-AcadVersionFromPath $AcadRoot)
 $runError = $null
 try {
-    & "$AcadRoot\accoreconsole.exe" /i $dwgCopy /s "$work\peta.scr" /l ja-JP 2>&1 |
-        Out-File "$work\accore_stdout.log" -Encoding utf8
+    Push-Location -LiteralPath (Split-Path -Parent "$work\peta.scr")  # accoreconsole は図面ごとのログを作業ディレクトリへ書く
+    try { & "$AcadRoot\accoreconsole.exe" /i $dwgCopy /s "$work\peta.scr" /l ja-JP 2>&1 | Out-File "$work\accore_stdout.log" -Encoding utf8 } finally { Pop-Location }
     if ($LASTEXITCODE -ne 0) { throw "accoreconsole が異常終了 (exit=$LASTEXITCODE)" }
 }
 catch { $runError = $_ }
 finally {
-    $regReport = Restore-CadRegState $regGuard
-    if ($regReport.actions.Count -gt 0) { "レジストリ復元: " + ($regReport.actions -join '; ') }
+    $regReport = $null # [ref] で受け取る変数を先に作る
+    Restore-CadRegStateAndReport $regGuard ([ref]$regReport)
 }
-if ($runError -and -not $regReport.ok) {
-    throw [AggregateException]::new(
-        'CAD実行失敗に加えてレジストリ復元にも失敗した',
-        [Exception[]]@($runError.Exception, [InvalidOperationException]::new($regReport.mismatch -join '; ')))
+Assert-CadRunAndRegRestore $runError $regReport
+# PETA は <図面名>_<レイアウト名>_<日時>.<拡張子> の PDF・SVG・EMF を出力する（diag.json は PETADIAG だけが出力する）
+$outputs = @("pdf", "svg", "emf") | ForEach-Object {
+    $pattern = [IO.Path]::GetFileNameWithoutExtension($dwgCopy) + "_${Ctab}_*.$_"
+    $found = @(Get-ChildItem -LiteralPath $work -Filter $pattern)
+    if ($found.Count -ne 1) { throw "文書§3 の出力ファイルが 1 つではない: $pattern（$($found.Count) 個）" }
+    $found[0].FullName
 }
-if ($runError) { throw $runError }
-if (-not $regReport.ok) { throw "レジストリ保全の復元検証に失敗: $($regReport.mismatch -join '; ')" }
-$outputs = @(".pdf", ".svg", ".emf", ".svg.diag.json") | ForEach-Object {
-    $f = [IO.Path]::ChangeExtension($dwgCopy, $null).TrimEnd('.') + "_$Ctab$_"
-    if (-not (Test-Path $f)) { throw "文書§3 の出力ファイルがない: $f" }
-    $f
-}
-"PETA 出力4点を確認: $(($outputs | ForEach-Object { [IO.Path]::GetFileName($_) }) -join ', ')"
+"PETA 出力3点を確認: $(($outputs | ForEach-Object { [IO.Path]::GetFileName($_) }) -join ', ')"
 
 $PtPerMm = 72.0 / 25.4
 function MM([double]$pt) { [math]::Round($pt / $PtPerMm, 2) }

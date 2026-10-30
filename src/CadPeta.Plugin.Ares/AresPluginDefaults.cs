@@ -22,7 +22,7 @@ internal static class AresPluginDefaults
     /// 画素完全一致（0 差分。生値・UCS→WCS は別領域）。
     /// 「ARES 2027 で DCS を送ると空になった」観測（2026-07-13）は契約の反証ではなく、
     /// 2027 の GetCurrentView().Target がビュー中心を畳み込んだ汚染値を返すことによる
-    /// 別領域化だった（AresEditorPort.ReadPickFrame が目標点をシステム変数 TARGET から
+    /// 別領域化だった（CadEditorPort.ReadPickFrame が ARES では目標点をシステム変数 TARGET から
     /// 読むことで両版とも成立する）。
     /// </summary>
     public const WindowPickContract WindowPickContract = Shared.WindowPickContract.Dcs;

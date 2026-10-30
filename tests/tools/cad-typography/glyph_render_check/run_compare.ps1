@@ -5,11 +5,17 @@
 #
 # 前提: accoreconsole は PowerShell から起動する（Git Bash は日本語引数が化ける）。
 # 使い方: pwsh -File run_compare.ps1 [-OutDir <比較成果物の出力先>] [-SkipAcad]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$OutDir = "$env:TEMP\claude\glyph_check",
     [switch]$SkipAcad   # 既に glyph_chart_ground_truth.pdf / placement.tsv がある場合、再生成をスキップ
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'run_compare.ps1' $OutDir
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $here = $PSScriptRoot
 $acc = "C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe"
 $dwt = "C:\Program Files\Autodesk\AutoCAD 2026\UserDataCache\ja-jp\Template\acadiso.dwt"
@@ -23,52 +29,49 @@ if (-not $SkipAcad) {
     $gtPdfCheck = Join-Path $here "glyph_chart_ground_truth.pdf"
 
     # 実測した2つの既知の flakiness に対処する:
-    #   (a) 稀に /i でのテンプレート読み込みが「テンプレートファイルが見つからない」
-    #       (ErrorStatus=76) で即失敗する（原因不明・再実行すれば通ることを確認済み）。
-    #       Start-Process -ArgumentList は空白を含むパス（"Program Files"配下）の引用符が
-    #       壊れて再現することを実機で確認したため使わない。呼出演算子(&)をジョブ内で使う
+    #   (a) /i でのテンプレート読み込みが「テンプレートファイルが見つからない」(ErrorStatus=76) で失敗する。
+    #       原因は Start-Process -ArgumentList に配列を渡すと、空白を含むパス（"Program Files" の下）が
+    #       引用符で囲まれずに分かれること（7.6・5.1 で実測、2026-10-25）。共通の起動は ConvertTo-NativeArgString で
+    #       囲むように直し、& と Start-Process で 10 回ずつ起動して 76 が出ないことを確かめた
     #   (b) _.QUIT 後もまれにプロセスが残留する（実害はなく成果物はQUIT前に書き終わっている）
-    # (a) はリトライで、(b) はジョブ完了を待たず成果物のタイムスタンプ更新を
-    # 完了条件にしタイムアウトしたらジョブごと強制終了することで、それぞれ吸収する。
+    # (a) の再試行は残している。(b) は時間を超えたら自分が起動したプロセスだけを終了し、成果物のタイムスタンプの更新を
+    # 完了の条件にする（ほかのセッションの accoreconsole は終了させない）。
     # SAVEAS の保存先に既存DWG（前回実行の残り）があると「レイアウトへの変更を保存しますか」
     # という余分な確認プロンプトが挟まり、後続の応答列が総崩れになる（実機で再現・実測済み）。
     # 常にファイルが存在しない状態から SAVEAS させることで確認プロンプトの有無を固定する。
     $dwgOut = Join-Path $here "glyph_chart.dwg"
     Remove-Item $dwgOut -ErrorAction SilentlyContinue
 
+    # AutoCAD のプロファイルは、すべての試行の前に 1 回記録し、最後に戻す（CadRegGuard.ps1）。
+    # 試行は、時間を超えたら自分が起動した accoreconsole だけを終了する（accore_run.ps1）
+    . "$PSScriptRoot\..\..\regression\CadRegGuard.ps1"
+    . "$PSScriptRoot\..\..\common\accore_run.ps1"
     $maxAttempts = 3
     $succeeded = $false
-    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-        Remove-Item $dwgOut -ErrorAction SilentlyContinue
-        $beforeTime = if (Test-Path $gtPdfCheck) { (Get-Item $gtPdfCheck).LastWriteTime } else { $null }
-        $job = Start-Job -ScriptBlock {
-            param($acc, $dwt, $scr, $log)
-            & $acc /i $dwt /s $scr /l ja-JP *> $log
-        } -ArgumentList $acc, $dwt, $scr, $log
-        $deadline = (Get-Date).AddSeconds(90)
-        while ((Get-Date) -lt $deadline) {
+    $regGuard = Get-CadRegSnapshot -StageToTrusted @((Join-Path $here "build_glyph_chart.lsp")) -AcadVersion (Get-AcadVersionFromPath $acc)
+    $regReport = $null
+    $runError = $null
+    try {
+        for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            Remove-Item $dwgOut -ErrorAction SilentlyContinue
+            $beforeTime = if (Test-Path $gtPdfCheck) { (Get-Item $gtPdfCheck).LastWriteTime } else { $null }
+            $accoreProcess = $null
+            try { Invoke-AccoreConsoleWithTimeout $acc $dwt $scr $log "$log.err" 90 ([ref]$accoreProcess) }
+            catch { Write-Warning "accoreconsole 試行 $attempt/$maxAttempts が失敗した: $($_.Exception.Message)" }
             if (Test-Path $gtPdfCheck) {
                 $t = (Get-Item $gtPdfCheck).LastWriteTime
                 if ($null -eq $beforeTime -or $t -gt $beforeTime) { $succeeded = $true; break }
             }
-            if ($job.State -ne "Running") { break }
-            Start-Sleep -Milliseconds 500
+            Write-Warning "accoreconsole 試行 $attempt/$maxAttempts で正解PDFができなかった（$log を参照）。再試行する"
+            Start-Sleep -Seconds 2
         }
-        if ($job.State -eq "Running") {
-            if ($succeeded) {
-                Write-Warning "accoreconsole ジョブが成果物生成後も残留しているため強制終了する"
-            }
-            Stop-Job $job
+        if (-not $succeeded) {
+            throw "accoreconsole が $maxAttempts 回とも正解PDFを生成できなかった。$log を確認すること"
         }
-        Remove-Job $job -Force -ErrorAction SilentlyContinue
-        Get-Process AcCoreConsole -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        if ($succeeded) { break }
-        Write-Warning "accoreconsole 試行 $attempt/$maxAttempts が失敗した（$log を参照）。再試行する"
-        Start-Sleep -Seconds 2
     }
-    if (-not $succeeded) {
-        throw "accoreconsole が $maxAttempts 回とも正解PDFを生成できなかった。$log を確認すること"
-    }
+    catch { $runError = $_ }
+    finally { Restore-CadRegStateAndReport $regGuard ([ref]$regReport) }
+    Assert-CadRunAndRegRestore $runError $regReport
     "accoreconsole: 正解PDF・DWG・配置TSVを生成した（試行${attempt}回目、$log）"
 }
 

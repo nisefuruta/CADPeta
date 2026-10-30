@@ -2,6 +2,9 @@
 // 実測値の出典は tests/tools/cad-typography/shx_binary_survey.py の出力
 // （本機実測、C:\Users\wk\AppData\Local\Temp\claude\...\scratchpad\survey_output.txt、2026-07-10）。
 // 本機に AutoCAD 2026 の Fonts フォルダが無い環境では Skip する。
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using CadPeta.Glyphs.Shx;
 using CadPeta.Ir;
@@ -14,6 +17,10 @@ public class ShxFontIntegrationTests
     const string FontsDir = @"C:\Program Files\Autodesk\AutoCAD 2026\Fonts";
 
     static string P(string name) => Path.Combine(FontsDir, name);
+
+    /// <summary>フォント自身のグリフ表を引くバイトコード解釈器。</summary>
+    static ShxGlyphWalker WalkerFor(ShxFontFile font) =>
+        new(font.Kind, font.IsExtended, code => font.Glyphs.TryGetValue(code, out var b) ? b : null);
 
     /// <summary>本機に AutoCAD 2026 の Fonts フォルダが無ければ Skip する条件付き Fact。</summary>
     sealed class RequiresFontsAttribute : FactAttribute
@@ -80,8 +87,7 @@ public class ShxFontIntegrationTests
     public void ltypeshpの全シェイプ走査がエラーゼロで完走しCIRC1は全周弧で始点に戻る()
     {
         var font = ShxFontFile.Load(P("ltypeshp.shx"));
-        var walker = new ShxGlyphWalker(font.Kind, font.IsExtended,
-            code => font.Glyphs.TryGetValue(code, out var b) ? b : null);
+        var walker = WalkerFor(font);
 
         foreach (var kv in font.Glyphs)
         {
@@ -91,8 +97,7 @@ public class ShxFontIntegrationTests
 
         // CIRC1(133)はオクタント弧(半径1、count=0=8オクタント=全周)。全周なので
         // 開始角と終了角が一致し、ペンダウン状態なら始点へ戻る。
-        var circ1Walker = new ShxGlyphWalker(font.Kind, font.IsExtended,
-            code => font.Glyphs.TryGetValue(code, out var b) ? b : null);
+        var circ1Walker = WalkerFor(font);
         byte[] circ1WithPenDown = new byte[] { 1 }.Concat(font.Glyphs[133]).ToArray();
         var (circSegs, circEndX, circEndY) = circ1Walker.Walk(circ1WithPenDown);
         Assert.Equal(0, circEndX, 6);
@@ -113,8 +118,7 @@ public class ShxFontIntegrationTests
         foreach (var name in files)
         {
             var font = ShxFontFile.Load(P(name));
-            var walker = new ShxGlyphWalker(font.Kind, font.IsExtended,
-                code => font.Glyphs.TryGetValue(code, out var b) ? b : null);
+            var walker = WalkerFor(font);
             foreach (var kv in font.Glyphs)
             {
                 total++;
@@ -133,8 +137,7 @@ public class ShxFontIntegrationTests
         // survey_output.txt: 区間0:(9,21)-(1,0) 区間1:(9,21)-(17,0) 区間2:(4,7)-(14,7)
         // 終端カーソル位置:(18,0)。'A' はベジェ化しない直線のみで構成される。
         var font = ShxFontFile.Load(P("romans.shx"));
-        var walker = new ShxGlyphWalker(font.Kind, font.IsExtended,
-            code => font.Glyphs.TryGetValue(code, out var b) ? b : null);
+        var walker = WalkerFor(font);
         var (segs, endX, endY) = walker.Walk(font.Glyphs[0x41]); // 'A'
 
         Assert.Equal(18, endX, 9);
@@ -165,8 +168,7 @@ public class ShxFontIntegrationTests
         // 終端カーソル位置(18,0)はsurvey実測と一致し、直接描画区間の3本の線分は
         // 合成後の出力にすべて含まれることをここで検証する（バイト境界の整合性の裏付け）。
         var font = ShxFontFile.Load(P("extfont.shx"));
-        var walker = new ShxGlyphWalker(font.Kind, font.IsExtended,
-            code => font.Glyphs.TryGetValue(code, out var b) ? b : null);
+        var walker = WalkerFor(font);
         var (segs, endX, endY) = walker.Walk(font.Glyphs[0x8157]);
 
         Assert.Equal(18, endX, 9);

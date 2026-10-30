@@ -1,5 +1,8 @@
 // 診断ログ: 非可逆処理・規則的な正規化の「件数と対象」を記録する。
 // 内核に属し、外部ライブラリ参照を持たない。
+using System.Collections.Generic;
+using System.Linq;
+
 namespace CadPeta.Ir;
 
 public sealed class IrDiagnostics

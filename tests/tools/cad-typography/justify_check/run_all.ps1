@@ -14,19 +14,23 @@
 # 前提・規律:
 #  - accoreconsole は PowerShell から起動する（Git Bash は日本語引数が化ける）
 #  - .scr は CP932・.lsp は UTF-8 BOM 付き。脚本は必ず _.QUIT _Y で終える
-#  - SECURELOAD は脚本内で 0→（作業）→1 と復元する。kill・異常終了が起きた回は
-#    レジストリ（FixedProfile\General Configuration\FileDialog、各プロファイルの
-#    Variables\SECURELOAD）の残存を点検する
+#  - SECURELOAD と TRUSTEDPATHS は変えず、読み込む .lsp を信頼済みのフォルダ（C:\Tools\ACAD\lisp）へコピーして読み込み、終了後に削除する
 #  - 既知の環境制約: accoreconsole は TTC（msgothic.ttc 等）のフォントを解決できず、
 #    正解PDF側の日本語TrueType行が「?」になる（行19 は render 比較の対象外。
 #    justify 位置の裏取りは entget_dump.tsv の group 10/11 で行う）
 #
 # 使い方: pwsh -File run_all.ps1 [-OutDir <出力先>] [-SkipAcad]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$OutDir = "$env:TEMP\cadpeta_p3b_justify",
     [switch]$SkipAcad   # DWG/PDF/TSV が生成済みならチャート生成を飛ばす
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'run_all.ps1' $OutDir
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 $here = $PSScriptRoot
 $acc = "C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe"
 $dwt = "C:\Program Files\Autodesk\AutoCAD 2026\UserDataCache\ja-jp\Template\acadiso.dwt"
@@ -45,25 +49,17 @@ if (-not $SkipAcad) {
     $scr = Join-Path $here "run_generate.scr"
     $log = Join-Path $here "run_generate_stdout.log"
     $pdf = Join-Path $here "justify_chart_ground_truth.pdf"
-    # 稀にプロセスが QUIT 後も残留するため、成果物の出現を完了条件にする
-    $job = Start-Job -ScriptBlock { param($acc, $dwt, $scr, $log)
-        & $acc /i $dwt /s $scr /l ja-JP *> $log } -ArgumentList $acc, $dwt, $scr, $log
-    $deadline = (Get-Date).AddSeconds(120); $ok = $false
-    while ((Get-Date) -lt $deadline) {
-        if (Test-Path $pdf) { $ok = $true; break }
-        if ($job.State -ne "Running") { break }
-        Start-Sleep -Milliseconds 1000
-    }
-    Start-Sleep -Seconds 2
-    if ($job.State -eq "Running") { Stop-Job $job }
-    Remove-Job $job -Force -ErrorAction SilentlyContinue
-    Get-Process AcCoreConsole -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    if (-not $ok) { throw "チャート生成が失敗した。$log を確認すること" }
+    # AutoCAD のプロファイルを記録して戻し、時間を超えたら自分が起動した accoreconsole だけを終了する（accore_run.ps1）
+    . "$PSScriptRoot\..\..\regression\CadRegGuard.ps1"
+    . "$PSScriptRoot\..\..\common\accore_run.ps1"
+    $accoreProcess = $null
+    Invoke-AccoreConsoleGuardedWithTimeout $acc $dwt $scr $log "$log.err" 120 ([ref]$accoreProcess) -StageToTrusted @((Join-Path $here "build_justify_chart.lsp"))
+    if (-not (Test-Path $pdf)) { throw "チャート生成が失敗した。$log を確認すること" }
     "チャート生成: DWG・正解PDF・anchors.tsv・entget_dump.tsv を生成した"
 }
 
 # 構造SVG書き出し（PETADATAオブジェクト選択）
-pwsh -NoProfile -File (Join-Path $here "run_data_export.ps1") -OutDir "$OutDir\data-export"
+& (Join-Path $here "run_data_export.ps1") -OutDir "$OutDir\data-export" -Confirm:$false
 
 # PDF印刷経路（正解PDF → CLI 変換）
 New-Item -ItemType Directory -Force "$OutDir\print-output" | Out-Null

@@ -1,3 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using CadPeta.Geometry;
+
 namespace CadPeta.App;
 
 public static class PdfPetaValidation
@@ -8,8 +14,8 @@ public static class PdfPetaValidation
         if (string.IsNullOrWhiteSpace(request.InputPdfPath)) errors.Add("入力 PDF が指定されていない");
         if (request.Outputs.Count == 0) errors.Add("出力が1つも指定されていない");
         string? input = TryFullPath(request.InputPdfPath);
-        if (!Finite(request.CropMarginMm) || request.CropMarginMm < 0) errors.Add("クロップ余白は0以上の有限値が必要");
-        if (request.CropRectMm is { } crop && (!Finite(crop.X0) || !Finite(crop.Y0) || !Finite(crop.X1) || !Finite(crop.Y1)
+        if (!Numbers.IsFinite(request.CropMarginMm) || request.CropMarginMm < 0) errors.Add("クロップ余白は0以上の有限値が必要");
+        if (request.CropRectMm is { } crop && (!Numbers.IsFinite(crop.X0) || !Numbers.IsFinite(crop.Y0) || !Numbers.IsFinite(crop.X1) || !Numbers.IsFinite(crop.Y1)
             || crop.X1 <= crop.X0 || crop.Y1 <= crop.Y0)) errors.Add("クロップ範囲は有限値かつ正の幅・高さが必要");
         if (!RgbValid(request.EmfBackground)) errors.Add("EMF背景色は0..1の有限値が必要");
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -26,7 +32,7 @@ public static class PdfPetaValidation
                 errors.Add($"{output.Kind} の拡張子は {expected} が必要: {output.Path}");
             if (output.Kind == PdfPetaOutputKind.Png)
             {
-                if (output.PngDpi is { } dpi && (!Finite(dpi) || dpi <= 0)) errors.Add("PNG DPIは正の有限値が必要");
+                if (output.PngDpi is { } dpi && (!Numbers.IsFinite(dpi) || dpi <= 0)) errors.Add("PNG DPIは正の有限値が必要");
             }
             else if (output.PngDpi is not null) errors.Add("DPIを指定できるのはPNGだけ");
         }
@@ -35,13 +41,12 @@ public static class PdfPetaValidation
         return errors.Distinct().ToList();
     }
 
-    static string? TryFullPath(string path) { try { return Path.GetFullPath(path); } catch { return null; } }
+    internal static string? TryFullPath(string path) { try { return Path.GetFullPath(path); } catch { return null; } }
     static string ExpectedExtension(PdfPetaOutputKind kind) => kind switch
     { PdfPetaOutputKind.Svg => ".svg", PdfPetaOutputKind.Emf or PdfPetaOutputKind.Clipboard => ".emf",
       PdfPetaOutputKind.Pdf => ".pdf", PdfPetaOutputKind.Png => ".png", _ => "" };
-    static bool RgbValid(CadPeta.Ir.IrRgb c) => Finite(c.R) && Finite(c.G) && Finite(c.B)
+    static bool RgbValid(CadPeta.Ir.IrRgb c) => Numbers.IsFinite(c.R) && Numbers.IsFinite(c.G) && Numbers.IsFinite(c.B)
         && c.R is >= 0 and <= 1 && c.G is >= 0 and <= 1 && c.B is >= 0 and <= 1;
-    static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
 }
 
 public static class PdfPetaGuiPresenter
@@ -56,7 +61,7 @@ public static class PdfPetaGuiPresenter
             errors.Add("入力は PDF ファイルを指定する");
         foreach (var output in request.Outputs)
         {
-            string? full = TryFullPath(output.Path);
+            string? full = PdfPetaValidation.TryFullPath(output.Path);
             if (full is null) continue;
             string? dir = Path.GetDirectoryName(full);
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) errors.Add($"保存先フォルダが存在しない: {dir}");
@@ -64,8 +69,4 @@ public static class PdfPetaGuiPresenter
         return errors.Distinct().ToList();
     }
 
-    static string? TryFullPath(string path) { try { return Path.GetFullPath(path); } catch { return null; } }
-    static bool RgbValid(CadPeta.Ir.IrRgb c) => Finite(c.R) && Finite(c.G) && Finite(c.B)
-        && c.R is >= 0 and <= 1 && c.G is >= 0 and <= 1 && c.B is >= 0 and <= 1;
-    static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
 }

@@ -1,6 +1,7 @@
 // PdfPngDecoder（自前の純マネージドPNGデコーダ）の単体検証。
 // 実PNG（GDI+で生成）との往復で画素無損失を確認し、対応範囲外形式（インターレース・
 // ビット深度8以外）が明示エラーになることを、実PNGのIHDRバイトを書き換えて検証する。
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using CadPeta.Out.Pdf;
@@ -10,13 +11,6 @@ namespace CadPeta.Tests;
 
 public class PdfPngDecoderTests
 {
-    static byte[] EncodePng(Bitmap bmp)
-    {
-        using var ms = new MemoryStream();
-        bmp.Save(ms, ImageFormat.Png);
-        return ms.ToArray();
-    }
-
     [Fact]
     public void RGBAの往復で画素無損失()
     {
@@ -34,7 +28,7 @@ public class PdfPngDecoderTests
         bmp.SetPixel(2, 2, Color.FromArgb(255, 250, 0, 250));
         bmp.SetPixel(3, 2, Color.FromArgb(30, 30, 30, 30));
 
-        var decoded = PdfPngDecoder.Decode(EncodePng(bmp));
+        var decoded = PdfPngDecoder.Decode(TestImages.EncodePng(bmp));
 
         Assert.Equal(4, decoded.Width);
         Assert.Equal(3, decoded.Height);
@@ -61,7 +55,7 @@ public class PdfPngDecoderTests
         bmp.SetPixel(1, 1, Color.FromArgb(255, 1, 2, 3));
         bmp.SetPixel(2, 1, Color.FromArgb(255, 250, 251, 252));
 
-        var decoded = PdfPngDecoder.Decode(EncodePng(bmp));
+        var decoded = PdfPngDecoder.Decode(TestImages.EncodePng(bmp));
         Assert.Equal(3, decoded.Width);
         Assert.Equal(2, decoded.Height);
         for (int y = 0; y < 2; y++)
@@ -89,25 +83,28 @@ public class PdfPngDecoderTests
         bmp.SetPixel(1, 0, Color.Green);
         bmp.SetPixel(0, 1, Color.Blue);
         bmp.SetPixel(1, 1, Color.White);
-        return EncodePng(bmp);
+        return TestImages.EncodePng(bmp);
+    }
+
+    /// <summary>小さい PNG のバイトを <paramref name="corrupt"/> で書き換えた入力が、<paramref name="messagePart"/> を含む NotSupportedException で拒否される。</summary>
+    static void AssertUnsupportedPng(Action<byte[]> corrupt, string messagePart)
+    {
+        var png = SmallOpaquePng();
+        corrupt(png);
+        var ex = Assert.Throws<NotSupportedException>(() => PdfPngDecoder.Decode(png));
+        Assert.Contains(messagePart, ex.Message);
     }
 
     [Fact]
     public void インターレースPNGは明示エラー()
     {
-        var png = SmallOpaquePng();
-        png[OffInterlace] = 1; // Adam7
-        var ex = Assert.Throws<NotSupportedException>(() => PdfPngDecoder.Decode(png));
-        Assert.Contains("インターレース", ex.Message);
+        AssertUnsupportedPng(png => png[OffInterlace] = 1 /* Adam7 */, "インターレース");
     }
 
     [Fact]
     public void ビット深度16は明示エラー()
     {
-        var png = SmallOpaquePng();
-        png[OffBitDepth] = 16;
-        var ex = Assert.Throws<NotSupportedException>(() => PdfPngDecoder.Decode(png));
-        Assert.Contains("ビット深度", ex.Message);
+        AssertUnsupportedPng(png => png[OffBitDepth] = 16, "ビット深度");
     }
 
     [Fact]
@@ -130,7 +127,7 @@ public class PdfPngDecoderTests
             System.Runtime.InteropServices.Marshal.Copy(rows[y], 0, data.Scan0 + y * data.Stride, 2);
         bmp.UnlockBits(data);
 
-        var decoded = PdfPngDecoder.Decode(EncodePng(bmp));
+        var decoded = PdfPngDecoder.Decode(TestImages.EncodePng(bmp));
 
         Assert.Equal(10, decoded.Width);
         Assert.Equal(3, decoded.Height);

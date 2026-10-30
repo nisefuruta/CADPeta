@@ -10,7 +10,7 @@ public static class AcquireDefaults
     public const int GradientMaxDimensionPx = 32_767;
 
     /// <summary>
-    /// 線幅0（AutoCAD の「0.00mm」線量り＝デバイス最細線）の固定置換幅。
+    /// 線幅0（AutoCAD の「0.00mm」線の太さ＝デバイス最細線）の固定置換幅。
     /// SVG に最細線の概念がないため固定幅へ置換する。値はPDF印刷経路（PdfIrAcquirer.HairlineMm）と
     /// 同じ 0.05mm に揃え、両系統の出力品質を一致させる。
     /// </summary>

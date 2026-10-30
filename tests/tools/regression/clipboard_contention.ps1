@@ -8,6 +8,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\..\common\test_helpers.ps1"   # ConvertTo-NativeArgString（Start-Process の引数を引用符で囲む）
 [Text.Encoding]::RegisterProvider([Text.CodePagesEncodingProvider]::Instance)
 $cp932 = [Text.Encoding]::GetEncoding(932)
 function Read-CliText([string]$path) { $cp932.GetString([IO.File]::ReadAllBytes($path)) }
@@ -38,10 +39,10 @@ $sentinel = "CADPeta競合試験:$([Guid]::NewGuid())"
 
 $pwsh = Join-Path $PSHOME 'pwsh.exe'
 if (-not (Test-Path -LiteralPath $pwsh)) { throw "PowerShell 7がない: $pwsh" }
-$holder = Start-Process -FilePath $pwsh -ArgumentList @(
+$holder = Start-Process -FilePath $pwsh -ArgumentList (ConvertTo-NativeArgString @(
     '-NoProfile', '-Sta', '-File', (Join-Path $PSScriptRoot 'clipboard_holder.ps1'),
     '-ReadyPath', $ready, '-ReleasePath', $release, '-TimeoutSeconds', ($TimeoutSeconds + 10)
-) -RedirectStandardOutput $holderOut -RedirectStandardError $holderErr -PassThru -WindowStyle Hidden
+)) -RedirectStandardOutput $holderOut -RedirectStandardError $holderErr -PassThru -WindowStyle Hidden
 try {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while (-not (Test-Path -LiteralPath $ready) -and -not $holder.HasExited -and (Get-Date) -lt $deadline) {
@@ -55,7 +56,7 @@ try {
         throw "保持プロセスの所有証跡が不正: PID=$($holderInfo.pid) HWND=$($holderInfo.hwnd)"
     }
 
-    $process = Start-Process -FilePath $cli -ArgumentList @($InputPdf, '--emf', $emf, '--clipboard') `
+    $process = Start-Process -FilePath $cli -ArgumentList (ConvertTo-NativeArgString @($InputPdf, '--emf', $emf, '--clipboard')) `
         -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
     if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
         Stop-Process -Id $process.Id -Force
@@ -92,7 +93,7 @@ $recoveryOut = Join-Path $root 'recovery.stdout.log'
 $recoveryErr = Join-Path $root 'recovery.stderr.log'
 $recoveryEmf = Join-Path $root 'recovery.emf'
 Remove-Item -LiteralPath $recoveryEmf -Force -ErrorAction SilentlyContinue
-$recovery = Start-Process -FilePath $cli -ArgumentList @($InputPdf, '--emf', $recoveryEmf, '--clipboard') `
+$recovery = Start-Process -FilePath $cli -ArgumentList (ConvertTo-NativeArgString @($InputPdf, '--emf', $recoveryEmf, '--clipboard')) `
     -RedirectStandardOutput $recoveryOut -RedirectStandardError $recoveryErr -PassThru -WindowStyle Hidden
 if (-not $recovery.WaitForExit($TimeoutSeconds * 1000)) {
     Stop-Process -Id $recovery.Id -Force

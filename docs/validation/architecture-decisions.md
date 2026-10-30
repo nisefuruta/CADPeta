@@ -77,9 +77,9 @@ STB×フォールバックのモード不一致中止で、これに絞り込み
 
 ペーパー空間の絞り込みは、レイアウト全面（A3実寸）の範囲に選択図形が用紙上の実位置・
 ページ設定尺度で載ることをSVG座標で確認した（20×10mm矩形が用紙座標(0,0)-(20,10)、1:1）。
-実装制約として、紙レイアウトのプロット検証（PlotInfoValidator）は対象レイアウトが
+実装制約として、レイアウトのプロット検証（PlotInfoValidator）は対象レイアウトが
 そのDBのカレントであることを要求する（eLayoutNotCurrent を実測）。側DBでは対象の
-紙レイアウトをカレント化してから検証する。
+レイアウトをカレント化してから検証する。
 
 ## 窓プロットの座標契約と用紙の対応付け（2026-07-16）
 
@@ -130,7 +130,7 @@ ARES の実測で判明した製品差（計測と実装の両方を誤らせる
   なく、この読み取りの版差が原因だった。
 - ARES のシステム変数 TARGET は 2024・2027 とも **WCS の真値**を返す（AutoCAD・BricsCAD・
   IJCAD の「UCS 表現」と違う。回転 UCS のケース G で UCS 表現 (6.6,113.8) でなく WCS (60,50)
-  を実測）。したがって ARES ポートの目標点はここから読む（AresEditorPort.ReadPickFrame）。
+  を実測）。したがって ARES ポートの目標点はここから読む（CadEditorPort.ReadPickFrame の ARES の分岐）。
 - ARES の AutoLISP `(trans p 1 2)` は、ねじれ（VIEWTWIST≠0）付きビューで DCS でなく WCS を
   そのまま返す（ねじれ 0 なら正しい DCS）。DCS の一次情報には使えない。-PLOT の格納値は正しい。
 - ARES の `Editor.GetCorner` はキーボード入力の座標を基点からの相対と解釈する
@@ -283,3 +283,49 @@ SVGには表示側の固有色があり、VPフリーズ側の固有色はなか
 既存の先選択、後選択、選択置換、非印刷レイヤ混在も含め、7ケースすべてが合格し、入力DWGとレジストリ設定は復元された。
 PR #6レビュー後に`PaperMixed`も再実行し、言語不変Kind `Controller`の除外記録、部分出力確認、PDF／SVG／EMF生成が成功した。
 全solutionは警告0・エラー0、xUnitはnet48=585、net8=589、net10=593件が成功した。
+
+## 選択絞り込みの現在の画層と全シナリオの再実行（2026-10-25）
+
+モデル空間の O で元図面の現在の画層にある図形を選ぶと、AutoCAD では PETA が eInvalidLayer で止まり、何も出力しなかった。
+Wblock で作った側DBは元図面の現在の画層を引き継ぎ、作業中の図面を側DBへ切り替えている間は、その画層の `IsFrozen` に同じ false を書いても AutoCAD が拒否する。
+この切り替えは 2026-07-19 のコミット 50e2e9a で入り、その直前の 832e6c0 では同じ操作が成功した。
+画層の表示・凍結・印刷の状態は、値が違うときだけ書くように直した。
+ARES 2027 は同じ書き込みを拒否しなかった。
+
+`selection_plot_matrix.ps1 -CurrentLayerObjects` は、画層 0 の矩形と現在の画層の矩形の 2 つだけを選び、2 件が出力対象になり、SVG に矩形 2 つの線が出ることを確かめる。
+修正前のコードでは Wblock とオブジェクト複製の両方の経路で不合格になり、修正後は AutoCAD 2024・2026・2027 で合格した。
+
+同じ日に、試験の期待値が古くなっていた 2 件を直した。
+PetaFull の O は窓と重ならない範囲の図形を選んでいたので、窓と O を組み合わせた 32 件は、範囲に選択図形が無いという仕様どおりの中止になっていた。
+O で選ぶ範囲を、モデルの窓と同じ座標から作るようにした。
+ペーパー空間の側DBは 2026-07-20 から元図面全体の Wblock で作り、オブジェクト複製へ切り替えないので、`-ForceCloneFallback` はモデル空間だけで受け付ける。
+
+修正後に、AutoCAD 2026 の `selection_plot_matrix.ps1` の全 12 シナリオとペーパー空間の `-ForceCloneFallback` を受け付けないことの確認、PetaFull 256/256（クロスチェック 399/399）、PetaEdge 10/10（15/15）、PetaData 35/35（26/26）、DiagSmoke 2/2、AutoCAD 2027 の Smoke 12/12（12/12）を実行し、すべて合格した。
+全solutionは警告0・エラー0、xUnitはnet48=589、net8=593、net10=663件、App 12件、GUI 15件が成功した。
+
+`samples/支持層結果.dwg` のグループ由来 932 件を O で選ぶと、修正後も v1.0.0 も Wblock の側DB が一様な平行移動にならず、オブジェクト複製の側DBで同じ大きさの EMF（69,412 bytes、863 図形）を出力した。
+Wblock の側DB を一様な平行移動として元の座標へ戻す経路（`Wblock+translation`）は、手元の図面で通る選択が無く、修正後は確かめていない。
+
+## net48 の依存の版をそろえ、AssemblyResolve の処理を外す（2026-10-28）
+
+AutoCAD 2024（net48）で PETADIAG が diag.json を書けず、`System.Memory, Version=4.0.1.2` の FileNotFoundException で止まった。
+同梱の `System.Memory` は 4.0.2.0（PdfPig 0.1.15 の依存）で、`System.Text.Json` 9.0.0 とその依存（`System.Text.Encodings.Web`、`System.IO.Pipelines`、`System.Threading.Tasks.Extensions`）は 4.0.1.2 を参照していた。
+`System.Buffers`・`System.Numerics.Vectors`・`System.Runtime.CompilerServices.Unsafe` も、同梱より古い版を参照していた。
+PdfPig の一族と自作の DLL の参照は、同梱の版とすべて一致していた。互換 CAD の net48（ARES 2020・2023・2024）の出力も同じだった。
+
+Windows PowerShell 5.1（.NET Framework 4.8）で net48 の出力を `Assembly.LoadFrom` で読み、`System.Text.Json` を使わせると、`System.Memory` 4.0.1.2 の要求が `AppDomain.AssemblyResolve` に届き、そのときの `e.RequestingAssembly` は null だった。
+4e0e36a のハンドラは要求元が自分のフォルダのアセンブリのときだけ同梱の DLL を返すので、この要求には応えなかった。
+要求元が null の要求に応えると、どのプラグインの要求かを区別できず、ほかのプラグインのハンドラの解決を先取りしうる。
+
+版をそろえる方法を nuspec と DLL のメタデータで確かめた。`System.Text.Json` 9.0.10 も `System.Memory` 4.5.5（4.0.1.2）に依存し、10.0.14 の net462 向けの DLL は `System.Memory` 4.0.5.0 を参照する。
+PdfPig は最新の 0.1.16 でも `System.Memory` 4.6.0（4.0.2.0）に依存する。版はどの組み合わせでもそろわない。
+そこで、プラグインから `System.Text.Json` を外し、診断の diag.json、試験の記録、側 DB の記録を .NET 標準の `DataContractJsonSerializer` で書くようにした（8715111）。
+`dist/dll_path_check.ps1` の `Assert-ConsistentAssemblyReferences` は、net48 の配布フォルダの DLL が、同梱の DLL を同梱したものと同じ名前・AssemblyVersion・公開鍵トークン・Culture で参照していることを確かめ、build_dist と build_e2e が呼ぶ。
+
+`AssemblyResolve` の登録を外したビルドで、AutoCAD 2024 の `plugin_regression_matrix.ps1`（PETA と PETADIAG の 4 ケース）、ARES 2020・2023 の `peta_option_smoke_compat.ps1`（各 8 ケース）が合格したので、ハンドラと、読み込み時の欠かせない処理の仕組みを削除した（2391bc1）。
+ARES 2024 は起動していない。
+
+削除の後のコード（2391bc1）で、AutoCAD 2024・2026・2027 の `plugin_regression_matrix.ps1`（各 4 ケース）、AutoCAD 2026・2027 の PetaEdge（各 11/11、クロスチェック 18/18）、ARES 2020・2023・2027 の `peta_option_smoke_compat.ps1`（各 8 ケース）を実行し、すべて合格した。
+どの実行でも、レジストリと .aws、ARES の登録と profile.xml は元に戻り、照合で一致した。
+ARES 2020 では、用紙の一覧が空のときにページ設定の用紙名を寸法を確かめずに使ったことを示す診断（`plotport.media_size_unverified`）が出ることも確かめた。
+全solutionは警告0・エラー0、xUnitはnet48=612、net8=616、net10=769件が成功した。

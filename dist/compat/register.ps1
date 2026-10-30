@@ -16,63 +16,17 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-# Supported ARES years. Each year has its own payload folder ares\<year> because the SDK
-# assembly names differ per year. Keep in sync with the ValidateSet of -AresYear above.
-$supportedAresYears = @("2020", "2023", "2024", "2027")
-$aresYearsPattern = "(" + ($supportedAresYears -join "|") + ")"
+# 対応する ARES の版、ARES のフォルダの探し方、終了前の待ち、製品の選択は unregister.ps1 と共有する
+. (Join-Path $PSScriptRoot "compat_common.ps1")
 
-# ARES の自動読込方式は版で分ける（実機で確定, 2026-07-21）:
-#   - 年 < 2024（2020/2023 等）: HKCU レジストリの Applications では .NET が発火しない。ARES 本来の
-#     startup 機構（profile.xml の applications グループ＝OPTIONS の Add-Ins）へ、信頼場所の DLL を
-#     読み込むローダ LISP を1項目登録する。
-#   - 年 >= 2024（2024/2027 等）: HKCU レジストリの Applications（LOADCTRLS=2, MANAGED=1）が発火する。
-# セットアップの区分は「2023 以前」「2024 以降」の版境界で恒久的に分ける（.NET 世代とは独立）。
-$aresRegistryMinYear = 2024
-
-# ARES Standard trusts, by default, its per-user roaming folder %AppData%\ARES Standard Edition x64
-# and the folders under it. Installing the plugin there lets ARES auto-load it without the
-# "not in a trusted folder" prompt and without administrator rights (2026-07-21 実機確認)。
-# 全ARES版で同じ信頼ルートを使い、版ごとのサブフォルダに分ける（SDKアセンブリ名が版で異なるため）。
-$aresRoamingFolderName = "ARES Standard Edition x64"
-function Get-AresTrustedRoot {
-    if ($AresTrustedRootOverride) { return $AresTrustedRootOverride }
-    return (Join-Path $env:APPDATA $aresRoamingFolderName)
-}
 # この実行で作成・変更したものの、登録失敗時のロールバック記録
-$aresPayloadRollback = @()   # @{ Dir; Existed }        配置フォルダ（信頼場所コピー）
+$aresPayloadRollback = @()   # @{ Dir; New; Old; Installed } 配置フォルダ（信頼場所コピー）の入れ替え
 $aresLispRollback = @()      # @{ Path; Existed }       ローダ LISP ファイル
 $aresProfileRollback = @()   # @{ Path; Content }        編集前の profile.xml 全文
 
 # 年 < 2024 か（＝LISPフック方式か）
 function Test-AresUsesLispHook([string]$Year) {
     return ($Product -eq "ares" -and $Year -and [int]$Year -lt $aresRegistryMinYear)
-}
-
-# ARES <year> の内部版フォルダ（%AppData%\ARES Standard Edition x64\<major.minor.build>）を、
-# インストール先 ARESS.exe の ProductVersion 末尾ビルド番号で突き合わせて特定する。
-# 初回起動前は存在しない。テスト時は -AresProfileRootOverride\<year> を直接使う。
-function Get-AresVersionFolder([string]$Year) {
-    if ($AresProfileRootOverride) { return (Join-Path $AresProfileRootOverride $Year) }
-    $exe = "C:\Program Files\Graebert GmbH\ARES Standard $Year\BIN\ARESS.exe"
-    if (-not (Test-Path -LiteralPath $exe)) { return $null }
-    $pv = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
-    $build = ([regex]::Match($pv, '\d+\.\d+\.\d+\.(\d+)')).Groups[1].Value
-    if (-not $build) { return $null }
-    $match = Get-ChildItem -LiteralPath (Get-AresTrustedRoot) -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match "\.$build`$" } | Select-Object -First 1
-    if ($match) { return $match.FullName }
-    return $null
-}
-
-# 対象年の全プロファイルの profile.xml を返す
-function Get-AresProfileXmls([string]$Year) {
-    $vf = Get-AresVersionFolder -Year $Year
-    if (-not $vf -or -not (Test-Path -LiteralPath $vf)) { return @() }
-    $profilesDir = Join-Path $vf "Profiles"
-    if (-not (Test-Path -LiteralPath $profilesDir)) { return @() }
-    return @(Get-ChildItem -LiteralPath $profilesDir -Directory -ErrorAction SilentlyContinue |
-        ForEach-Object { Join-Path $_.FullName "profile.xml" } |
-        Where-Object { Test-Path -LiteralPath $_ })
 }
 
 # 信頼場所へ置いた DLL を読み込むローダ LISP を、その配置フォルダに作る（作成をロールバック記録）
@@ -132,12 +86,6 @@ function Add-CadPetaToProfile([string]$ProfileXml, [string]$LispPath) {
     return $true
 }
 
-function Wait-CloseKey {
-    if ($NoPause) { return }
-    Write-Host ""
-    Read-Host "Press Enter to close this window" | Out-Null
-}
-
 trap {
     Write-Host ""
     Write-Host "[FAILED] Registration did not complete: $($_.Exception.Message)" -ForegroundColor Red
@@ -146,44 +94,44 @@ trap {
     exit 1
 }
 
-function Select-Product {
-    if ($Product) { return $Product }
-
-    Write-Host "CADPeta Compat-CAD Setup" -ForegroundColor Cyan
-    Write-Host "  1: ARES Standard $($supportedAresYears -join ' / ')"
-    Write-Host "  2: IJCAD"
-    Write-Host "  3: BricsCAD"
-    $answer = Read-Host "Enter the number of the product to register"
-    switch ($answer) {
-        "1" { return "ares" }
-        "2" { return "ijcad" }
-        "3" { return "bricscad" }
-        default { throw "No product selected. Enter 1, 2, or 3" }
-    }
-}
-
-$Product = Select-Product
+$Product = Select-Product -Title "CADPeta Compat-CAD Setup" -Action "register"
 
 if ($Product -eq "ares" -and $DllPath -and -not $AresYear) {
     throw "When using -DllPath with ARES, also specify -AresYear $($supportedAresYears -join '|') so the DLL matches the registration target"
 }
 
+function Get-RelativeFileList([string]$Dir) {
+    return ((@(Get-ChildItem -LiteralPath $Dir -Recurse -File | ForEach-Object { $_.FullName.Substring($Dir.Length) }) | Sort-Object) -join "|")
+}
+
 # Copy one year's ARES payload from the extracted zip into the trusted roaming location and
 # return the installed DLL path. The whole ares\<year> folder is copied so the plugin's
-# dependencies and lang catalog sit next to the DLL. Records the created folder for rollback.
+# dependencies and lang catalog sit next to the DLL.
+# 前の版のファイルが残らないよう、<年>.new へコピーしてから <年> を <年>.old へ改名して入れ替える。
+# <年>.old は登録がすべて成功してから削除し、失敗したら戻す
 function Install-AresPayload([string]$Year) {
     $srcDir = Join-Path $PSScriptRoot "ares\$Year"
     $srcDll = Join-Path $srcDir "CadPeta.Plugin.Ares.dll"
     if (-not (Test-Path -LiteralPath $srcDll -PathType Leaf)) {
         throw "Target DLL not found: $srcDll. Run this script inside the extracted zip folder"
     }
-    $destDir = Join-Path (Join-Path (Get-AresTrustedRoot) $AppName) $Year
-    $script:aresPayloadRollback += @{ Dir = $destDir; Existed = (Test-Path -LiteralPath $destDir) }
-    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-    Copy-Item (Join-Path $srcDir '*') $destDir -Recurse -Force
-    $destDll = Join-Path $destDir "CadPeta.Plugin.Ares.dll"
-    if (-not (Test-Path -LiteralPath $destDll -PathType Leaf)) { throw "Failed to install payload to trusted location: $destDll" }
-    return (Resolve-Path -LiteralPath $destDll).Path
+    $paths = Get-AresPayloadPaths $Year
+    Remove-FolderIfExists $paths.New
+    Remove-FolderIfExists $paths.Old
+    $entry = @{ Dir = $paths.Dir; New = $paths.New; Old = $null; Installed = $false }
+    $script:aresPayloadRollback += $entry
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $paths.Dir) | Out-Null
+    Copy-Item -LiteralPath $srcDir -Destination $paths.New -Recurse
+    if ((Get-RelativeFileList $paths.New) -ne (Get-RelativeFileList $srcDir)) {
+        throw "Failed to copy all files of $srcDir to $($paths.New)"
+    }
+    if (Test-Path -LiteralPath $paths.Dir) {
+        Rename-Folder $paths.Dir $paths.Old
+        $entry.Old = $paths.Old
+    }
+    Rename-Folder $paths.New $paths.Dir
+    $entry.Installed = $true
+    return (Resolve-Path -LiteralPath (Join-Path $paths.Dir "CadPeta.Plugin.Ares.dll")).Path
 }
 
 function Resolve-Dll([string]$Year) {
@@ -296,6 +244,12 @@ $managedValueNames = @("LOADER", "LOADCTRLS", "MANAGED", "DESCRIPTION")
 $snapshots = @()
 $results = @()
 
+# 配置フォルダを入れ替える ARES の版で、DLL が使用中なら何も変えずに止まる
+if ($Product -eq "ares" -and -not $DllPath) {
+    $payloadDirs = foreach ($target in $targets) { $paths = Get-AresPayloadPaths $target.Year; $paths.Dir; $paths.New; $paths.Old }
+    Assert-DllsNotInUse @($payloadDirs)
+}
+
 try {
     # 配置（信頼場所へのコピー）とキーパス解決。ここでの失敗も下の catch で
     # 新規作成した配置フォルダをロールバックできるよう、try 内で行う
@@ -401,23 +355,35 @@ catch {
             catch { $rollbackFailures += "$($lp.Path): $($_.Exception.Message)" }
         }
     }
-    # レジストリ復元に続き、この実行で新規作成した配置フォルダ（信頼場所コピー）も撤去する。
-    # 既存フォルダ（再登録時）は消さない
+    # レジストリ復元に続き、配置フォルダを登録の前の状態へ戻す（コピーした <年> と <年>.new を削除し、
+    # 前の版の <年>.old を <年> へ戻す）
     for ($pIndex = $aresPayloadRollback.Count - 1; $pIndex -ge 0; $pIndex--) {
         $payload = $aresPayloadRollback[$pIndex]
-        if (-not $payload.Existed) {
-            try {
-                if (Test-Path -LiteralPath $payload.Dir) { Remove-Item -LiteralPath $payload.Dir -Recurse -Force }
-            }
-            catch { $rollbackFailures += "$($payload.Dir): $($_.Exception.Message)" }
+        try {
+            Remove-FolderIfExists $payload.New
+            if ($payload.Installed) { Remove-FolderIfExists $payload.Dir }
+            if ($payload.Old) { Rename-Folder $payload.Old $payload.Dir }
         }
+        catch { $rollbackFailures += "$($payload.Dir): $($_.Exception.Message)" }
     }
     if ($rollbackFailures.Count -gt 0) { throw "$originalError. Restoring the previous state also failed: $($rollbackFailures -join ' / ')" }
     throw "$originalError. All changes were rolled back to the previous state"
 }
 
+# 登録がすべて成功したので、前の版の <年>.old を削除する。削除できなくても登録は有効で、
+# 残った <年>.old は次のインストールかアンインストールが削除する
+$oldPayloadFailures = @()
+foreach ($payload in $aresPayloadRollback) {
+    if (-not $payload.Old) { continue }
+    try { Remove-FolderIfExists $payload.Old }
+    catch { $oldPayloadFailures += $_.Exception.Message }
+}
 Write-Host ""
 Write-Host "[DONE] Auto-load registration and read-back verification succeeded ($($results.Count) entries)." -ForegroundColor Green
+foreach ($failure in $oldPayloadFailures) {
+    Write-Host "[WARNING] The previous version folder was not deleted: $failure" -ForegroundColor Yellow
+    Write-Host "          The next install or uninstall deletes it." -ForegroundColor Yellow
+}
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "  1. If a target CAD is running, close it first."

@@ -3,6 +3,10 @@
 // 再ビルドなしの文言差し替え・言語追加のための口）。現在のカタログは実行コンテキスト
 // （コマンドの実行の流れ）単位の ambient 値で持ち、未初期化の文脈の既定は ja（従来文言）。
 // どの言語を使うか（ホスト言語ヒントの写像）の判定は殻側（CadPeta.Plugin.Shared の Msg）が担う。
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace CadPeta.UseCases;
@@ -36,25 +40,8 @@ public static class MessageCatalogs
     /// 現在の実行コンテキストのカタログを設定する。返り値の Dispose は直前の選択への復元
     /// （using で入れ子順に解除する）。
     /// </summary>
-    public static IDisposable BeginLanguageScope(MessageCatalog catalog)
-    {
-        var previous = _current.Value;
-        _current.Value = catalog;
-        return new LanguageScope(previous);
-    }
-
-    sealed class LanguageScope : IDisposable
-    {
-        readonly MessageCatalog? _previous;
-        bool _disposed;
-        public LanguageScope(MessageCatalog? previous) => _previous = previous;
-        public void Dispose()
-        {
-            if (_disposed) return; // 多重 Dispose で二重復元しない
-            _disposed = true;
-            _current.Value = _previous;
-        }
-    }
+    public static IDisposable BeginLanguageScope(MessageCatalog catalog) =>
+        AsyncLocalScope<MessageCatalog?>.Begin(_current, catalog);
 
     static MessageCatalogSlot Load(string lcid, MessageCatalog? fallback) =>
         LoadFromDir(AssemblyLangDir(), lcid, fallback);

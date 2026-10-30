@@ -37,7 +37,7 @@ if ($Emf -eq "") {
     $IntendedWmm = 100.0; $IntendedHmm = 50.0
 }
 
-function PtToMm($pt) { return [Math]::Round($pt * 25.4 / 72, 3) }
+. "$PSScriptRoot\..\common\office_com.ps1"
 
 # ---------- 論理DPI（表示スケール）の記録 ----------
 Add-Type -TypeDefinition @"

@@ -2,6 +2,8 @@
 // 合成バイト列で各命令を単独検証する（実物フォントでの統合検証は
 // ShxFontIntegrationTests.cs）。ShxGlyphWalker は internal のため、
 // CadPeta.Glyphs.Shx.csproj の InternalsVisibleTo でテストへ公開している。
+using System;
+using System.Linq;
 using CadPeta.Glyphs.Shx;
 using CadPeta.Ir;
 using Xunit;
@@ -12,21 +14,6 @@ public class ShxGlyphWalkerTests
 {
     static ShxGlyphWalker NewWalker(ShxFontKind kind = ShxFontKind.Unifont, bool isExtended = false) =>
         new(kind, isExtended, _ => null);
-
-    /// <summary>連結ベジェ列を一様パラメータで評価する（検証用の粗い評価。CurveApproxTests と同型）。</summary>
-    static (double X, double Y) EvalCubicChain(List<IrSegment> segs, double t01)
-    {
-        var cubics = segs.OfType<IrCubic>().ToList();
-        var start = (IrMove)segs[0];
-        double scaled = t01 * cubics.Count;
-        int i = Math.Min(cubics.Count - 1, (int)scaled);
-        double t = scaled - i;
-        (double X, double Y) p0 = i == 0 ? (start.X, start.Y) : (cubics[i - 1].X, cubics[i - 1].Y);
-        var c = cubics[i];
-        double u = 1 - t;
-        return (u * u * u * p0.X + 3 * u * u * t * c.X1 + 3 * u * t * t * c.X2 + t * t * t * c.X,
-                u * u * u * p0.Y + 3 * u * u * t * c.Y1 + 3 * u * t * t * c.Y2 + t * t * t * c.Y);
-    }
 
     [Fact]
     public void ベクトル命令は方向と長さのとおりに移動する()
@@ -47,30 +34,29 @@ public class ShxGlyphWalkerTests
     public void ベクトル命令の斜め方向は主軸成分を半分にする()
     {
         // 方向1=(1,0.5)、長さ4 → (4,2)。cb=(4<<4)|1=0x41
-        byte[] bc = { 1, 0x41 };
-        var (_, endX, endY) = NewWalker().Walk(bc);
-        Assert.Equal(4, endX, 9);
-        Assert.Equal(2, endY, 9);
+        AssertWalkEnd(new byte[] { 1, 0x41 }, 4, 2);
+    }
+
+    /// <summary>バイトコードを解釈した終端のペン位置が (<paramref name="endX"/>, <paramref name="endY"/>) になる。</summary>
+    static void AssertWalkEnd(byte[] bytecode, double endX, double endY)
+    {
+        var (_, actualX, actualY) = NewWalker().Walk(bytecode);
+        Assert.Equal(endX, actualX, 9);
+        Assert.Equal(endY, actualY, 9);
     }
 
     [Fact]
     public void code4のスケール乗算を反映する()
     {
         // scale *= 2 → その後の vector(方向0,長さ5) は (10,0)
-        byte[] bc = { 4, 2, 1, 0x50 };
-        var (_, endX, endY) = NewWalker().Walk(bc);
-        Assert.Equal(10, endX, 9);
-        Assert.Equal(0, endY, 9);
+        AssertWalkEnd(new byte[] { 4, 2, 1, 0x50 }, 10, 0);
     }
 
     [Fact]
     public void code3のスケール除算を反映する()
     {
         // scale /= 2 → その後の vector(方向0,長さ5) は (2.5,0)
-        byte[] bc = { 3, 2, 1, 0x50 };
-        var (_, endX, endY) = NewWalker().Walk(bc);
-        Assert.Equal(2.5, endX, 9);
-        Assert.Equal(0, endY, 9);
+        AssertWalkEnd(new byte[] { 3, 2, 1, 0x50 }, 2.5, 0);
     }
 
     [Fact]
@@ -90,10 +76,7 @@ public class ShxGlyphWalkerTests
     [Fact]
     public void code8はXY変位1組を1回だけ適用する()
     {
-        byte[] bc = { 1, 8, 3, 4 };
-        var (_, endX, endY) = NewWalker().Walk(bc);
-        Assert.Equal(3, endX, 9);
-        Assert.Equal(4, endY, 9);
+        AssertWalkEnd(new byte[] { 1, 8, 3, 4 }, 3, 4);
     }
 
     [Fact]
@@ -162,7 +145,7 @@ public class ShxGlyphWalkerTests
         const double cx = 5, cy = 0, r = 5;
         for (double t = 0; t <= 1.0001; t += 0.1)
         {
-            var p = EvalCubicChain(segs, Math.Min(t, 1));
+            var p = CubicChain.Eval(segs, Math.Min(t, 1));
             double d = Math.Sqrt((p.X - cx) * (p.X - cx) + (p.Y - cy) * (p.Y - cy));
             Assert.True(Math.Abs(d - r) < 0.01,
                 $"t={t:F1} で円から {Math.Abs(d - r):F4} ずれた");

@@ -11,7 +11,7 @@
          ホストランタイムに合わせて配備する -->
     <TargetFrameworks>$(CadPetaAresTfms)</TargetFrameworks>
     <!-- NETLOAD されるプラグインは実行ファイルと違い deps.json をホストが読まないため、
-         NuGet 依存（System.Text.Json 等）を出力フォルダへ複製して同一フォルダ配備にする。
+         NuGet 依存（PdfPig 等）を出力フォルダへ複製して同一フォルダ配備にする。
          ARES 参照は HintPath＋Private=false のため複製対象外（ホストが提供） -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <DefineConstants>$(DefineConstants);CADPETA_ARES</DefineConstants>
@@ -26,10 +26,8 @@
     <CadPetaUsesAresSdk>true</CadPetaUsesAresSdk>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadPlotEngineRunner.cs" Link="CadCommon\CadPlotEngineRunner.cs" />
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadSelectionPlotPort.cs" Link="CadCommon\CadSelectionPlotPort.cs" />
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadDataExportCommands.cs" Link="CadCommon\CadDataExportCommands.cs" />
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadHostLanguage.cs" Link="CadCommon\CadHostLanguage.cs" />
+    <!-- 4 製品で共有するソース（#if CADPETA_<製品> で SDK の違いを分ける）。フォルダの全ファイルを読むので、ファイルを足しても 4 つの csproj を直さない -->
+    <Compile Include="..\CadPeta.Plugin.CadCommon\*.cs" LinkBase="CadCommon" />
   </ItemGroup>
 
   <!-- ARES 参照アセンブリ: 利用者所有の本体 DLL への直接参照であり、ビルドには ARES の
@@ -48,8 +46,6 @@
       <HintPath>$(AresBinDirNet48)\FxCoreMgd_$(AresNet48DllVer).dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- 診断ログ JSON（Plugin.Acad の net48 と同じ規則）。net48 は非 in-box のためパッケージ参照 -->
-    <PackageReference Include="System.Text.Json" Version="$(SystemTextJsonVersion)" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">
     <Reference Include="TD_Mgd_Net8_26.8_17">
@@ -60,7 +56,6 @@
       <HintPath>$(AresBinDirNet8)\FxCoreMgd_Net8_26.8_17.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- net8 の System.Text.Json は in-box（基盤ランタイム提供）のためパッケージ参照は不要 -->
   </ItemGroup>
 
   <ItemGroup>

@@ -1,3 +1,5 @@
+using System;
+
 namespace CadPeta.Acquire.Raster;
 
 /// <summary>取得1回で共有する決定的な画素予算。成功画像だけを消費する。</summary>

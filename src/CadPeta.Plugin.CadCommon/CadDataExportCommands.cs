@@ -1,30 +1,28 @@
+using System.Collections.Generic;
+using System.IO;
+
 #if CADPETA_ACAD
 using Autodesk.AutoCAD.ApplicationServices;
-using Autodesk.AutoCAD.ApplicationServices.Core;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Runtime;
-using CadEditorPort = CadPeta.Plugin.Acad.AcadEditorPort;
 using CadIrAcquirer = CadPeta.Acquire.Acad.CadIrAcquirer;
 namespace CadPeta.Plugin.Acad;
 #elif CADPETA_ARES
 using Teigha.ApplicationServices;
 using Teigha.DatabaseServices;
 using Teigha.Runtime;
-using CadEditorPort = CadPeta.Plugin.Ares.AresEditorPort;
 using CadIrAcquirer = CadPeta.Acquire.Ares.CadIrAcquirer;
 namespace CadPeta.Plugin.Ares;
 #elif CADPETA_IJCAD
 using Itjp.Ijcad.ApplicationServices;
 using Itjp.Ijcad.DatabaseServices;
 using Itjp.Ijcad.Runtime;
-using CadEditorPort = CadPeta.Plugin.Ijcad.IjcadEditorPort;
 using CadIrAcquirer = CadPeta.Acquire.Ijcad.CadIrAcquirer;
 namespace CadPeta.Plugin.Ijcad;
 #elif CADPETA_BRICSCAD
 using Bricscad.ApplicationServices;
 using Teigha.DatabaseServices;
 using Teigha.Runtime;
-using CadEditorPort = CadPeta.Plugin.Bricscad.BricscadEditorPort;
 using CadIrAcquirer = CadPeta.Acquire.Bricscad.CadIrAcquirer;
 namespace CadPeta.Plugin.Bricscad;
 #else
@@ -56,25 +54,10 @@ public static partial class PetaCommand
     [CommandMethod(DataDiagCommandName, CommandFlags.Modal | CommandFlags.UsePickSet)]
     public static void ExecuteDataDiag() => InvokeData(diagnostic: true);
 
-    static void InvokeData(bool diagnostic)
-    {
-        var doc = Application.DocumentManager.MdiActiveDocument;
-        if (doc == null) return;
-        var log = new EditorTextWriter(doc.Editor);
-        // 言語スコープは catch のエラー説明まで維持して finally で解除する（using を try 内に
-        // 置くと catch より先に破棄され、エラー表示だけ既定言語へ戻る）。初期化自体の例外も
-        // 境界の内側で受け、ホストへ抜けさせない
-        IDisposable? languageScope = null;
-        try
-        {
-            using var promptTrace = PromptTrace.BeginCommand(
-                diagnostic ? DataDiagCommandName : PluginDefaults.DataCommandName);
-            languageScope = Msg.Initialize(CadHostLanguage.Hints(), log);
-            SvgExportRunner.Run(BuildSvgEnvironment(doc, log, log), log, log, diagnostic);
-        }
-        catch (System.Exception ex) { log.WriteLine(Msg.Format("error.prefix", Describe(ex))); log.WriteLine(ex.ToString()); }
-        finally { languageScope?.Dispose(); log.Flush(); }
-    }
+    // コマンドの境界（図面の確認・言語の設定・例外の報告）は PetaCommand.cs の RunAtCommandBoundary が PETA 系と共通に持つ
+    static void InvokeData(bool diagnostic) =>
+        RunAtCommandBoundary(diagnostic ? DataDiagCommandName : PluginDefaults.DataCommandName, (doc, log) =>
+            SvgExportRunner.Run(BuildSvgEnvironment(doc, log, log), log, log, diagnostic));
 
     static SvgExportEnvironment BuildSvgEnvironment(Document doc, TextWriter log, TextWriter verbose)
     {

@@ -1,4 +1,7 @@
+using System;
 using System.Globalization;
+
+using CadPeta.Geometry;
 
 namespace CadPeta.Plugin.Shared;
 
@@ -21,7 +24,7 @@ public static class PaperFallbackPolicy
         if (parts.Length != 2
             || !double.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double width)
             || !double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double height)
-            || !Valid(width) || !Valid(height))
+            || !Numbers.IsPositiveFinite(width) || !Numbers.IsPositiveFinite(height))
             throw new FormatException($"{PluginDefaults.FallbackPaperSizeEnvironmentVariable} は「幅mm,高さmm」の正数で指定する: {configuredSize}");
         return new PaperSizeMm(width, height);
     }
@@ -29,7 +32,7 @@ public static class PaperFallbackPolicy
     /// <summary>選択した用紙を構成値の縦横へ揃えるため、90度回転が必要かを返す。</summary>
     public static bool RequiresQuarterTurn(PaperSizeMm target, double mediaWidthMm, double mediaHeightMm)
     {
-        if (!Valid(mediaWidthMm) || !Valid(mediaHeightMm))
+        if (!Numbers.IsPositiveFinite(mediaWidthMm) || !Numbers.IsPositiveFinite(mediaHeightMm))
             throw new ArgumentOutOfRangeException(nameof(mediaWidthMm), "用紙寸法は正数でなければならない");
         if (target.Width == target.Height || mediaWidthMm == mediaHeightMm) return false;
         bool targetLandscape = target.Width > target.Height;
@@ -37,5 +40,4 @@ public static class PaperFallbackPolicy
         return targetLandscape != mediaLandscape;
     }
 
-    static bool Valid(double value) => !double.IsNaN(value) && !double.IsInfinity(value) && value > 0;
 }

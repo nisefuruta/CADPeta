@@ -1,6 +1,8 @@
 // グリフ輪郭の配置変換。IGlyphOutliner が返すテキスト空間のセグメント列へ
 // 幅係数 → 回転 → 平行移動 の順で変換を適用し、文字の描画位置（mm）へ写す。
 // text 要素の描画（SVG の translate/rotate/scale(wf,1)）と同一の変換順である。
+using System;
+using System.Collections.Generic;
 using CadPeta.Ir;
 
 namespace CadPeta.UseCases;

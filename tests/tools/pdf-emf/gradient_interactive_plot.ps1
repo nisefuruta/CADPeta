@@ -1,3 +1,4 @@
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
   [string]$ProgId = "AutoCAD.Application.25.1",
   [string]$Dwt = "C:\Program Files\Autodesk\AutoCAD 2026\UserDataCache\ja-jp\Template\acadiso.dwt",
@@ -5,6 +6,11 @@ param(
   [string]$EvidenceLog = ""
 )
 $ErrorActionPreference = "Stop"
+# AutoCAD・互換 CAD の設定を変える前に確認する（-WhatIf で計画だけを表示する。自動の実行は -Confirm:$false）
+. "$PSScriptRoot\..\common\test_helpers.ps1"
+$changePlan = New-AcadE2ePlan 'gradient_interactive_plot.ps1' $OutRoot
+Write-ChangePlan $changePlan
+Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 
 $PlotDeviceName = "AutoCAD PDF (High Quality Print).pc3"
 $ExpectedLocaleMediaName = "ISO フルブリード A3 (420.00 x 297.00 ミリ)"
@@ -30,11 +36,8 @@ if (-not $EvidenceLog) { $EvidenceLog = Join-Path $OutRoot "interactive_plot_har
 New-Item -ItemType Directory -Force $OutRoot | Out-Null
 if (Test-Path $EvidenceLog) { Remove-Item -LiteralPath $EvidenceLog -Force }
 
-function Write-Evidence([string]$message) {
-  $line = "{0:o} {1}" -f (Get-Date), $message
-  [IO.File]::AppendAllText($EvidenceLog, $line + [Environment]::NewLine, [Text.Encoding]::UTF8)
-  Write-Output $line
-}
+. "$PSScriptRoot\..\common\compat_cad_com.ps1"
+. "$PSScriptRoot\..\common\test_helpers.ps1"
 
 if (-not ("CadPeta.NativeWindow" -as [type])) {
   Add-Type -TypeDefinition @'
@@ -130,7 +133,7 @@ $completed = $false
 $messageFilterRegistered = $false
 # GUI AutoCAD の強制終了・タイムアウトでも永続 sysvar（SECURELOAD/FILEDIA 等）を利用者プロファイルへ残さない包括ガード
 . "$PSScriptRoot\..\regression\CadRegGuard.ps1"
-$regGuard = Get-CadRegSnapshot
+$regGuard = Get-CadRegSnapshot -StageToTrusted @($generator) -AcadVersion (Get-AcadVersionFromProgId $ProgId)
 $runError = $null
 try {
   Write-Evidence "START ProgId=$ProgId Dwt=$Dwt"
@@ -166,15 +169,15 @@ try {
   $document = $application.Documents.Add($Dwt)
   # ActiveX SetVariable requires the native Int16 type for these integer vars.
   $document.SetVariable("TILEMODE", [int16]1)
-  $document.SetVariable("SECURELOAD", [int16]0)
   $document.SetVariable("BACKGROUNDPLOT", [int16]0)
-  Write-Evidence "SYSVARS TILEMODE=1 SECURELOAD=0 BACKGROUNDPLOT=0"
+  Write-Evidence "SYSVARS TILEMODE=1 BACKGROUNDPLOT=0"
   $acadState = $application.GetAcadState()
   Wait-AcadQuiescent $acadState "before SendCommand"
+  # 生成の LISP は、信頼済みのフォルダへコピーしたものを読み込む（Get-CadRegSnapshot -StageToTrusted。TRUSTEDPATHS と SECURELOAD は変えない）
   $setupCommands = @(
     "(setq gh:dir `"$generatorDir`")",
-    "(setq gh:log `"$($entityLog -replace '\\','/')`")",
-    "(load `"$generator`")",
+    "(setq gh:log `"$($entityLog -replace '\\','/')`")"
+  ) + (Get-AccoreLoadLispLines $generator) + @(
     "(gh:prep `"LINEAR`" 0.0 0.0 0 16777215 -1 -1)"
   )
   Write-Evidence "SENDCOMMAND begin"
@@ -261,25 +264,19 @@ try {
   [GC]::Collect()
   [GC]::WaitForPendingFinalizers()
   if ($ownedPid -gt 0) {
-    $deadline = (Get-Date).AddSeconds($ProcessExitTimeoutSeconds)
-    while ((Get-Process -Id $ownedPid -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
-      Start-Sleep -Milliseconds $PollMilliseconds
-    }
+    Wait-ProcessExit $ownedPid $ProcessExitTimeoutSeconds
     if (Get-Process -Id $ownedPid -ErrorAction SilentlyContinue) {
       Write-Evidence "FORCE_STOP owned PID=$ownedPid"
       Stop-Process -Id $ownedPid -Force
     }
+    # acad.exe が終了の直前に起動した accoreconsole の終了を待つ（残れば、ほかの AutoCAD として復元を止める）
+    $leftChildren = @(Wait-CadRegChildProcesses $ownedPid $ProcessExitTimeoutSeconds)
+    if ($leftChildren.Count) { Write-Evidence "CHILD_LEFT $(($leftChildren | ForEach-Object { "$($_.Name) PID=$($_.ProcessId)" }) -join ', ')" }
   }
   # 旧来の手書き FileDialog=0→1 復元は CadRegGuard の包括復元（開始値復元＋FileDialog は安全値1へ矯正）に
   # 完全包含されるため撤去し、復元処理を一本化して二重復元を排除する（CAD 終了処理の後に1回だけ実施）
   $regReport = Restore-CadRegState $regGuard
-  if ($regReport.actions.Count -gt 0) { Write-Evidence ("レジストリ復元: " + ($regReport.actions -join '; ')) }
+  $regSummary = Get-CadRegRestoreSummary $regReport; if ($regSummary) { Write-Evidence $regSummary }
   Write-Evidence "END completed=$completed"
 }
-if ($runError -and -not $regReport.ok) {
-  throw [AggregateException]::new(
-    'CAD実行失敗に加えてレジストリ復元にも失敗した',
-    [Exception[]]@($runError.Exception, [InvalidOperationException]::new($regReport.mismatch -join '; ')))
-}
-if ($runError) { throw $runError }
-if (-not $regReport.ok) { throw "レジストリ保全の復元検証に失敗: $($regReport.mismatch -join '; ')" }
+Assert-CadRunAndRegRestore $runError $regReport

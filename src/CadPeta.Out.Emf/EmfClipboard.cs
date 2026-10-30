@@ -8,6 +8,9 @@
 // 所有権の規約（MS Learn SetClipboardData）:
 // - SetClipboardData が成功した瞬間にハンドルはシステム所有となり、こちらから解放してはならない
 // - 失敗した場合のみ所有権がこちらに残るため、DeleteEnhMetaFile で解放する
+using System;
+using System.IO;
+using System.Threading;
 using System.Diagnostics;
 using CadPeta.UseCases;
 

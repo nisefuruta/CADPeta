@@ -14,6 +14,7 @@ param(
     [switch]$ForceRegen               # 既存の pdf/emf を再利用せず作り直す
 )
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot\..\..\common\threshold_case.ps1"
 if (-not (Test-Path $WorkDir)) { New-Item -ItemType Directory -Force $WorkDir | Out-Null }
 if (-not (Test-Path $Exe)) { throw "cadpeta.exe が未ビルド: $Exe（再ビルドは方針で禁止。報告して停止すること）" }
 
@@ -25,19 +26,10 @@ $outJson = Join-Path $WorkDir "$tag.ungroup.json"
 
 if ($ForceRegen -or -not (Test-Path $pdf)) {
     $genScript = Join-Path $PSScriptRoot "gen_corpus.py"
-    $genArgs = @("--n", $N, "--seg", $Seg, "--len", $SegLen, "--out", $pdf)
-    if ($Cell -gt 0) { $genArgs += @("--cell", $Cell) }
-    $genOut = & uv run --no-project python $genScript @genArgs 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "gen_corpus.py 失敗: $genOut" }
+    New-CorpusPdf $genScript $N $Seg $SegLen $Cell $pdf
 }
 
-$cliOut = & $Exe $pdf $svg --emf $emf 2>&1
-$cliExit = $LASTEXITCODE
-$cliText = ($cliOut -join "`n")
-if ($cliExit -ne 0) { throw "cadpeta.exe 失敗(exit=$cliExit): $cliText" }
-if ($cliText -match "IR: paths=(\d+)") { $irPaths = [int]$Matches[1] } else { $irPaths = $null }
-if ($cliText -match "EMF: paths=(\d+)") { $emfPaths = [int]$Matches[1] } else { $emfPaths = $null }
-$emfBytes = (Get-Item $emf).Length
+$cli = Convert-PdfWithCadPetaCli $Exe $pdf $svg $emf
 
 $run = Join-Path $PSScriptRoot "run_case.ps1"
 $ug = & $run -Emf $emf -OutJson $outJson -Route clipboard -TimeoutSec $TimeoutSec
@@ -48,13 +40,13 @@ $record = [ordered]@{
     n = $N
     seg = $Seg
     segLen = $SegLen
-    irPaths = $irPaths
-    emfPaths = $emfPaths
-    emfBytes = $emfBytes
+    irPaths = $cli.IrPaths
+    emfPaths = $cli.EmfPaths
+    emfBytes = $cli.EmfBytes
     ungroupStatus = $ug.status
     leafShapeCount = $ug.leafShapeCount
-    expectedLeafShapeCount = if ($irPaths) { $irPaths + 1 } else { $null }  # +1=Excelの背景オートシェイプ枠（実測既知）
-    leafCountMatches = if ($ug.leafShapeCount -and $irPaths) { $ug.leafShapeCount -eq ($irPaths + 1) } else { $null }
+    expectedLeafShapeCount = if ($cli.IrPaths) { $cli.IrPaths + 1 } else { $null }  # +1=Excelの背景オートシェイプ枠（実測既知）
+    leafCountMatches = if ($ug.leafShapeCount -and $cli.IrPaths) { $ug.leafShapeCount -eq ($cli.IrPaths + 1) } else { $null }
     hresult = $ug.hresult
     error = $ug.error
     errorFull = $ug.errorFull

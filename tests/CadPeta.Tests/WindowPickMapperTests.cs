@@ -4,6 +4,7 @@
 // CAD 自身の -PLOT がページ設定へ格納した窓（DXF 群 48/49/140/141）が一致した実測値であり、
 // 再現手順は tests/tools/regression/window_contract にある。
 // 数式をこちらの理解で書き直した期待値にすると、取り違えたまま緑になる（実際に一度そうなった）。
+using System;
 using CadPeta.Plugin.Shared;
 using Xunit;
 
@@ -30,22 +31,21 @@ public class WindowPickMapperTests
     static WindowPickFrame WorldUcs(Vec3 target, Vec3 dir, double twistRad) =>
         Frame(V(0, 0, 0), V(1, 0, 0), V(0, 1, 0), V(0, 0, 1), target, dir, twistRad);
 
-    static void AssertWindow(WindowPickResult r, double x0, double y0, double x1, double y1)
-    {
-        Assert.Equal(WindowPickOutcome.Ok, r.Outcome);
-        Assert.Equal(x0, r.Window.MinX, Tolerance);
-        Assert.Equal(y0, r.Window.MinY, Tolerance);
-        Assert.Equal(x1, r.Window.MaxX, Tolerance);
-        Assert.Equal(y1, r.Window.MaxY, Tolerance);
-    }
+    /// <summary>実機の実測値との突き合わせ(許容差 <see cref="Tolerance"/>)。</summary>
+    static void AssertWindow(WindowPickResult r, double x0, double y0, double x1, double y1) =>
+        AssertWindowWithin(r, Tolerance, x0, y0, x1, y1);
 
-    static void AssertMathWindow(WindowPickResult r, double x0, double y0, double x1, double y1)
+    /// <summary>解析的に求めた期待値との突き合わせ(許容差 <see cref="MathTolerance"/>)。</summary>
+    static void AssertMathWindow(WindowPickResult r, double x0, double y0, double x1, double y1) =>
+        AssertWindowWithin(r, MathTolerance, x0, y0, x1, y1);
+
+    static void AssertWindowWithin(WindowPickResult r, double tolerance, double x0, double y0, double x1, double y1)
     {
         Assert.Equal(WindowPickOutcome.Ok, r.Outcome);
-        Assert.Equal(x0, r.Window.MinX, MathTolerance);
-        Assert.Equal(y0, r.Window.MinY, MathTolerance);
-        Assert.Equal(x1, r.Window.MaxX, MathTolerance);
-        Assert.Equal(y1, r.Window.MaxY, MathTolerance);
+        Assert.Equal(x0, r.Window.MinX, tolerance);
+        Assert.Equal(y0, r.Window.MinY, tolerance);
+        Assert.Equal(x1, r.Window.MaxX, tolerance);
+        Assert.Equal(y1, r.Window.MaxY, tolerance);
     }
 
     static (Vec3 XAxis, Vec3 YAxis) QuadrantAxes(int degrees) => degrees switch

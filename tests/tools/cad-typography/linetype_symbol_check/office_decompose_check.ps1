@@ -11,7 +11,7 @@ param(
     [switch]$Ppt
 )
 $ErrorActionPreference = "Continue"
-function PtToMm($pt) { return [Math]::Round($pt * 25.4 / 72, 3) }
+. "$PSScriptRoot\..\..\common\office_com.ps1"
 
 if (-not (Test-Path $Emf)) { throw "EMF がない: $Emf" }
 $fileBytes = [IO.File]::ReadAllBytes($Emf)
@@ -32,46 +32,8 @@ $CF_ENHMETAFILE = 14
 $MSO_GROUP = 6
 $MSO_FREEFORM = 5
 
-function Register-Emf {
-    $hemf = [CadPetaLtsymDecompose.Clip]::GetEnhMetaFileW($Emf)
-    if ($hemf -eq [IntPtr]::Zero) { throw "GetEnhMetaFile 失敗: $Emf" }
-    $hCopy = [CadPetaLtsymDecompose.Clip]::CopyEnhMetaFileW($hemf, [NullString]::Value)
-    $null = [CadPetaLtsymDecompose.Clip]::DeleteEnhMetaFile($hemf)
-    if ($hCopy -eq [IntPtr]::Zero) { throw "CopyEnhMetaFile 失敗" }
-    if (-not [CadPetaLtsymDecompose.Clip]::OpenClipboard([IntPtr]::Zero)) { throw "OpenClipboard 失敗" }
-    try {
-        $null = [CadPetaLtsymDecompose.Clip]::EmptyClipboard()
-        if ([CadPetaLtsymDecompose.Clip]::SetClipboardData($CF_ENHMETAFILE, $hCopy) -eq [IntPtr]::Zero) { throw "SetClipboardData 失敗" }
-    } finally { $null = [CadPetaLtsymDecompose.Clip]::CloseClipboard() }
-    if (-not [CadPetaLtsymDecompose.Clip]::OpenClipboard([IntPtr]::Zero)) { throw "OpenClipboard(照合) 失敗" }
-    try {
-        $h = [CadPetaLtsymDecompose.Clip]::GetClipboardData($CF_ENHMETAFILE)
-        $size = [CadPetaLtsymDecompose.Clip]::GetEnhMetaFileBits($h, 0, $null)
-        $got = New-Object byte[] $size
-        $null = [CadPetaLtsymDecompose.Clip]::GetEnhMetaFileBits($h, $size, $got)
-        if (-not [Linq.Enumerable]::SequenceEqual($got, $fileBytes)) { throw "登録内容がファイルと不一致" }
-    } finally { $null = [CadPetaLtsymDecompose.Clip]::CloseClipboard() }
-}
 
 # msoGroup 判定で Ungroup を呼ぶ（葉は例外を発生させない。ungroup_case.ps1 と同方式）
-function Flatten-Shape($shape) {
-    $queue = New-Object System.Collections.Generic.Queue[object]
-    $queue.Enqueue(@{ s = $shape; isTop = $true })
-    $leaves = New-Object System.Collections.Generic.List[object]
-    $levels = 0
-    while ($queue.Count -gt 0) {
-        $item = $queue.Dequeue()
-        $s = $item.s
-        if ($item.isTop -or $s.Type -eq $MSO_GROUP) {
-            $range = $s.Ungroup()
-            $levels++
-            for ($i = 1; $i -le $range.Count; $i++) { $queue.Enqueue(@{ s = $range.Item($i); isTop = $false }) }
-        } else {
-            $leaves.Add($s)
-        }
-    }
-    return @{ leaves = $leaves; levels = $levels }
-}
 
 function Classify-Leaves($leaves) {
     $byType = @{}
@@ -120,14 +82,13 @@ try {
     try {
         $wb = $excel.Workbooks.Add()
         $ws = $wb.Worksheets.Item(1)
-        Register-Emf
-        try { $ws.PasteSpecial("図 (拡張メタファイル)") } catch { $ws.PasteSpecial("Picture (Enhanced Metafile)") }
-        $shape = $ws.Shapes.Item($ws.Shapes.Count)
+        Register-Emf ([CadPetaLtsymDecompose.Clip]) $Emf $fileBytes $CF_ENHMETAFILE
+        $shape = Add-EmfShapeByPasteSpecial $ws
         $case.widthMm = PtToMm $shape.Width
         $case.heightMm = PtToMm $shape.Height
-        $flat = Flatten-Shape $shape
+        $flat = Flatten-Shape $shape -CollectLeaves
         $case.status = "success"
-        $case.leafShapeCount = $flat.leaves.Count
+        $case.leafShapeCount = $flat.leafCount
         $case.groupLevels = $flat.levels
         $case.classify = Classify-Leaves $flat.leaves
     } catch {
@@ -173,7 +134,7 @@ if ($Ppt) {
         $case = [ordered]@{ status = $null; widthMm = $null; heightMm = $null; leafShapeCount = $null; error = $null; errorFull = $null }
         try {
             $slide = $pres.Slides.Add(1, 12)
-            Register-Emf
+            Register-Emf ([CadPetaLtsymDecompose.Clip]) $Emf $fileBytes $CF_ENHMETAFILE
             $shape = $slide.Shapes.PasteSpecial(2).Item(1)  # ppPasteEnhancedMetafile
             $case.widthMm = PtToMm $shape.Width
             $case.heightMm = PtToMm $shape.Height

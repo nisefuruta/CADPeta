@@ -3,23 +3,19 @@
 //  - 各境界の IR 状態が段の効果を反映し、diag の件数と保存則が一致すること
 //  - ファイル名規約（段番号ゼロ埋め・段名）
 // を検査する。ダンプ本文の SVG 妥当性（ブラウザ表示）は CLI 実物検証で確認する。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Geometry;
 using CadPeta.Ir;
 using CadPeta.UseCases;
 using Xunit;
+using static CadPeta.Tests.IrTestBuilders;
 
 namespace CadPeta.Tests;
 
 public class ConvertPipelineDiagnosticsTests
 {
-    static IrPath Line(double x0, double y0, double x1, double y1)
-        => new()
-        {
-            Segments = new List<IrSegment> { new IrMove(x0, y0), new IrLine(x1, y1) },
-            Stroke = new IrRgb(0, 0, 0),
-            StrokeWidthMm = 0.5,
-        };
-
     static IrPath Bg(double w, double h)
         => new()
         {
@@ -31,13 +27,6 @@ public class ConvertPipelineDiagnosticsTests
             Fill = new IrRgb(1, 1, 1),
         };
 
-    static IrDocument Page(params IrNode[] nodes)
-    {
-        var ir = new IrDocument { WidthMm = 420, HeightMm = 297 };
-        ir.Nodes.AddRange(nodes);
-        return ir;
-    }
-
     // 各境界の (段番号, 段名, その時点のノード数) を記録するシンク。
     // IR は破壊的に変わるため、参照ではなく件数をその場で確定する。
     static Action<int, string, IrDocument> Recorder(List<(int Ordinal, string Name, int NodeCount)> log)
@@ -46,7 +35,7 @@ public class ConvertPipelineDiagnosticsTests
     [Fact]
     public void 変換段がなければ段0のみをダンプする()
     {
-        var ir = Page(Line(10, 10, 90, 90));
+        var ir = A3Page(Line(10, 10, 90, 90));
         var boundaries = new List<(int, string, int)>();
 
         ConvertPipeline.ApplyWithDiagnostics(
@@ -60,7 +49,7 @@ public class ConvertPipelineDiagnosticsTests
     [Fact]
     public void 背景除去の前後をダンプし件数差が除去件数と一致する()
     {
-        var ir = Page(Bg(420, 297), Line(10, 10, 90, 90));
+        var ir = A3Page(Bg(420, 297), Line(10, 10, 90, 90));
         var boundaries = new List<(int Ordinal, string Name, int NodeCount)>();
         var diag = new IrDiagnostics();
 
@@ -82,7 +71,7 @@ public class ConvertPipelineDiagnosticsTests
     {
         var inside = Line(20, 20, 80, 80);
         var outside = Line(200, 200, 300, 250);
-        var ir = Page(inside, outside);
+        var ir = A3Page(inside, outside);
         var boundaries = new List<(int Ordinal, string Name, int NodeCount)>();
         var diag = new IrDiagnostics();
 
@@ -104,7 +93,7 @@ public class ConvertPipelineDiagnosticsTests
     [Fact]
     public void 両段が有効なら段0と各段後の3境界を順にダンプする()
     {
-        var ir = Page(Bg(420, 297), Line(20, 20, 80, 80), Line(200, 200, 300, 250));
+        var ir = A3Page(Bg(420, 297), Line(20, 20, 80, 80), Line(200, 200, 300, 250));
         var boundaries = new List<(int Ordinal, string Name, int NodeCount)>();
 
         ConvertPipeline.ApplyWithDiagnostics(
@@ -122,7 +111,7 @@ public class ConvertPipelineDiagnosticsTests
     [Fact]
     public void 段0のダンプは変換前の初期IRを表す()
     {
-        var ir = Page(Bg(420, 297), Line(10, 10, 90, 90));
+        var ir = A3Page(Bg(420, 297), Line(10, 10, 90, 90));
         string? stage0Svg = null;
 
         // 診断シンクは出所メタデータを残す（合成ルートと同じ includeProvenance: true）
@@ -142,7 +131,7 @@ public class ConvertPipelineDiagnosticsTests
         // 通常出力（除去）の分岐を、合成ルートと同じ呼び方で検査する。
         var line = Line(20, 20, 80, 80);
         line.DataLayer = "S-WALL";
-        var ir = Page(line);
+        var ir = A3Page(line);
 
         string? diagDump = null;
         ConvertPipeline.ApplyWithDiagnostics(

@@ -103,8 +103,8 @@ function Render-SvgPng([string]$svgPath, [string]$pngPath, [double]$wMm, [double
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         if (Test-Path $pngPath) { Remove-Item $pngPath -Force }
         $args = @('--headless=new', '--disable-gpu', '--hide-scrollbars', '--default-background-color=FFFFFFFF',
-            "--force-device-scale-factor=$scale", "--window-size=$winW,$winH", "--screenshot=$pngPath", ([Uri]$svgPath).AbsoluteUri) -join ' '
-        $p = Start-Process -FilePath $browser -ArgumentList $args -PassThru -WindowStyle Hidden
+            "--force-device-scale-factor=$scale", "--window-size=$winW,$winH", "--screenshot=$pngPath", ([Uri]$svgPath).AbsoluteUri)
+        $p = Start-Process -FilePath $browser -ArgumentList (ConvertTo-NativeArgString $args) -PassThru -WindowStyle Hidden
         if (-not $p.WaitForExit(90000)) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; $p.WaitForExit() }
         if (Test-Path $pngPath) {
             $chk = Invoke-Py 'svgchk' $helpers @('png-check', '--in', $pngPath, '--width', "$expectW", '--height', "$expectH")
@@ -114,9 +114,7 @@ function Render-SvgPng([string]$svgPath, [string]$pngPath, [double]$wMm, [double
     return $false
 }
 
-function Add-Check($list, [string]$name, [bool]$ok, [string]$detail = '') {
-    [void]$list.Add(@{ name = $name; ok = $ok; detail = $detail })
-}
+. "$PSScriptRoot\..\common\test_helpers.ps1"
 
 function Get-SvgFacts([string]$path) {
     $head = Get-Content $path -TotalCount 1

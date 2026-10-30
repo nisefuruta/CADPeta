@@ -1,3 +1,6 @@
+using System;
+using CadPeta.Geometry;
+
 namespace CadPeta.Acquire.Raster;
 
 /// <summary>AutoCAD 2026 のPDF印刷経路正解チャートから固定したグラデーション空間関数。</summary>
@@ -58,8 +61,8 @@ public static class GradientSemantics
     {
         name = Normalize(name);
         double width = maxX - minX, height = maxY - minY;
-        if (!(width > 0) || !(height > 0) || !Finite(angleRadians)
-            || !Finite(shift) || shift < 0 || shift > 1)
+        if (!(width > 0) || !(height > 0) || !Numbers.IsFinite(angleRadians)
+            || !Numbers.IsFinite(shift) || shift < 0 || shift > 1)
             return double.NaN;
 
         // AutoCAD 2026 はDXF 461の0.5と1を画素単位で同一描画する。
@@ -178,6 +181,5 @@ public static class GradientSemantics
 
     static string Normalize(string name) => (name ?? "").Trim().ToUpperInvariant();
     static double Clamp01(double value) => Math.Max(0, Math.Min(1, value));
-    static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
     readonly record struct Axes(double Cos, double Sin, double AlongSpan, double CrossSpan);
 }

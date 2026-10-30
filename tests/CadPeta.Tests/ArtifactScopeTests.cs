@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using CadPeta.UseCases;
 using Xunit;
 
@@ -169,7 +174,8 @@ public sealed class ArtifactScopeTests
     [Fact]
     public void IsUnderRoot_RejectsSiblingPrefixAndRootItself()
     {
-        string root = Path.Combine(Path.GetTempPath(), "CadPetaRoot");
+        using var temp = new TempFolder();
+        string root = temp.File("CadPetaRoot");
         Assert.True(ArtifactScope.IsUnderRoot(Path.Combine(root, "child"), root));
         Assert.False(ArtifactScope.IsUnderRoot(root + "Else", root));
         Assert.False(ArtifactScope.IsUnderRoot(root, root));

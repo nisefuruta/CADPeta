@@ -1,6 +1,8 @@
+using System;
+using System.IO;
+
 #if CADPETA_ACAD
 using Autodesk.AutoCAD.ApplicationServices;
-using Autodesk.AutoCAD.ApplicationServices.Core;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.PlottingServices;
 using CadApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
@@ -15,7 +17,6 @@ using CadRuntimeException = Teigha.Runtime.Exception;
 namespace CadPeta.Plugin.Ares;
 #elif CADPETA_IJCAD
 using Itjp.Ijcad.ApplicationServices;
-using Itjp.Ijcad.ApplicationServices.Core;
 using Itjp.Ijcad.DatabaseServices;
 using Itjp.Ijcad.PlottingServices;
 using CadApplication = Itjp.Ijcad.ApplicationServices.Core.Application;

@@ -2,6 +2,9 @@
 // 1.背景除去（PDF印刷経路由来のみ）→ 2.クロップ → 3.線幅正規化（最細線の固定幅置換として取得側で
 // 充足済み。変換段が要るときにここへ追加）→ 4.色変換 → 5.文字アウトライン化（色変換の後=
 // 変換済みの色を輪郭へ引き継ぐ）→ 6.レイヤ別グループ化（構造を変えるため最終段）
+using System;
+using System.Collections.Generic;
+using System.Threading;
 using CadPeta.Geometry;
 using CadPeta.Ir;
 using CadPeta.Transforms;

@@ -238,6 +238,20 @@ PETA を送ると「そのようなコマンド "PETA" はありません」＝*
 - accoreconsole 脚本で使った SECURELOAD=0 は clean QUIT のため永続せず（R25.1・R26.0 の
   プロファイルとも SECURELOAD 残留なしを reg 点検）。
 
+### 9-4. 残骸の削除と、配布物の開発機のパス（2026-10-25）
+
+インストールの残骸は、フォルダの名前だけで判定し、中身を照らさない。
+`CADPeta.bundle.old`、`CADPeta.bundle.new`、PackageContents.xml の無い `CADPeta.bundle` は、DLL の確認を通ったあとに、利用者が置いたファイルを含めて中身ごと削除する。
+DLL が使用中なら、1 ファイルも削除せずに止まる。
+InstallerBatchTests の 31 件（子プロセスの APPDATA だけを試験のフォルダへ向けて実行）が合格した。
+変更の前の uninstall.bat では、PackageContents.xml の無い `CADPeta.bundle` を削除する 2 件が不合格だった。
+
+配布のビルドは `-p:ContinuousIntegrationBuild=true` と `--no-incremental`（publish を除く）で行う。
+build_dist -Only all で組み立てた staging の自作の DLL は、CodeView の PDB のパスが `/_/src/...` で、開発機のパスが無かった。
+`tests/tools/distribution/dll_path_check_selftest.ps1` が、開発機のパスを持つ DLL（CodeView、埋め込み PDB）を見つけて止まること、ContinuousIntegrationBuild の DLL が通ること、第三者の DLL を検査しないこと、読めない自作の DLL で止まることを確かめる。
+4 つの zip は `package_verify.ps1 -Only all` に合格した。
+組み立てのために、v1.0.0 の署名済みの `dist/staging` と `dist/artifacts`（263 ファイル）を一時的に移し、組み立てのあとに戻して、SHA-256 がすべて一致することを確かめた。
+
 ## 10. GUI実機の確認項目
 
 accoreconsole で代替できない、GUI（acad.exe / 各互換CAD）でしか確認できない項目:

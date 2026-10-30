@@ -1,4 +1,7 @@
 // 矩形クリップ幾何（内核 Geometry）の単体テスト。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Geometry;
 using CadPeta.Ir;
 using Xunit;

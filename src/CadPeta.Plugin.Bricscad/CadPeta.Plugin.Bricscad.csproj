@@ -23,10 +23,8 @@
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadPlotEngineRunner.cs" Link="CadCommon\CadPlotEngineRunner.cs" />
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadSelectionPlotPort.cs" Link="CadCommon\CadSelectionPlotPort.cs" />
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadDataExportCommands.cs" Link="CadCommon\CadDataExportCommands.cs" />
-    <Compile Include="..\CadPeta.Plugin.CadCommon\CadHostLanguage.cs" Link="CadCommon\CadHostLanguage.cs" />
+    <!-- 4 製品で共有するソース（#if CADPETA_<製品> で SDK の違いを分ける）。フォルダの全ファイルを読むので、ファイルを足しても 4 つの csproj を直さない -->
+    <Compile Include="..\CadPeta.Plugin.CadCommon\*.cs" LinkBase="CadCommon" />
   </ItemGroup>
 
   <!-- BricsCAD 参照アセンブリ: 利用者所有の本体 DLL への直接参照であり、ビルドには BricsCAD の
@@ -45,8 +43,6 @@
       <HintPath>$(BricscadBinDir)\BrxMgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- 診断ログ JSON。net8 は System.Text.Json が in-box のため PackageReference 不要
-         （Plugin.Ijcad と同じ流儀。net48 単一ターゲットの Plugin.Ares とは異なる） -->
   </ItemGroup>
 
   <ItemGroup>

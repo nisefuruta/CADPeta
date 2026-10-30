@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using CadPeta.Ir;
 using CadPeta.Plugin.Shared;
 using CadPeta.UseCases;
@@ -182,62 +185,48 @@ public class PetaRunnerEmptyIrTests
     [Fact]
     public void 透過の不透明化を検出したらSVGのみ透過表現が残る旨を案内する()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPetaOpacity_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        var log = new StringWriter();
+        PetaRunner.Run(new PetaEnvironment
         {
-            var log = new StringWriter();
-            PetaRunner.Run(new PetaEnvironment
-            {
-                Editor = new Editor(Path.Combine(dir, "empty.dwg")),
-                Plotter = new Plotter(),
-                SelectionPlotter = new UnusedSelectionPlotter(),
-                PdfAcquirer = new SingleNodeAcquirer(),
-                EmfWriterFactory = _ => new FlatteningEmfOutput(),
-                SetClipboardFromFile = _ => { },
-                TrueTypeOutlinerFactory = () => new UnusedOutliner(),
-            }, log, diagnostic: false);
+            Editor = new Editor(Path.Combine(dir, "empty.dwg")),
+            Plotter = new Plotter(),
+            SelectionPlotter = new UnusedSelectionPlotter(),
+            PdfAcquirer = new SingleNodeAcquirer(),
+            EmfWriterFactory = _ => new FlatteningEmfOutput(),
+            SetClipboardFromFile = _ => { },
+            TrueTypeOutlinerFactory = () => new UnusedOutliner(),
+        }, log, diagnostic: false);
 
-            string text = log.ToString();
-            Assert.Contains("透過図形検出。透過表現はSVGファイルを利用のこと", text);
-            // 注記は結果サマリ（summary.line の「... bytes / n図形 → ...」）の後に出す。
-            // 通常の返答を注記が押し流さないための順序を固定する
-            Assert.Contains("bytes /", text);
-            Assert.True(text.LastIndexOf("透過図形検出", StringComparison.Ordinal)
-                        > text.LastIndexOf("bytes /", StringComparison.Ordinal),
-                        "透過注記が結果サマリより前に出ている:\n" + text);
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        string text = log.ToString();
+        Assert.Contains("透過図形検出。透過表現はSVGファイルを利用のこと", text);
+        // 注記は結果サマリ（summary.line の「... bytes / n図形 → ...」）の後に出す。
+        // 通常の返答を注記が押し流さないための順序を固定する
+        Assert.Contains("bytes /", text);
+        Assert.True(text.LastIndexOf("透過図形検出", StringComparison.Ordinal)
+                    > text.LastIndexOf("bytes /", StringComparison.Ordinal),
+                    "透過注記が結果サマリより前に出ている:\n" + text);
     }
 
     [Fact]
     public void 透過がなければ案内を出さない()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPetaNoOpacity_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        var log = new StringWriter();
+        PetaRunner.Run(new PetaEnvironment
         {
-            var log = new StringWriter();
-            PetaRunner.Run(new PetaEnvironment
-            {
-                Editor = new Editor(Path.Combine(dir, "empty.dwg")),
-                Plotter = new Plotter(),
-                SelectionPlotter = new UnusedSelectionPlotter(),
-                PdfAcquirer = new SingleNodeAcquirer(),
-                EmfWriterFactory = _ => new EmfOutput(),
-                SetClipboardFromFile = _ => { },
-                TrueTypeOutlinerFactory = () => new UnusedOutliner(),
-            }, log, diagnostic: false);
+            Editor = new Editor(Path.Combine(dir, "empty.dwg")),
+            Plotter = new Plotter(),
+            SelectionPlotter = new UnusedSelectionPlotter(),
+            PdfAcquirer = new SingleNodeAcquirer(),
+            EmfWriterFactory = _ => new EmfOutput(),
+            SetClipboardFromFile = _ => { },
+            TrueTypeOutlinerFactory = () => new UnusedOutliner(),
+        }, log, diagnostic: false);
 
-            Assert.DoesNotContain("透過のある図形", log.ToString());
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        Assert.DoesNotContain("透過のある図形", log.ToString());
     }
 
     [Fact]
@@ -272,124 +261,96 @@ public class PetaRunnerEmptyIrTests
     [Fact]
     public void 非選択経路の空IRは警告してEMF出力とクリップボード登録を続ける()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPetaEmptyIr_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        var emf = new EmfOutput();
+        bool clipboardCalled = false;
+        var log = new StringWriter();
+        PetaRunner.Run(new PetaEnvironment
         {
-            var emf = new EmfOutput();
-            bool clipboardCalled = false;
-            var log = new StringWriter();
-            PetaRunner.Run(new PetaEnvironment
-            {
-                Editor = new Editor(Path.Combine(dir, "empty.dwg")),
-                Plotter = new Plotter(),
-                SelectionPlotter = new UnusedSelectionPlotter(),
-                PdfAcquirer = new EmptyAcquirer(),
-                EmfWriterFactory = _ => emf,
-                SetClipboardFromFile = _ => clipboardCalled = true,
-                TrueTypeOutlinerFactory = () => new UnusedOutliner(),
-            }, log, diagnostic: false);
+            Editor = new Editor(Path.Combine(dir, "empty.dwg")),
+            Plotter = new Plotter(),
+            SelectionPlotter = new UnusedSelectionPlotter(),
+            PdfAcquirer = new EmptyAcquirer(),
+            EmfWriterFactory = _ => emf,
+            SetClipboardFromFile = _ => clipboardCalled = true,
+            TrueTypeOutlinerFactory = () => new UnusedOutliner(),
+        }, log, diagnostic: false);
 
-            Assert.Contains("警告: IR が空", log.ToString());
-            Assert.True(emf.Called);
-            Assert.True(clipboardCalled);
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        Assert.Contains("警告: IR が空", log.ToString());
+        Assert.True(emf.Called);
+        Assert.True(clipboardCalled);
     }
 
     [Fact]
     public void OCGレイヤ情報がない発行PDFはレイヤ別出力を諦めて続行する()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPetaOcgFallback_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        var emf = new EmfOutput();
+        bool clipboardCalled = false;
+        var log = new StringWriter();
+        PetaRunner.Run(new PetaEnvironment
         {
-            var emf = new EmfOutput();
-            bool clipboardCalled = false;
-            var log = new StringWriter();
-            PetaRunner.Run(new PetaEnvironment
-            {
-                Editor = new SelectionEditor(Path.Combine(dir, "sel.dwg")),
-                Plotter = new Plotter(),
-                SelectionPlotter = new NoOcgSelectionPlotPort(),
-                PdfAcquirer = new SingleNodeAcquirer(),
-                EmfWriterFactory = _ => emf,
-                SetClipboardFromFile = _ => clipboardCalled = true,
-                TrueTypeOutlinerFactory = () => new UnusedOutliner(),
-            }, log, diagnostic: false);
+            Editor = new SelectionEditor(Path.Combine(dir, "sel.dwg")),
+            Plotter = new Plotter(),
+            SelectionPlotter = new NoOcgSelectionPlotPort(),
+            PdfAcquirer = new SingleNodeAcquirer(),
+            EmfWriterFactory = _ => emf,
+            SetClipboardFromFile = _ => clipboardCalled = true,
+            TrueTypeOutlinerFactory = () => new UnusedOutliner(),
+        }, log, diagnostic: false);
 
-            string output = log.ToString();
-            // 例外にせず、明示ログ＋続行（他のフォールバックと同じ方針）
-            Assert.Contains("レイヤ情報(OCG)がないためレイヤ別グループ化を行わずに出力する", output);
-            // 実効値が false へ落ちているため、結果サマリは「レイヤ別グループ化」を名乗らない
-            Assert.DoesNotContain("オプション:", output);
-            Assert.True(emf.Called);
-            Assert.True(clipboardCalled);
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        string output = log.ToString();
+        // 例外にせず、明示ログ＋続行（他のフォールバックと同じ方針）
+        Assert.Contains("レイヤ情報(OCG)がないためレイヤ別グループ化を行わずに出力する", output);
+        // 実効値が false へ落ちているため、結果サマリは「レイヤ別グループ化」を名乗らない
+        Assert.DoesNotContain("オプション:", output);
+        Assert.True(emf.Called);
+        Assert.True(clipboardCalled);
     }
 
     [Fact]
     public void 選択セッションはPDF発行直後かつ取得前に破棄する()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPetaSelectionLifetime_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        var selection = new TrackingSelectionPlotPort();
+        PetaRunner.Run(new PetaEnvironment
         {
-            var selection = new TrackingSelectionPlotPort();
-            PetaRunner.Run(new PetaEnvironment
-            {
-                Editor = new SelectionEditor(Path.Combine(dir, "sel.dwg")),
-                Plotter = new Plotter(),
-                SelectionPlotter = selection,
-                PdfAcquirer = new DisposalCheckingAcquirer(() => selection.Value.Disposed),
-                EmfWriterFactory = _ => new EmfOutput(),
-                SetClipboardFromFile = _ => { },
-                TrueTypeOutlinerFactory = () => new UnusedOutliner(),
-            }, TextWriter.Null, diagnostic: false);
+            Editor = new SelectionEditor(Path.Combine(dir, "sel.dwg")),
+            Plotter = new Plotter(),
+            SelectionPlotter = selection,
+            PdfAcquirer = new DisposalCheckingAcquirer(() => selection.Value.Disposed),
+            EmfWriterFactory = _ => new EmfOutput(),
+            SetClipboardFromFile = _ => { },
+            TrueTypeOutlinerFactory = () => new UnusedOutliner(),
+        }, TextWriter.Null, diagnostic: false);
 
-            Assert.True(selection.Value.Disposed);
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        Assert.True(selection.Value.Disposed);
     }
 
     [Fact]
     public void 診断モードの絞り込みが空IRで中止してもdiag_jsonを書き出す()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPetaDiagAbort_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        using var temp = new TempFolder();
+        string dir = temp.Path;
+        var emf = new EmfOutput();
+        var log = new StringWriter();
+        PetaRunner.Run(new PetaEnvironment
         {
-            var emf = new EmfOutput();
-            var log = new StringWriter();
-            PetaRunner.Run(new PetaEnvironment
-            {
-                Editor = new SelectionEditor(Path.Combine(dir, "diag.dwg")),
-                Plotter = new Plotter(),
-                SelectionPlotter = new NoOcgSelectionPlotPort(),
-                PdfAcquirer = new EmptyAcquirer(),
-                EmfWriterFactory = _ => emf,
-                SetClipboardFromFile = _ => { },
-                TrueTypeOutlinerFactory = () => new UnusedOutliner(),
-            }, log, diagnostic: true);
+            Editor = new SelectionEditor(Path.Combine(dir, "diag.dwg")),
+            Plotter = new Plotter(),
+            SelectionPlotter = new NoOcgSelectionPlotPort(),
+            PdfAcquirer = new EmptyAcquirer(),
+            EmfWriterFactory = _ => emf,
+            SetClipboardFromFile = _ => { },
+            TrueTypeOutlinerFactory = () => new UnusedOutliner(),
+        }, log, diagnostic: true);
 
-            Assert.False(emf.Called); // 中止したので SVG/EMF/クリップボードは行わない
-            var diagFiles = Directory.GetFiles(dir, "*.diag.json", SearchOption.AllDirectories);
-            Assert.Single(diagFiles);
-            Assert.Contains("診断ログ出力", log.ToString());
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        Assert.False(emf.Called); // 中止したので SVG/EMF/クリップボードは行わない
+        var diagFiles = Directory.GetFiles(dir, "*.diag.json", SearchOption.AllDirectories);
+        Assert.Single(diagFiles);
+        Assert.Contains("診断ログ出力", log.ToString());
     }
 }

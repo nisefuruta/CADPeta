@@ -6,6 +6,9 @@
 // 非等方スケール・せん断・反転は、座標は正確に写る一方で座標と独立な属性
 // （線幅・文字の字形・画像の向き）を完全には表現できないため近似し、
 // 件数と対象を診断ログへ記録する。
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CadPeta.Ir;
 
 namespace CadPeta.Transforms;

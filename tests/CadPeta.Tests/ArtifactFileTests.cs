@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+using System.Linq;
 using System.Text;
 using CadPeta.UseCases;
 using Xunit;
@@ -53,8 +56,8 @@ public sealed class ArtifactFileTests
     [Fact]
     public void EMFの宣言長不一致とEOF欠落を拒否する() => WithTemp(dir =>
     {
-        byte[] wrongLength = ValidEmf(); PutU32(wrongLength, 48, 999);
-        byte[] noEof = ValidEmf(); PutU32(noEof, 88, 2);
+        byte[] wrongLength = ValidEmf(); MinimalArtifactBytes.PutU32(wrongLength, 48, 999);
+        byte[] noEof = ValidEmf(); MinimalArtifactBytes.PutU32(noEof, 88, 2);
         string a = Path.Combine(dir, "length.emf"), b = Path.Combine(dir, "eof.emf"); Write(a, wrongLength); Write(b, noEof);
         Assert.Throws<InvalidDataException>(() => ArtifactFile.Validate(a, ArtifactKind.Emf));
         Assert.Throws<InvalidDataException>(() => ArtifactFile.Validate(b, ArtifactKind.Emf));
@@ -95,12 +98,10 @@ public sealed class ArtifactFileTests
 
     static byte[] ValidPdf() => MinimalArtifactBytes.Pdf();
     static byte[] ValidEmf() => MinimalArtifactBytes.Emf();
-    static void PutU32(byte[] b, int o, uint v) => MinimalArtifactBytes.PutU32(b, o, v);
     static void Write(string path, byte[] bytes) => File.WriteAllBytes(path, bytes);
     static void WithTemp(Action<string> run)
     {
-        string dir = Path.Combine(Path.GetTempPath(), "CadPetaArtifactTests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try { run(dir); } finally { Directory.Delete(dir, true); }
+        using var temp = new TempFolder();
+        run(temp.Path);
     }
 }
