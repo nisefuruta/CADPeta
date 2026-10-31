@@ -19,6 +19,7 @@ using CadApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CadPlotType = Autodesk.AutoCAD.DatabaseServices.PlotType;
 using CadRuntimeException = Autodesk.AutoCAD.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Acad.AcadPluginDefaults;
+using CadTransaction = CadPeta.Acquire.Acad.CadTransaction;
 namespace CadPeta.Plugin.Acad;
 #elif CADPETA_ARES
 using Teigha.ApplicationServices;
@@ -28,6 +29,7 @@ using CadApplication = Teigha.ApplicationServices.Application;
 using CadPlotType = Teigha.DatabaseServices.PlotType;
 using CadRuntimeException = Teigha.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Ares.AresPluginDefaults;
+using CadTransaction = CadPeta.Acquire.Ares.CadTransaction;
 namespace CadPeta.Plugin.Ares;
 #elif CADPETA_IJCAD
 using Itjp.Ijcad.ApplicationServices;
@@ -37,6 +39,7 @@ using CadApplication = Itjp.Ijcad.ApplicationServices.Application;
 using CadPlotType = Itjp.Ijcad.DatabaseServices.PlotType;
 using CadRuntimeException = Itjp.Ijcad.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Ijcad.IjcadPluginDefaults;
+using CadTransaction = CadPeta.Acquire.Ijcad.CadTransaction;
 namespace CadPeta.Plugin.Ijcad;
 #elif CADPETA_BRICSCAD
 using Bricscad.ApplicationServices;
@@ -46,10 +49,12 @@ using CadApplication = Bricscad.ApplicationServices.Application;
 using CadPlotType = Teigha.DatabaseServices.PlotType;
 using CadRuntimeException = Teigha.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Bricscad.BricscadPluginDefaults;
+using CadTransaction = CadPeta.Acquire.Bricscad.CadTransaction;
 namespace CadPeta.Plugin.Bricscad;
 #else
 #error CAD product symbol is required
 #endif
+using CadPeta.Acquire.Common;
 using CadPeta.Plugin.Shared;
 
 internal sealed class CadPlotPort : IPlotPort
@@ -58,7 +63,7 @@ internal sealed class CadPlotPort : IPlotPort
     readonly Database _db;
     readonly ObjectId _targetLayoutId;
 
-    Transaction? _tr;
+    CadTransaction? _tr;
     bool _committed;
     PlotSettings _ps = null!;
     PlotSettingsValidator _psv = null!;
@@ -92,7 +97,7 @@ internal sealed class CadPlotPort : IPlotPort
         {
             // setterが状態変更後に例外を返す製品差でもcatch→EndSessionで復元する。
             CadApplication.SetSystemVariable("BACKGROUNDPLOT", 0);
-            _tr = _db.TransactionManager.StartTransaction();
+            _tr = new CadTransaction(_db);
             _committed = false;
             _layoutId = _targetLayoutId.IsNull
                 ? LayoutManager.Current.GetLayoutId(LayoutManager.Current.CurrentLayout)
@@ -374,8 +379,10 @@ internal sealed class CadPlotPort : IPlotPort
         var margins = ps.PlotPaperMargins;
         double printW = size.X - margins.MinPoint.X - margins.MaxPoint.X;
         double printH = size.Y - margins.MinPoint.Y - margins.MaxPoint.Y;
-        return (size.X, size.Y, printW, printH,
-            margins.MinPoint.X + printW / 2, margins.MinPoint.Y + printH / 2);
+        // ページの大きさと印刷の中心は、発行される PDF の値（PDF ドライバの 1pt の丸め）で返す
+        var page = PdfPageGeometry.Place(size.X, size.Y, margins.MinPoint.X, margins.MinPoint.Y,
+            printW, printH, ProductPluginDefaults.PdfPointSnapping);
+        return (page.PageWidthMm, page.PageHeightMm, printW, printH, page.PrintCenterXMm, page.PrintCenterYMm);
     }
 
     public void Publish(string outputPdfPath, TextWriter log, TextWriter verbose)
@@ -446,13 +453,26 @@ internal sealed class CadPlotPort : IPlotPort
     /// プロット回転 → 用紙→表示ページの時計回り四半回転数。
     /// 90 度は縦横が入れ替わった用紙へ正立で描かれることを実機の回転コーパスで確認済み
     /// （ARES・IJCAD では、180/270 度は NormalizePlotRotation が 0/90 へ写すため、ここへは 0/90 だけが来る）。
+    /// AutoCAD と ARES のプロット回転は反時計回りの角度で、PDF ドライバは 90 度のとき用紙を反時計回りに回した表示ページへ
+    /// 描く（縦の用紙の上端が左へ来る）。時計回りの四半回転では 90 度が 3 回、270 度が 1 回にあたる。
+    /// ARES 2020・2023・2024 の PDF デバイスの余白のある用紙は上の余白だけが大きく、時計回りとして扱うとクロップが上下の余白の差
+    /// （A4 で約 24mm）だけ横へずれた。AutoCAD は余白が対称な用紙でも、PDF のページと原点の 1pt の丸めの差（PdfPageGeometry）が
+    /// 回す向きで反対の側へ出て、0.1〜0.23mm ずれた（どちらも 2026-10-30 の実測）。
+    /// ARES は 180/270 度を NormalizePlotRotation が 0/90 度へ写すので、下の 180・270 度の行は AutoCAD だけが使う。
+    /// IJCAD・BricsCAD は回す向きを実機で確かめていないので、今までの時計回りの対応のまま。
     /// </summary>
     static int QuarterTurnsCw(PlotRotation rotation) => rotation switch
     {
         PlotRotation.Degrees000 => 0,
+#if CADPETA_ACAD || CADPETA_ARES
+        PlotRotation.Degrees090 => 3,
+        PlotRotation.Degrees180 => 2,
+        PlotRotation.Degrees270 => 1,
+#else
         PlotRotation.Degrees090 => 1,
         PlotRotation.Degrees180 => 2,
         PlotRotation.Degrees270 => 3,
+#endif
         _ => throw new NotSupportedException($"未知のプロット回転: {rotation}"),
     };
 

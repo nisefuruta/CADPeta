@@ -285,8 +285,8 @@ public sealed class CodeDuplicationTests
     /// <summary>同じ値の集合を同じように並べた switch 全体を許す組と、その理由。キーは「型.メンバー」を並べ替えて " / " でつないだもの。</summary>
     private static readonly Dictionary<string, string> AllowedSameSwitches = new()
     {
-        ["ArtifactFile.Validate / PdfPetaPipeline.Run / PdfPetaValidation.ExpectedExtension"] =
-            "同じ出力形式(EMF・PDF・PNG・SVG)を分岐するが、Run は形式ごとの書き出し(App)、ExpectedExtension は入力の検査の拡張子(App)、"
+        ["ArtifactFile.Validate / PdfPetaPipeline.Run"] =
+            "同じ出力形式(EMF・PDF・PNG・SVG)を分岐するが、Run は形式ごとの書き出し(App)、"
             + "Validate は書き出したファイルの中身の検査(UseCases)を選ぶ。分岐した先の処理が別々の層と目的にあり、1 つの表にすると UseCases が "
             + "App の書き出しを知るか、App が中身の検査を持つことになる。",
         ["PdfPngDecoder.Decode"] =

@@ -63,11 +63,12 @@ $flagsPath = Join-Path $PSScriptRoot 'peta_option_matrix_flags.json'
 if (-not (Test-Path $acc)) { throw "accoreconsole がない: $acc" }
 $dwgByKind.Values | ForEach-Object { if (-not (Test-Path $_)) { throw "入力図面がない: $_" } }
 
-# レイアウトの窓の既知正解（crop_regression.ps1 と同じ窓・同じ図面で確定済みの値）
-$PaperWin = @{ P1 = '50,40'; P2 = '150,110' }
-$ExpectPaperWinM0 = @{ W = '100'; H = '70'; VB = '160 113.5 100 70' }
-$ExpectPaperWinM5 = @{ W = '110'; H = '80'; VB = '155 108.5 110 80' }
-$ExpectPaperFull = @{ W = '420.1583'; H = '297.0389'; VB = '0 0 420.1583 297.0389' }
+# レイアウトの窓の既知正解（peta_a3_window_expect.ps1 の表。accoreconsole の PDF のページの高さは 842pt に丸められる）
+. "$PSScriptRoot\peta_a3_window_expect.ps1"
+$PaperWin = @{ P1 = $PetaA3Window.P1; P2 = $PetaA3Window.P2 }
+$ExpectPaperWinM0 = $PetaA3WindowExpect.PageHeight842pt.M0
+$ExpectPaperWinM5 = $PetaA3WindowExpect.PageHeight842pt.M5
+$ExpectPaperFull = $PetaA3WindowExpect.PageHeight842pt.Full
 # Paper の O 用に entmake する矩形（標準窓の内側に置く）
 $PaperRectLisp = '(setq cadpetaRect (entmakex (list ''(0 . "LWPOLYLINE") ''(100 . "AcDbEntity") (cons 8 "0") ''(67 . 1) (cons 410 "PETA_A3") ''(100 . "AcDbPolyline") ''(90 . 4) ''(70 . 1) ''(10 60.0 50.0) ''(10 140.0 50.0) ''(10 140.0 100.0) ''(10 60.0 100.0))))'
 $BgColor = '#FF8040'
@@ -76,12 +77,11 @@ $BgColor = '#FF8040'
 $Msg = @{
     # summary.line（正規表現）。「クリップボード登録失敗」を「登録」として通さない否定先読み付き
     SummaryLine    = 'bytes / \d+図形 → クリップボード登録(?!失敗)'
-    FileOffSuffix  = [regex]::Escape('（ファイル出力オフ）')
+    # summary.no_files（F=1。設定の形式を 0 件にしてファイルを出さない）
+    NoFiles        = [regex]::Escape('ファイル出力なし。出力する形式は PETAOPT で設定')
     LayerOn        = [regex]::Escape('レイヤ別グループ化: オン')
     LayerOff       = [regex]::Escape('レイヤ別グループ化: オフ')
     OutlineOn      = [regex]::Escape('文字アウトライン化: オン')
-    FileOff        = [regex]::Escape('ファイル出力: オフ')
-    FileOn         = [regex]::Escape('ファイル出力: オン')
     BgState        = [regex]::Escape("EMF合成下地色: $BgColor")
     BgInvalid      = [regex]::Escape('EMF背景色は #RRGGBB 形式で指定すること')
     Degenerate     = [regex]::Escape('窓の幅または高さが 0 のため指定し直すこと')
@@ -91,7 +91,6 @@ $Msg = @{
     NoOcg          = [regex]::Escape('レイヤ情報(OCG)がないためレイヤ別グループ化を行わずに出力する')
     DataDone       = [regex]::Escape('[CadPeta] PETADATA 完了')
     DataEmpty      = [regex]::Escape('オブジェクトが選択されなかったため PETADATA を中止する')
-    DiagForcesFile = [regex]::Escape('診断モードのためファイル出力オフ指定を無視し一式を書き出す')
     DiagHeader     = [regex]::Escape('---- 診断ログ（件数と対象） ----')
 }
 
@@ -240,7 +239,8 @@ if (-not (Test-Path $campaignJson)) {
 }
 
 # ---------------------------------------------------------------- シナリオ構築
-# 軸の値: O/M/L/T/F/B は 0=触らない（既定）、1=オプションを入力。R は A=全体(Enter)、W=窓
+# 軸の値: O/M/L/T/B は 0=触らない（既定）、1=オプションを入力。R は A=全体(Enter)、W=窓。
+# F は 0=設定の形式が PDF・SVG・EMF、1=設定の形式が 0 件（ファイルを出さない）。ケースの前に設定のファイルを書き替える（Get-CaseSettingsFormats）
 function New-PetaCmdLines([string]$space, [string]$r, [int]$o, [int]$m, [int]$l, [int]$t, [int]$f, [int]$b, [string]$cmd = 'PETA') {
     $lines = @($cmd)
     if ($o) {
@@ -251,7 +251,6 @@ function New-PetaCmdLines([string]$space, [string]$r, [int]$o, [int]$m, [int]$l,
     if ($m) { $lines += @('_Margin', '5') }
     if ($l) { $lines += '_Layer' }
     if ($t) { $lines += '_Textoutline' }
-    if ($f) { $lines += '_Fileoutput' }
     if ($b) { $lines += @('_Background', $BgColor) }
     if ($r -eq 'W') {
         $win = if ($space -eq 'Paper') { $PaperWin } else { $ModelWin }
@@ -367,8 +366,6 @@ function Get-ScenarioList {
                    Expect = @{ msg = @($Msg.LayerOn, $Msg.LayerOff); svgEquals = 'edge-base-win' } }
                 @{ Id = 'edge07-outline-twice'; Cmd = @('PETA', '_Textoutline', '_Textoutline', $PaperWin.P1, $PaperWin.P2)
                    Expect = @{ msg = @($Msg.OutlineOn); svgEquals = 'edge-base-win' } }
-                @{ Id = 'edge08-file-twice';  Cmd = @('PETA', '_Fileoutput', '_Fileoutput', $PaperWin.P1, $PaperWin.P2)
-                   Expect = @{ msg = @($Msg.FileOff, $Msg.FileOn); svgEquals = 'edge-base-win' } }
                 @{ Id = 'edge09-object-clear'; Cmd = @('PETA', '_Object', '', '')
                    Expect = @{ msg = @($Msg.FilterCleared); svgEquals = 'edge-base-full' } }
             )
@@ -429,7 +426,7 @@ function Get-ScenarioList {
                     CmdLines = New-PetaDataCmdLines 0 0 1 1 0 'PETADATADIAG' })
         }
         'Smoke' {
-            # 版差スモーク固定12件（s11 は Enter/A の2実行で1件）
+            # 版差スモーク固定14件（s11 は Enter/A の2実行で1件。s13 は -PETAOPT の後の PETA、s14 はファイル名のコメント）
             [void]$list.Add((Set-ScenarioId (New-PetaScenario 'Model' 'A' 0 0 0 0 0 0) 'smoke01-model-full'))
             [void]$list.Add((Set-ScenarioId (New-PetaScenario 'Paper' 'A' 0 0 0 0 0 0) 'smoke02-paper-full'))
             [void]$list.Add((Set-ScenarioId (New-PetaScenario 'Paper' 'W' 0 0 0 0 0 0) 'smoke03-paper-win'))
@@ -450,6 +447,14 @@ function Get-ScenarioList {
                     SpaceSetup = New-SpaceSetup 'Paper'; SelSetup = @()
                     CmdLines = @('PETA', '_All') })
             [void]$list.Add((Set-ScenarioId (New-PetaScenario 'Paper' 'W' 0 1 1 1 0 1) 'smoke12-composite'))
+            # -PETAOPT で形式を値の合計 13（PDF=1 + EMF=4 + PNG=8）にして保存し、続く PETA がその 3 形式だけを出す
+            [void]$list.Add(@{ Id = 'smoke13-petaopt'; Kind = 'opt'; Dwg = 'layout'; Space = 'Paper'
+                    Axes = @{}; SpaceSetup = New-SpaceSetup 'Paper'; SelSetup = @()
+                    CmdLines = @('-PETAOPT', '_Formats', '13', '', 'PETA', '') })
+            # ファイル名の形を {drawing}_{comment} にし、PETA の範囲の後（変換を背景で進めている間）に聞くコメントが名前に入る
+            [void]$list.Add(@{ Id = 'smoke14-comment'; Kind = 'comment'; Dwg = 'layout'; Space = 'Paper'
+                    Axes = @{}; SpaceSetup = New-SpaceSetup 'Paper'; SelSetup = @()
+                    CmdLines = @('-PETAOPT', '_Name', '{drawing}_{comment}', '', 'PETA', '', 'elev') })
         }
     }
     if ($CaseFilter) { $list = @($list | Where-Object { $_.Id -match $CaseFilter }) }
@@ -539,12 +544,20 @@ function Get-OptionMatrixAfterState {
 # 同じ図面の種類のケースを 1 回の起動で続けて実行し（Invoke-AccoreBatch）、ケースごとに判定する。
 # 1 ケースだけを渡すと 1 ケース 1 起動になる（-OneLaunchPerCase と、まとめた実行でだけ不合格になったケースの
 # 確かめ直しに使う）。戻り値: id → 結果の hashtable
+# ケースの設定の形式。F=1 は 0 件（ファイルを出さず、クリップボードだけ）、それ以外は今までの試験と同じ PDF・SVG・EMF
+function Get-CaseSettingsFormats($scenario) {
+    if ($scenario.Axes -and $scenario.Axes.F -eq 1) { return , @() }
+    @('pdf', 'svg', 'emf')
+}
+
 function Invoke-OptionMatrixBatch([object[]]$cases, [string]$kind, [string]$launchName = $kind) {
     $batchCases = @($cases | ForEach-Object { @{ Id = $_.Id; Lines = (Get-OptionMatrixCaseLines $_); Scenario = $_ } })
+    # 設定のフォルダは起動の間で共有し、ケースの直前に F の軸の設定を書く（プラグインはファイルが変われば次の PETA で読み直す）
+    $dataDir = Join-Path $setDir "_data_$launchName"
     $runs = Invoke-AccoreBatch -Acc $acc -DwgSrc $dwgByKind[$kind] -Cases $batchCases `
         -Head (Get-OptionMatrixLaunchHead) -Tail (Get-OptionMatrixLaunchTail) -WorkRoot $setDir -LaunchName $launchName `
-        -TimeoutSeconds $TimeoutSeconds `
-        -OnCaseStart { param($case) Get-OptionMatrixBeforeState $case.Scenario } `
+        -TimeoutSeconds $TimeoutSeconds -DataDir (Write-E2eSettings $dataDir) `
+        -OnCaseStart { param($case) [void](Write-E2eSettings $dataDir -Formats (Get-CaseSettingsFormats $case.Scenario)); Get-OptionMatrixBeforeState $case.Scenario } `
         -OnCaseEnd { param($case) Get-OptionMatrixAfterState }
     $results = @{}
     foreach ($id in $runs.Keys) {
@@ -603,6 +616,7 @@ function Complete-OptionMatrixCase([hashtable]$sc, [string]$caseDir, [string]$ou
             diag  = @($files | Where-Object Name -like '*.diag.json')
             stage = @($files | Where-Object { $_.Extension -eq '.svg' -and $_.Name -match '\.stage\d+\.' })
             svg   = @($files | Where-Object { $_.Extension -eq '.svg' -and $_.Name -notmatch '\.stage\d+\.' })
+            png   = @($files | Where-Object Extension -eq '.png')
         }
         $result.artifacts = @($files | ForEach-Object { @{ name = $_.Name; sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash; size = $_.Length } })
 
@@ -616,6 +630,8 @@ function Complete-OptionMatrixCase([hashtable]$sc, [string]$caseDir, [string]$ou
             }
             '^diag$'          { Test-DiagCase $sc $out $arts $checks $result }
             '^datadiag$'      { Test-DataDiagCase $sc $out $arts $checks $result }
+            '^opt$'           { Test-OptCase $out $arts $checks }
+            '^comment$'       { Test-CommentCase $out $arts $checks }
         }
     }
     $result.pass = -not ($checks | Where-Object { -not $_.ok })
@@ -626,13 +642,12 @@ function Complete-OptionMatrixCase([hashtable]$sc, [string]$caseDir, [string]$ou
 function Test-PetaCase($sc, $out, $arts, $checks, $result, $caseDir, $run) {
     $a = $sc.Axes
     $fileOn = ($a.F -eq 0)
-    # サマリ行（F=off は（ファイル出力オフ）付き）
+    # サマリ行（F=1 はファイルを出していないことと PETAOPT の案内）
     Add-Check $checks 'summaryLine' ($out -match $Msg.SummaryLine)
-    if (-not $fileOn) { Add-Check $checks 'summaryFileOff' ($out -match $Msg.FileOffSuffix) }
+    if (-not $fileOn) { Add-Check $checks 'summaryNoFiles' ($out -match $Msg.NoFiles) }
     # 入力したオプションの状態文言
     if ($a.L) { Add-Check $checks 'msgLayerOn' ($out -match $Msg.LayerOn) }
     if ($a.T) { Add-Check $checks 'msgOutlineOn' ($out -match $Msg.OutlineOn) }
-    if ($a.F) { Add-Check $checks 'msgFileOff' ($out -match $Msg.FileOff) }
     if ($a.B) { Add-Check $checks 'msgBgState' ($out -match $Msg.BgState) }
     if ($a.O -and -not $sc.Edge) {
         Add-Check $checks 'msgFilterSet' ($out -match $Msg.FilterSet -or $out -match [regex]::Escape('選択済みのオブジェクトへ出力対象を絞り込む'))
@@ -786,8 +801,25 @@ function Test-PetaDataCase($sc, $out, $arts, $checks, $result, $run) {
     elseif ($Set -ne 'Trial') { Add-Check $checks 'diagCategories' $false 'petadata 診断 golden がない' }
 }
 
+# -PETAOPT の判定。今の形式を名前と値で表示し、値の合計で入力した形式を保存して、続く PETA がその形式だけを出す
+function Test-OptCase($out, $arts, $checks) {
+    Add-Check $checks 'optShowsCurrent' ($out -match [regex]::Escape('出力する形式: PDF,SVG,EMF (7)'))
+    Add-Check $checks 'optSaved' ($out -match [regex]::Escape('設定を保存しました: '))
+    Add-Check $checks 'summaryLine' ($out -match $Msg.SummaryLine)
+    Add-Check $checks 'artifactSet' ($arts.pdf.Count -eq 1 -and $arts.emf.Count -eq 1 -and $arts.png.Count -eq 1 -and $arts.svg.Count -eq 0) `
+        "pdf=$($arts.pdf.Count) emf=$($arts.emf.Count) png=$($arts.png.Count) svg=$($arts.svg.Count)"
+}
+
+# コメントの判定。コメントを聞き、入力した文字列がファイル名に入り、設定の形式（PDF・SVG・EMF）を出す
+function Test-CommentCase($out, $arts, $checks) {
+    Add-Check $checks 'commentPrompted' ($out -match [regex]::Escape('ファイル名に入れるコメントを入力'))
+    Add-Check $checks 'summaryLine' ($out -match $Msg.SummaryLine)
+    $names = @($arts.pdf + $arts.svg + $arts.emf | ForEach-Object Name | Sort-Object)
+    Add-Check $checks 'commentInName' (($names -join ',') -eq 'TESTCHART2_layout_elev.emf,TESTCHART2_layout_elev.pdf,TESTCHART2_layout_elev.svg') ($names -join ',')
+}
+
 function Test-DiagCase($sc, $out, $arts, $checks, $result) {
-    Add-Check $checks 'diagForcesFileOutput' ($out -match $Msg.DiagForcesFile)
+    # DiagSmoke は F=1（設定の形式が 0 件）。PETADIAG は設定にかかわらず全部の形式と診断のファイルを出す
     Add-Check $checks 'artifactSet' ($arts.pdf.Count -eq 1 -and $arts.svg.Count -eq 1 -and $arts.emf.Count -eq 1 -and $arts.diag.Count -eq 1 -and $arts.stage.Count -ge 1) `
         "pdf=$($arts.pdf.Count) svg=$($arts.svg.Count) emf=$($arts.emf.Count) diag=$($arts.diag.Count) stage=$($arts.stage.Count)"
     Test-DiagJsonAndStages $sc $arts $checks $result @('text-outlined', 'layer-grouped', 'cropped')

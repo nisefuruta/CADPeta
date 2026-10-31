@@ -105,7 +105,7 @@ public sealed class CadIrAcquirer
     /// shxSubstitute=true は SHX 文字を輪郭化せず代替書体の text で出力する（既定は輪郭化）。
     /// 1つも写像できなければ Nodes が空の文書を返す（呼び出し側が中止を判断する）。
     /// </summary>
-    public IrDocument Acquire(Transaction tr, Database db, IReadOnlyList<ObjectId> ids,
+    public IrDocument Acquire(CadTransaction tr, Database db, IReadOnlyList<ObjectId> ids,
                               double scaleDenominator, double marginMm, IrDiagnostics diag,
                               bool shxSubstitute = false,
                               double gradientDpi = AcquireDefaults.GradientDefaultDpi)
@@ -179,7 +179,7 @@ public sealed class CadIrAcquirer
     /// 選択セットの列挙順は新しい順で描画順を保存しないため、そのまま写像すると
     /// ワイプアウト（白塗りの上下関係）が崩れる（TESTCHART2 実測）。
     /// </summary>
-    static List<ObjectId> SortByDrawOrder(Transaction tr, IReadOnlyList<ObjectId> ids)
+    static List<ObjectId> SortByDrawOrder(CadTransaction tr, IReadOnlyList<ObjectId> ids)
     {
         var selected = new HashSet<ObjectId>(ids);
         var result = new List<ObjectId>(ids.Count);
@@ -222,7 +222,7 @@ public sealed class CadIrAcquirer
 
     sealed class Ctx
     {
-        public Transaction Tr = null!;
+        public CadTransaction Tr = null!;
         public Database Db = null!;
         public IrDiagnostics Diag = null!;
         public PointMap Map = null!;
@@ -596,8 +596,8 @@ public sealed class CadIrAcquirer
             DocumentFromLocal = ctx.DocumentFromLocal,
             Opacity = style.Opacity,
             RequestedDpi = ctx.GradientDpi,
-            MinimumDpi = AcquireDefaults.GradientMinDpi,
-            MaxDimensionPx = AcquireDefaults.GradientMaxDimensionPx,
+            MinimumDpi = CadPeta.Geometry.RasterLimits.MinDpi,
+            MaxDimensionPx = CadPeta.Geometry.RasterLimits.MaxDimensionPx,
             AvailablePixels = available,
         };
         string target = FormattableString.Invariant(

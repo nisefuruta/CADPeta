@@ -16,7 +16,6 @@ public sealed class PromptBoundaryTests
         new(PluginDefaults.KeywordMargin, "M", "余白(M)"),
         new(PluginDefaults.KeywordLayer, "L", "レイヤ(L)"),
         new(PluginDefaults.KeywordTextOutline, "T", "文字輪郭(T)"),
-        new(PluginDefaults.KeywordFileOutput, "F", "ファイル(F)"),
         new(PluginDefaults.KeywordEmfBackground, "B", "背景(B)"),
     };
 

@@ -4,15 +4,13 @@ namespace CadPeta.Acquire.Common;
 public static class AcquireDefaults
 {
     public const double GradientDefaultDpi = 150.0;
-    public const double GradientMinDpi = 24.0;
     public const long GradientMaxPixelsPerImage = 16_000_000;
     public const long GradientMaxPixelsPerAcquire = 64_000_000;
-    public const int GradientMaxDimensionPx = 32_767;
 
     /// <summary>
     /// 線幅0（AutoCAD の「0.00mm」線の太さ＝デバイス最細線）の固定置換幅。
-    /// SVG に最細線の概念がないため固定幅へ置換する。値はPDF印刷経路（PdfIrAcquirer.HairlineMm）と
-    /// 同じ 0.05mm に揃え、両系統の出力品質を一致させる。
+    /// SVG に最細線の概念がないため固定幅へ置換する。PDF印刷経路（PdfIrAcquirer）もこの値を使い、
+    /// 両系統の出力品質を一致させる。
     /// </summary>
     public const double HairlineMm = 0.05;
 

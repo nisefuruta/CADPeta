@@ -35,6 +35,14 @@ internal sealed class TempFolder : IDisposable
     /// <summary>フォルダの中のファイルのパス(ファイルは作らない)。</summary>
     public string File(string name) => System.IO.Path.Combine(Path, name);
 
+    /// <summary>フォルダの中にファイルを書き、そのパスを返す。</summary>
+    public string WriteFile(string name, string text)
+    {
+        string path = File(name);
+        System.IO.File.WriteAllText(path, text);
+        return path;
+    }
+
     public void Dispose()
     {
         // 試験の後始末。削除に失敗しても(ほかのプロセスがファイルを開いているなど)試験の合否は変わらないので、例外を出さない。

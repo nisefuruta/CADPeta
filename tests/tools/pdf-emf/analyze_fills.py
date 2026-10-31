@@ -2,6 +2,8 @@
 # PDF内の「大面積の塗りパス」を列挙する（座標はmm換算で表示）
 import re, sys, zlib
 
+from pdf_matrix import mat_mul
+
 path = sys.argv[1]
 data = open(path, "rb").read()
 
@@ -23,10 +25,6 @@ print(f"content streams: {len(streams)}, bytes: {sum(len(s) for s in streams)}")
 
 tok = re.compile(rb"(-?\d*\.?\d+)|([A-Za-z'*]+)")
 
-def mul(a, b):
-    return [a[0]*b[0]+a[1]*b[2], a[0]*b[1]+a[1]*b[3],
-            a[2]*b[0]+a[3]*b[2], a[2]*b[1]+a[3]*b[3],
-            a[4]*b[0]+a[5]*b[2]+b[4], a[4]*b[1]+a[5]*b[3]+b[5]]
 
 PT2MM = 25.4 / 72.0
 paths = []
@@ -57,7 +55,7 @@ for s in streams:
         elif op == "Q":
             if stack: ctm = stack.pop()
         elif op == "cm" and len(nums) >= 6:
-            ctm = mul(nums[-6:], ctm)
+            ctm = mat_mul(nums[-6:], ctm)
         elif op == "m" and len(nums) >= 2:
             cur_pts.append(xy(*nums[-2:]))
         elif op == "l" and len(nums) >= 2:

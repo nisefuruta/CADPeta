@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
 
-namespace CadPeta.Plugin.Shared;
+namespace CadPeta.Acquire.Common;
 
 /// <summary>後始末を全件試行し、本処理例外と復元例外を失わずに報告する。</summary>
 public static class CleanupRunner

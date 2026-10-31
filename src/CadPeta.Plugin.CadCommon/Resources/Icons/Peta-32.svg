@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PETA（32 px 以上）。図面を貼り付けるクリップボード: オレンジの板、灰の留め具、白の紙、青の図面の線 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <rect x="5" y="4" width="22" height="27" rx="2.5" fill="#F28C28" />
+  <rect x="11" y="1.5" width="10" height="5.5" rx="1.5" fill="#8C96A8" />
+  <rect x="8" y="8.5" width="16" height="19.5" rx="1" fill="#FFFFFF" />
+  <path d="M10.5 24.5 L14.5 14 L18 20.5 L21.5 15.5" fill="none" stroke="#2E7FD9" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" />
+</svg>

@@ -1,6 +1,7 @@
 // 全体・窓のサイレントプロット判断。旧 SilentPlotter の中核をここへ集約し、
 // CAD API 呼び出しは IPlotPort 実装へ委ねる。プロット種別・尺度採否・窓クロップ矩形の判断が
 // 1か所（Shared）に存在し、製品差はポート実装だけに封じ込められる。
+using CadPeta.Acquire.Common;
 using CadPeta.Geometry;
 
 namespace CadPeta.Plugin.Shared;

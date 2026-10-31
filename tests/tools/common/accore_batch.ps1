@@ -44,11 +44,12 @@ function New-AccoreBatchCaseDir([string]$WorkRoot, [string]$Id) {
 }
 
 # $Cases の各要素は Id と Lines（ケースの .scr の行）を持つ hashtable。$Head と $Tail は起動の最初と最後の行
-# （NETLOAD、後始末、QUIT）。$OnCaseStart と $OnCaseEnd はケースの直前と直後に呼び、引数はケース、
-# 戻り値は結果の Before と After に入れる（クリップボードなど、区切りで読む照合の材料）。
+# （NETLOAD、後始末、QUIT）。$OnCaseStart と $OnCaseEnd はケースの直前と直後に呼び、引数はケース（$OnCaseEnd は 2 つ目に、
+# 起動した accoreconsole の Process）、戻り値は結果の Before と After に入れる（クリップボードやメモリなど、区切りで読む照合の材料）。
 # $LaunchName は起動ごとの作業フォルダの名前の頭（_launch_<名前>_<回>）。行の中の {LAUNCHDIR} は、その起動の
 # 作業フォルダ（図面の複製と成果物の出力先）の絶対パスに置き換え、{LAUNCHDIR_LISP} は同じパスを LISP の文字列に書ける
-# スラッシュの形に置き換える。$KeepPatterns に合うファイル（ケースが
+# スラッシュの形に置き換える。$DataDir は CADPeta の設定のフォルダ（CADPETA_DATA_DIR として起動する accoreconsole にだけ渡す。
+# 既定は起動ごとの作業フォルダの data に Write-E2eSettings の既定の設定を書いたもの）。$KeepPatterns に合うファイル（ケースが
 # 保存して開いたままの図面など）はケースのフォルダへ移さない。$Encoding は .scr の文字コード（既定は ASCII）。
 # 戻り値: Id → @{ Case; CaseDir; Output; ExitCode; ExitDetail; TimedOut; ElapsedMs; DwgUnchanged; Residual;
 #                 StdoutPath; HarnessNames; Before; After; LaunchNo; State = @{ Ok; Detail } }
@@ -66,6 +67,7 @@ function Invoke-AccoreBatch {
         [scriptblock]$OnCaseStart = { param($case) $null },
         [scriptblock]$OnCaseEnd = { param($case) $null },
         [string[]]$KeepPatterns = @(),
+        [string]$DataDir = '',
         [Text.Encoding]$Encoding = [Text.Encoding]::ASCII
     )
     $results = @{}
@@ -106,8 +108,12 @@ function Invoke-AccoreBatch {
         $stdout = Join-Path $launchDir 'stdout.log'
         $stderr = Join-Path $launchDir 'stderr.log'
         $before = & $OnCaseStart $remaining[0]
-        $p = Start-Process -WorkingDirectory $launchDir -FilePath $Acc -ArgumentList (ConvertTo-NativeArgString @('/i', $dwgCopy, '/s', $scr, '/l', 'ja-JP')) `
-            -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
+        # CADPeta の設定のフォルダは、起動する accoreconsole にだけ渡す（この PowerShell の環境変数は起動の直後に戻す）
+        $launchDataDir = if ($DataDir) { $DataDir } else { Write-E2eSettings (Join-Path $launchDir 'data') }
+        $p = Invoke-WithProcessEnvironment @{ CADPETA_DATA_DIR = $launchDataDir } {
+            Start-Process -WorkingDirectory $launchDir -FilePath $Acc -ArgumentList (ConvertTo-NativeArgString @('/i', $dwgCopy, '/s', $scr, '/l', 'ja-JP')) `
+                -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
+        }
         $done = @()
         $stalled = $null
         $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -140,7 +146,7 @@ function Invoke-AccoreBatch {
             foreach ($file in @(Get-ChildItem $launchDir -File | Where-Object { $name = $_.Name; $_.Name -notin $harnessNames -and $_.Extension -ne '.log' -and -not ($KeepPatterns | Where-Object { $name -like $_ }) })) {
                 Move-Item -LiteralPath $file.FullName -Destination $caseDir
             }
-            $after = & $OnCaseEnd $case
+            $after = & $OnCaseEnd $case $p
             $done += @{ Case = $case; CaseDir = $caseDir; Before = $before; After = $after; ElapsedMs = $elapsed }
             $before = if ($k + 1 -lt $remaining.Count) { & $OnCaseStart $remaining[$k + 1] } else { $null }
             [IO.File]::WriteAllText((Join-Path $syncDir "go_$($case.Id).txt"), 'go')
@@ -198,7 +204,7 @@ function Invoke-AccoreBatch {
                 Case = $stalled.Case; CaseDir = $stalled.CaseDir; Output = (Get-AccoreBatchCaseOutput $all $stalled.Case.Id)
                 ExitCode = $p.ExitCode; ExitDetail = $stalled.Reason; TimedOut = $true; TimeoutDetail = $stalled.Reason; ElapsedMs = $stalled.ElapsedMs
                 DwgUnchanged = $dwgUnchanged; Residual = $residual; StdoutPath = $stdout; HarnessNames = $harnessNames
-                Before = $stalled.Before; After = (& $OnCaseEnd $stalled.Case); LaunchNo = $launchNo; State = (& $stateOf $stalled.Case.Id)
+                Before = $stalled.Before; After = (& $OnCaseEnd $stalled.Case $p); LaunchNo = $launchNo; State = (& $stateOf $stalled.Case.Id)
             }
             $idx = [array]::IndexOf(@($remaining | ForEach-Object { $_.Id }), $stalled.Case.Id)
             $remaining = @($remaining | Select-Object -Skip ($idx + 1))

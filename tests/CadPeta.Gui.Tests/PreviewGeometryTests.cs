@@ -29,6 +29,16 @@ public class PreviewGeometryTests
         Assert.Equal(new Point(99, 79), PreviewGeometry.PixelIndex(new PointF(100, 80), new Size(100, 80)));
     }
 
+    // 画面の長さ（スポイトが近くを探す範囲）を、縮小・拡大して表示した画像の画素の長さにする
+    [Theory]
+    [InlineData(200, 100, 4, 4)]
+    [InlineData(50, 50, 4, 8)]
+    [InlineData(400, 400, 4, 1)]
+    public void 画面の長さを画像の画素の長さにする(int boxWidth, int boxHeight, double length, int expected)
+    {
+        Assert.Equal(expected, PreviewGeometry.ControlLengthToImagePixels(length, new Size(boxWidth, boxHeight), new Size(100, 100)));
+    }
+
     [Fact]
     public void Ui_policy_keeps_save_disabled_in_modes_and_rejects_stale_generation()
     {
@@ -44,6 +54,56 @@ public class PreviewGeometryTests
         Assert.Equal((true, true), PreviewPolicy.RequestFlags(PreviewMode.Normal));
     }
 
+    // 範囲の指定・スポイトの準備のプレビューが取り消されたとき、モードを通常に戻すのは、ほかに作り直しが無いときだけ。
+    // 作り直しの予約（設定を変えた直後の待ち）や新しい作り直しがあれば、そちらが同じモードのプレビューを作る
+    [Theory]
+    [InlineData(false, 5, 5, false, true)]
+    [InlineData(false, 5, 5, true, false)]
+    [InlineData(false, 5, 6, false, false)]
+    [InlineData(true, 5, 5, false, false)]
+    public void 準備の取り消しでモードを戻すのはほかに作り直しが無いときだけ(bool closing, int generation, int currentGeneration, bool refreshPending, bool expected)
+    {
+        Assert.Equal(expected, PreviewPolicy.EndModeOnCancel(closing, PreviewMode.PreparingPickColor, PreviewMode.PreparingPickColor,
+            generation, currentGeneration, refreshPending));
+    }
+
+    // 戻すのは、取り消されたプレビューが範囲の指定かスポイトの準備で、今もそのモードのときだけ
+    [Theory]
+    [InlineData("PreparingCrop", "PreparingCrop", true)]
+    [InlineData("Normal", "Normal", false)]
+    [InlineData("SelectCrop", "SelectCrop", false)]
+    [InlineData("PreparingPickColor", "Normal", false)]
+    [InlineData("PreparingCrop", "PreparingPickColor", false)]
+    public void 準備の取り消しでモードを戻すのは準備中のモードのときだけ(string requested, string current, bool expected)
+    {
+        Assert.Equal(expected, PreviewPolicy.EndModeOnCancel(false, Mode(requested), Mode(current), 5, 5, false));
+    }
+
+    // 範囲の指定・スポイトのモードの中で設定を変えて作り直したプレビューも、そのモードのまま表示する（通常のモードへ黙って戻さない）
+    [Theory]
+    [InlineData("PreparingCrop", "SelectCrop")]
+    [InlineData("SelectCrop", "SelectCrop")]
+    [InlineData("PreparingPickColor", "PickColor")]
+    [InlineData("PickColor", "PickColor")]
+    [InlineData("Normal", "Normal")]
+    public void 作り直したプレビューのモード(string requested, string expected)
+    {
+        Assert.Equal(Mode(expected), PreviewPolicy.ModeAfterPreview(Mode(requested)));
+    }
+
+    // スポイトの色番号の画像は、スポイトの準備でも、スポイトのモードの中で作り直したときも作る
+    [Theory]
+    [InlineData("PreparingPickColor", true)]
+    [InlineData("PickColor", true)]
+    [InlineData("SelectCrop", false)]
+    [InlineData("Normal", false)]
+    public void スポイトのモードでは色番号の画像を作る(string requested, bool expected)
+    {
+        Assert.Equal(expected, PreviewPolicy.NeedsPickMap(Mode(requested)));
+    }
+
+    // PreviewMode は製品の中だけの型なので、試験の引数はモードの名前で渡す
+    static PreviewMode Mode(string name) => Enum.Parse<PreviewMode>(name);
     [Theory]
     [InlineData(true, true, "cropped")]
     [InlineData(true, false, "cropped")]

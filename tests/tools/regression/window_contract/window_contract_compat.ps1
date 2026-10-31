@@ -116,70 +116,44 @@ $oracleResponsesAresStyle = @(
   '_Yes'       # 今すぐ印刷しますか
 )
 
+. "$PSScriptRoot\..\..\common\compat_cad_com.ps1"
+# 製品の固定の情報（実行ファイル、ProgID、DLL の場所など）は compat_cad_com.ps1 の $CompatProducts にあり、Get-CompatProduct で合わせる
 $products = @{
   Ares2024 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2024\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.23.1"
-    ProcessName = "ARESS"
     Probe = "tests\tools\regression\window_contract\WindowContractProbe.Ares\bin\Release\net48\WindowContractProbe.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     ProbeInputKind = "AresUi"
     # ARES は FILEDIA=1 のままだと LOADDOTNETAPPLICATION のファイル名プロンプトが
     # (command) の引数を受け取らず入力待ちのまま止まる（2027 実測）。COM で保存→0→復元する
     SetFileDia = $true
-    DiscoverProgId = $true
-    PdfDevice = "PDF"
     OracleCommand = "-PLOT"
     OracleResponses = $oracleResponsesAresStyle
   }
   Ares2027 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2027\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.26.8"
-    ProcessName = "ARESS"
     Probe = "tests\tools\regression\window_contract\WindowContractProbe.Ares\bin\Release\net8.0-windows\WindowContractProbe.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     ProbeInputKind = "AresUi"
     # ARES は FILEDIA=1 のままだと LOADDOTNETAPPLICATION のファイル名プロンプトが
     # (command) の引数を受け取らず入力待ちのまま止まる（2027 実測）。COM で保存→0→復元する
     SetFileDia = $true
-    DiscoverProgId = $true
-    PdfDevice = "PDF"
     OracleCommand = "-PLOT"
     OracleResponses = $oracleResponsesAresStyle
   }
   Ijcad2026 = @{
-    Exe = "C:\Program Files\ITJP\IJCAD 2026 PRO\gcad.exe"
-    StartArguments = @()
-    ProgId = "Gcad.Application"
-    ProcessName = "gcad"
     Probe = "tests\tools\regression\window_contract\WindowContractProbe.Ijcad\bin\Release\net8.0-windows\WindowContractProbe.Ijcad.dll"
-    LoadKind = "DirectNetload"
     ProbeInputKind = "SingleBatch"
     SetFileDia = $true
-    DiscoverProgId = $false
-    PdfDevice = "DWG To PDF.pc3"
     OracleCommand = "-PLOT"
     OracleResponses = $oracleResponsesAutocadStyle
   }
   BricscadV26 = @{
-    Exe = "C:\Program Files\Bricsys\BricsCAD V26 ja_JP\bricscad.exe"
-    StartArguments = @("/Automation")
-    ProgId = "BricscadApp.AcadApplication.26.0"
-    ProcessName = "bricscad"
     Probe = "tests\tools\regression\window_contract\WindowContractProbe.Bricscad\bin\Release\net8.0-windows\WindowContractProbe.Bricscad.dll"
-    LoadKind = "DirectNetload"
     ProbeInputKind = "SingleBatch"
     SetFileDia = $true
-    DiscoverProgId = $false
-    PdfDevice = "Print As PDF.pc3"
     OracleCommand = "-PLOT"
     OracleResponses = $oracleResponsesAutocadStyle
   }
 }
 
-$config = $products[$Product]
+$config = Get-CompatProduct $Product $products
 $exe = [IO.Path]::GetFullPath($config.Exe)
 $probe = [IO.Path]::GetFullPath((Join-Path $repo $config.Probe))
 if (-not $Dwg) { $Dwg = Join-Path $repo "tests\assets\testcharts\TESTCHART2.dwg" }
@@ -203,7 +177,6 @@ Copy-Item -LiteralPath $source -Destination $dwgCopy -Force
 $dwgHash = (Get-FileHash -LiteralPath $dwgCopy -Algorithm SHA256).Hash
 $paramsFile = Join-Path $productRoot "cpwin_params.txt"
 
-. "$PSScriptRoot\..\..\common\compat_cad_com.ps1"
 
 if (-not ("CadPeta.CompatNativeWindow" -as [type])) {
   Add-Type -TypeDefinition @'
@@ -453,10 +426,10 @@ $autoloadState = $null
 $connectedProgId = $null
 $progIds = $null
 $ownedPid = 0
+$ownedProcess = $null
 $messageFilterRegistered = $false
 $oldFileDia = $null
 $oldOsMode = $null
-$savedParamsEnv = $env:CPWIN_PARAMS
 $completed = $false
 $cleanupFailures = @()
 $caseSummaries = @()
@@ -468,7 +441,7 @@ try {
   if ($windowStation -ne $ExpectedWindowStation -or $desktop -ne $ExpectedDesktop) {
     throw "対話デスクトップが必要です。期待=$ExpectedWindowStation\$ExpectedDesktop、実際=$windowStation\$desktop"
   }
-  Assert-WindowsPowerShellSta
+  Assert-CompatLaunchReady $Product
   # pick 点の UI 入力と、詰まったプロンプトの ESC 解除に使う。CAD 起動前に生成する
   $uiShell = New-Object -ComObject WScript.Shell
   [CadPeta.CompatMessageFilter]::RetryWindowMilliseconds = $ComRetryWindowMilliseconds
@@ -483,13 +456,14 @@ try {
   # インストール済みの CADPeta が自動で読み込まれると、ビルドした DLL を試験できない。試験の間だけ登録を外す
   Suspend-CompatProductAutoload $Product ([ref]$autoloadState)
 
-  # 計測器はパラメータファイルをコマンド実行のたびに読み直す。パスは起動前に環境変数で固定する
-  $env:CPWIN_PARAMS = $paramsFile
+  # 起動する CAD にだけ渡す環境変数。計測器はパラメータファイルをコマンド実行のたびに読み直すので、パスを起動の前に固定する。
+  # CADPeta の設定は利用者の %APPDATA%\CADPeta を使わない
+  $cadEnvironment = @{ CPWIN_PARAMS = $paramsFile; CADPETA_DATA_DIR = (Write-E2eSettings (Join-Path $productRoot 'cadpeta-data')) }
 
   if ($config.DiscoverProgId) {
-    Start-CadVisibleAndConnect $exe $SecondaryLaunchDelaySeconds $GuiStartupTimeoutSeconds ([ref]$startedProcess) ([ref]$candidateApplication) ([ref]$connectedProgId) ([ref]$secondaryProcess) ([ref]$progIds) -failureHint "。表示中のライセンス／版ダイアログを確認してください"
+    Start-CadVisibleAndConnect $exe $SecondaryLaunchDelaySeconds $GuiStartupTimeoutSeconds ([ref]$startedProcess) ([ref]$candidateApplication) ([ref]$connectedProgId) ([ref]$secondaryProcess) ([ref]$progIds) $cadEnvironment -failureHint "。表示中のライセンス／版ダイアログを確認してください"
   } else {
-    $startedProcess = Start-CadProcessHidden $exe $config.StartArguments
+    $startedProcess = Start-CadProcessHidden $exe $config.StartArguments $cadEnvironment
     Write-Evidence "PROCESS started PID=$($startedProcess.Id)"
     $candidateApplication = Wait-ActiveObject $config.ProgId $GuiStartupTimeoutSeconds
     if ($null -eq $candidateApplication) {
@@ -505,7 +479,7 @@ try {
   if ($null -ne $startedProcess -and $candidatePid -notin $ownedStartIds) {
     throw "今回開始していないプロセスへ COM 接続しました。開始 PID=$($ownedStartIds -join ',')、接続 PID=$candidatePid"
   }
-  Assert-ConnectedExecutable $candidatePid $exe
+  $ownedProcess = Assert-ConnectedExecutable $candidatePid $exe
   $application = $candidateApplication
   $candidateApplication = $null
   $ownedPid = $candidatePid
@@ -737,14 +711,13 @@ try {
       @{ Name='FILEDIA'; Value=$(if ($null -eq $oldFileDia) { $null } else { [int16]1 }) },
       @{ Name='OSMODE'; Value=$oldOsMode }) ([ref]$cleanupFailures)
   }
-  $env:CPWIN_PARAMS = $savedParamsEnv
   if ($null -ne $application) {
     Close-CadApplication $application $ownedPid ([ref]$cleanupFailures) -CloseFailurePrefix "CLOSE失敗" -QuitFailurePrefix "QUIT失敗"
   }
   Release-CadComResources $messageFilterRegistered @($uiShell, $document, $application, $candidateApplication)
   # 起動したが ROT 接続先にならなかったプロセス（1つ目・2つ目のうち捨てになった方）の後始末。
   # 自分が起動し exe で起動した所有プロセスのみが対象
-  Stop-CadSessionProcesses $ownedPid $ProcessExitTimeoutSeconds @($startedProcess, $secondaryProcess) $dwgCopy $dwgHash ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop
+  Stop-CadSessionProcesses $ownedProcess $ProcessExitTimeoutSeconds @($startedProcess, $secondaryProcess) $dwgCopy $dwgHash ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop -QuitExitCode $config.QuitExitCode
   Remove-CompatPluginStage $pluginStage ([ref]$cleanupFailures)
   Resume-CompatProductAutoload $autoloadState $exe ([ref]$cleanupFailures)
   Write-Evidence "END completed=$completed"

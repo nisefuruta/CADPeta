@@ -117,6 +117,40 @@ try {
     if ($stopped -notlike '*CadPeta.RefB.dll*' -or $stopped -notlike '*1.0.0.0*' -or $stopped -notlike '*2.0.0.0*') { throw "6: 止まったが理由が違う: $stopped" }
     $checked.Add('同梱の DLL を同梱と違う AssemblyVersion で参照する DLL があれば止まり、そろっていれば通る')
 
+    # 7. 自作の DLL が参照する自作の DLL（CadPeta.*）が同じフォルダに無ければ止まる（設定のダイアログの CadPeta.Ui.Wpf.dll など、
+    #    本体の DLL の検査だけでは入れ忘れを見つけられない）。そろっていれば通る
+    $missingRef = New-PackageDir 'missing-reference' @((Join-Path $consistent 'CadPeta.RefB.dll'))
+    $stopped = $null
+    try { Assert-OwnReferencesBundled $missingRef 'selftest' } catch { $stopped = $_.Exception.Message }
+    if ($null -eq $stopped) { throw '7: 参照する自作の DLL が無いフォルダで止まらなかった' }
+    if ($stopped -notlike '*CadPeta.RefB.dll*' -or $stopped -notlike '*CadPeta.RefA*') { throw "7: 止まったが理由が違う: $stopped" }
+    Assert-OwnReferencesBundled $consistent 'selftest'
+    $checked.Add('自作の DLL が参照する自作の DLL が同じフォルダに無ければ止まり、そろっていれば通る')
+
+    # 8. 配布物の中で、同じ名前で同じ TargetFramework の自作の DLL は中身が 1 種類でなければ止まる（同じソースを別の中間のフォルダで
+    #    作り直すと、PDB のパスが変わって別の中身になり、署名の回数が増える）。製品ごとに作り分ける DLL は名前で除く
+    $samePath = Join-Path $work 'pkg\same'
+    foreach ($d in 'a', 'b') { New-Item -ItemType Directory -Force (Join-Path $samePath $d) | Out-Null; Copy-Item -LiteralPath $ci -Destination (Join-Path $samePath $d) }
+    Assert-OneBuildPerTarget $samePath 'selftest' @()
+    # 同じソースを別のフォルダに写して作る（DLL に書き込まれるパスが変わり、中身が変わる）
+    $copied = Join-Path $work 'src\other\CadPeta.Ci'
+    New-Item -ItemType Directory -Force $copied | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $work 'src\CadPeta.Ci') -File | Copy-Item -Destination $copied
+    $otherObj = Join-Path $work 'out\CiOtherFolder'
+    & dotnet build (Join-Path $copied 'CadPeta.Ci.csproj') -c Release -o $otherObj -nologo -v q -p:ContinuousIntegrationBuild=true | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw '8: 別のフォルダで試験用のライブラリをビルドできなかった' }
+    $differ = Join-Path $work 'pkg\differ'
+    New-Item -ItemType Directory -Force (Join-Path $differ 'a'), (Join-Path $differ 'b') | Out-Null
+    Copy-Item -LiteralPath $ci -Destination (Join-Path $differ 'a')
+    Copy-Item -LiteralPath (Join-Path $otherObj 'CadPeta.Ci.dll') -Destination (Join-Path $differ 'b')
+    if ((Get-FileHash (Join-Path $differ 'a\CadPeta.Ci.dll')).Hash -eq (Get-FileHash (Join-Path $differ 'b\CadPeta.Ci.dll')).Hash) { throw '8: 中間のフォルダを変えても中身が同じで、試験の前提が成り立たない' }
+    $stopped = $null
+    try { Assert-OneBuildPerTarget $differ 'selftest' @() } catch { $stopped = $_.Exception.Message }
+    if ($null -eq $stopped) { throw '8: 同じ名前とターゲットで中身の違う DLL があるのに止まらなかった' }
+    if ($stopped -notlike '*CadPeta.Ci.dll*') { throw "8: 止まったが理由が違う: $stopped" }
+    Assert-OneBuildPerTarget $differ 'selftest' @('CadPeta.Ci.dll')
+    $checked.Add('同じ名前で同じ TargetFramework の自作の DLL の中身が 2 種類以上なら止まり、1 種類か、製品ごとに作り分ける名前なら通る')
+
     "dll_path_check_selftest OK（確かめた約束 $($checked.Count) 件）"
     $checked | ForEach-Object { "  - $_" }
 }

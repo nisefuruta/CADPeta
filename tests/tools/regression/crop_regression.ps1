@@ -1,11 +1,11 @@
 # クロップ経路の回帰: 2点窓・余白(M)・ゼロ面積窓の聞き直し の3ケースを
 # 指定 AutoCAD 版の accoreconsole で実行する（図面=TESTCHART2_layout、PETA_A3、A3 1:1。
-# 窓は検証記録_クロップ結線.md §5 と同値。期待: 窓=viewBox "160 113.5 100 70"）。
+# 窓と期待の寸法・viewBox は peta_a3_window_expect.ps1 の表から読む）。
 # 2027 実機検証（docs/validation/architecture-decisions.md）で 2026 との版間バイト比較に使用した。
 #
 # 使い方: pwsh tests/tools/regression/crop_regression.ps1 -Ver 2027 [-OutRoot <出力ルート>]
 # 注意:   プロンプト応答は正しい値のみ与える（無効入力は AutoCAD の作法どおり
-#         スクリプト自体を停止させる。検証記録_クロップ結線.md §6）
+#         スクリプト自体を停止させる）
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory)][string]$Ver,     # 2024 / 2026 / 2027
@@ -22,20 +22,20 @@ $tfm = Get-CadPluginTargetFramework $Ver
 $acadRoot = "C:\Program Files\Autodesk\AutoCAD $Ver"
 $plugin = (Get-E2ePluginPath Acad $tfm)
 $dwgSrc = "$repo\tests\assets\testcharts\TESTCHART2_layout.dwg"
+. "$PSScriptRoot\peta_a3_window_expect.ps1"
+# accoreconsole の PDF のページの高さは 842pt に丸められる
+$expect = $PetaA3WindowExpect.PageHeight842pt
 
 # ケース定義: PETA の範囲プロンプトへの応答列と、SVG に期待する寸法・viewBox。
 # 期待値は実機で確定した正解であり、一致しなければ失敗として非0終了する
 # （表示するだけでは回帰を検出できない）。
 $cases = @(
     # 2点窓
-    @{ Key = "window";  Lines = @("50,40", "150,110")
-       Expect = @{ Width = "100"; Height = "70"; ViewBox = "160 113.5 100 70" } }
+    @{ Key = "window";  Lines = @($PetaA3Window.P1, $PetaA3Window.P2); Expect = $expect.M0 }
     # 余白5mm→2点窓（四辺へ5mmずつ広がる）
-    @{ Key = "margin";  Lines = @("M", "5", "50,40", "150,110")
-       Expect = @{ Width = "110"; Height = "80"; ViewBox = "155 108.5 110 80" } }
+    @{ Key = "margin";  Lines = @("M", $PetaA3Window.MarginMm, $PetaA3Window.P1, $PetaA3Window.P2); Expect = $expect.M5 }
     # ゼロ面積→聞き直し→A=全体（レイアウト全面。用紙実寸由来の端数を含む）
-    @{ Key = "zerowin"; Lines = @("50,40", "50,40", "A")
-       Expect = @{ Width = "420.1583"; Height = "297.0389"; ViewBox = "0 0 420.1583 297.0389" } }
+    @{ Key = "zerowin"; Lines = @($PetaA3Window.P1, $PetaA3Window.P1, "A"); Expect = $expect.Full }
 )
 
 # 3 ケースを 1 回の起動で続けて実行する（tests/tools/common/accore_batch.ps1）。前のケースの余白(M)などの
@@ -80,9 +80,9 @@ try {
             [void]$failures.Add("[$label] SVG の寸法・viewBox を読み取れない: $headLine")
             continue
         }
-        $got = @{ Width = $Matches[1]; Height = $Matches[2]; ViewBox = $Matches[3] }
-        "[$label] width=$($got.Width) height=$($got.Height) viewBox=$($got.ViewBox)"
-        foreach ($k in @("Width", "Height", "ViewBox")) {
+        $got = @{ W = $Matches[1]; H = $Matches[2]; VB = $Matches[3] }
+        "[$label] width=$($got.W) height=$($got.H) viewBox=$($got.VB)"
+        foreach ($k in @("W", "H", "VB")) {
             if ($got[$k] -ne $c.Expect[$k]) {
                 [void]$failures.Add("[$label] $k が期待と違う: 期待=$($c.Expect[$k]) 実際=$($got[$k])")
             }

@@ -87,6 +87,8 @@ function Get-PackageDefinition([string]$group, [string]$staging, [string]$artifa
 
 # SHA256 は、試験の補助の 1 か所（test_helpers.ps1 の Get-StreamSha256・Get-FileSha256Shared）で求める
 . (Join-Path $PSScriptRoot '..\common\test_helpers.ps1')
+# CAD 本体の参照 DLL の判定は、組み立ての前の検査（build_dist.ps1）と同じ定義を使う
+. (Join-Path $repo 'dist\cad_reference_dlls.ps1')
 
 function Assert-SafeEntryName([string]$name, [string]$zipPath) {
     $parts = $name -split "/"
@@ -160,12 +162,7 @@ function Test-OnePackage([string]$group, [hashtable]$definition, [bool]$requireT
         }
     }
 
-    $forbidden = @(
-        "accoremgd.dll", "acdbmgd.dll", "acmgd.dll", "autocad.net.dll",
-        "td_mgd.dll", "fxcoremgd.dll", "fxproperties.dll", "gcaddmgd.dll", "grxmgd.dll",
-        "itjp.ijcad.dll", "teigha.runtime.dll", "teigha.td.dll", "bricscad.dll", "td_dbmgd.dll"
-    )
-    $hits = @($archiveFiles.Keys | Where-Object { $forbidden -contains ([IO.Path]::GetFileName($_).ToLowerInvariant()) })
+    $hits = @($archiveFiles.Keys | Where-Object { Test-CadReferenceDllName ([IO.Path]::GetFileName($_)) })
     if ($hits.Count -gt 0) { throw "[$group] CAD 本体の参照 DLL が ZIP に混入した: $($hits -join ', ')" }
     if ($group -eq "bundle") { Assert-BundleManifest $source $archiveFiles }
     Write-Host "[package] $group OK: $($archiveFiles.Count) files / $zipPath" -ForegroundColor Green
@@ -221,6 +218,19 @@ function Invoke-SelfTest {
         try { Invoke-PackageVerification "all" "9.9.9" $staging $artifacts $true }
         catch { $missingRejected = $true; Write-Host "[selftest] all 欠落検出 OK: $($_.Exception.Message)" -ForegroundColor DarkGray }
         if (-not $missingRejected) { throw "自己試験失敗: -Only all の ZIP 欠落を拒否しなかった" }
+        # 版の付いた ARES の SDK の DLL（名前の列挙では漏れる）が staging と ZIP の両方に同じバイトで入っていても拒否する
+        foreach ($sdkDll in @("ares/2027/TD_Mgd_Net8_26.8_17.dll", "ares/2024/fxcoremgd_23.1_16.dll", "ares/2020/AcMgd.dll")) {
+            Remove-Item -LiteralPath $staging -Recurse -Force
+            Remove-Item -LiteralPath $artifacts -Recurse -Force
+            New-SelfTestFixture $staging $artifacts "9.9.9"
+            $compat = Get-PackageDefinition "compat" $staging $artifacts "9.9.9"
+            Write-FixtureFile $compat.Source $sdkDll "sdk"
+            Compress-Archive -Path (Join-Path $compat.Source "*") -DestinationPath $compat.Zip -Force
+            $sdkRejected = $false
+            try { Invoke-PackageVerification "compat" "9.9.9" $staging $artifacts $true }
+            catch { $sdkRejected = $true; Write-Host "[selftest] CAD の参照 DLL の検出 OK: $($_.Exception.Message)" -ForegroundColor DarkGray }
+            if (-not $sdkRejected) { throw "自己試験失敗: CAD の参照 DLL $sdkDll を拒否しなかった" }
+        }
         Write-Host "[selftest] package_verify PASS" -ForegroundColor Green
     }
     finally {

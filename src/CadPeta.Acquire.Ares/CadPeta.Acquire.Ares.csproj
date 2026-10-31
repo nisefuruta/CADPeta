@@ -20,8 +20,6 @@
          ないため、この既知の警告だけを抑制する -->
     <MSBuildWarningsAsMessages Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
     <DefineConstants>$(DefineConstants);CADPETA_ARES</DefineConstants>
-    <!-- 未対応の AresSdkYearNet48 指定を明示的に失敗させる検査（Directory.Build.props）の対象 -->
-    <CadPetaUsesAresSdk>true</CadPetaUsesAresSdk>
   </PropertyGroup>
 
   <!-- 4製品同文の取得本体は CadCommon の共有ソース（#if 分岐＋using エイリアスで SDK 差を

@@ -57,7 +57,7 @@ internal static class CadTextMapper
         public readonly Dictionary<string, string?> ShxPathCache = new(StringComparer.OrdinalIgnoreCase);
     }
 
-    public static void MapDbText(DBText text, Transaction tr, PointMap map, double geomScale,
+    public static void MapDbText(DBText text, CadTransaction tr, PointMap map, double geomScale,
                                  CadIrAcquirer.ResolvedStyle style, string effLayer,
                                  string dxfName, double groupScale, TextMapContext tc,
                                  IrDiagnostics diag, List<IrNode> sink)
@@ -104,7 +104,7 @@ internal static class CadTextMapper
         });
     }
 
-    public static void MapMText(MText mtext, Transaction tr, PointMap map, double geomScale,
+    public static void MapMText(MText mtext, CadTransaction tr, PointMap map, double geomScale,
                                 CadIrAcquirer.ResolvedStyle style, string effLayer,
                                 double groupScale, TextMapContext tc,
                                 IrDiagnostics diag, List<IrNode> sink, ColorResolver resolveColor)
@@ -169,7 +169,7 @@ internal static class CadTextMapper
     public static bool MapLinetypeText(string value, ObjectId styleId, double capHeightMm,
                                        double xMm, double yMm, double rotationDeg,
                                        CadIrAcquirer.ResolvedStyle style, string effLayer, string dxfName,
-                                       double groupScale, Transaction tr, TextMapContext tc,
+                                       double groupScale, CadTransaction tr, TextMapContext tc,
                                        IrDiagnostics diag, List<IrNode> sink)
     {
         if (string.IsNullOrEmpty(value) || capHeightMm <= 0)

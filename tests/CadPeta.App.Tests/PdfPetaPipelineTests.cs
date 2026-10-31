@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using CadPeta.Tests;
+using CadPeta.UseCases;
 using Xunit;
 
 namespace CadPeta.App.Tests;
@@ -15,7 +16,7 @@ public sealed class PdfPetaPipelineTests
         using var temp = new TempFolder();
         string output = temp.File("result.svg"); int boundaries = 0;
         var result = PdfPetaPipeline.Run(new PdfPetaRequest { InputPdfPath = input,
-            Outputs = new[] { new PdfPetaOutput(PdfPetaOutputKind.Svg, output) } }, TextWriter.Null,
+            Outputs = new[] { new PdfPetaOutput(ArtifactKind.Svg, output) } }, TextWriter.Null,
             new PdfPetaRunOptions { DiagnosticStageSink = (_, _, _) => boundaries++ });
         Assert.True(new FileInfo(output).Length > 0); Assert.True(boundaries >= 2); Assert.NotNull(result.Diagnostics);
     }
@@ -25,7 +26,7 @@ public sealed class PdfPetaPipelineTests
     {
         using var cts = new CancellationTokenSource(); cts.Cancel();
         Assert.Throws<OperationCanceledException>(() => PdfPetaPipeline.Run(new PdfPetaRequest
-        { InputPdfPath = "missing.pdf", Outputs = new[] { new PdfPetaOutput(PdfPetaOutputKind.Svg, "out.svg") } },
+        { InputPdfPath = "missing.pdf", Outputs = new[] { new PdfPetaOutput(ArtifactKind.Svg, "out.svg") } },
         TextWriter.Null, cancellationToken: cts.Token));
     }
 
@@ -37,8 +38,8 @@ public sealed class PdfPetaPipelineTests
         using var log = new StringWriter();
         var request = new PdfPetaRequest { InputPdfPath = input, Outputs = new[]
         {
-            new PdfPetaOutput(PdfPetaOutputKind.Clipboard, temp.File("clipboard.emf")),
-            new PdfPetaOutput(PdfPetaOutputKind.Png, temp.File("result.png"), 96),
+            new PdfPetaOutput(ArtifactKind.Emf, temp.File("clipboard.emf"), ToClipboard: true),
+            new PdfPetaOutput(ArtifactKind.Png, temp.File("result.png"), 96),
         }};
         PdfPetaPipeline.Run(request, log, new PdfPetaRunOptions
         { ClipboardSetter = (_, writer) => writer.WriteLine("CLIPBOARD-LAST") });

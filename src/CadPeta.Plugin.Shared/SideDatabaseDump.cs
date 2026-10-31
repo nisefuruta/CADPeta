@@ -169,7 +169,7 @@ public static class SideDatabaseDump
     public static void Write(string stem, SideDatabaseMetadata metadata)
     {
         var path = GetPath(stem, metadata.Observation);
-        File.WriteAllText(path, PluginJson.Serialize(SideDatabaseJson.From(metadata), indented: true), TextEncodings.Utf8NoBom);
+        File.WriteAllText(path, JsonText.Serialize(SideDatabaseJson.From(metadata), indented: true), TextEncodings.Utf8NoBom);
     }
 
     // 記録のファイルの形。プロパティの名前と順番は解析の道具との約束で、辞書のキーは観測した名前のまま書く

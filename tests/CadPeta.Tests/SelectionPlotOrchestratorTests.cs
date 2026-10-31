@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using CadPeta.Plugin.Shared;
+using CadPeta.UseCases;
 using Xunit;
 
 namespace CadPeta.Tests;
@@ -17,6 +18,8 @@ public class SelectionPlotOrchestratorTests
         public string DrawingStem => "a"; public string CurrentLayoutName => "Model";
         public object? GetPickfirstSelection() => null;
         public SelectionResult PromptSelection() => SelectionResult.OfEmpty();
+        public bool HasScreen => false;
+        public bool ShowCommentDialog(CommentForm form) => throw new InvalidOperationException("コメントのダイアログは開かない");
         public string? PromptString(string message)
         {
             if (PromptError != null) throw PromptError;
@@ -27,6 +30,8 @@ public class SelectionPlotOrchestratorTests
         }
         public PromptResult<double> PromptDouble(string message, IReadOnlyList<PromptKeyword> keywords,
             double defaultValue, bool useDefault, bool allowNone, bool allowZero, bool allowNegative) => PromptResult<double>.OfNone();
+        public PromptResult<string> PromptKeywords(string message, IReadOnlyList<PromptKeyword> keywords) =>
+            throw new InvalidOperationException("キーワードの入力は呼ばれない");
         public void WriteLine(string message) { }
         public IDisposable BeginWindowPickScope(TextWriter verbose) => new Nop();
         public PromptResult<PlotWindow> PromptWindow(string firstMessage, IReadOnlyList<PromptKeyword> keywords, string secondMessage) => PromptResult<PlotWindow>.OfNone();

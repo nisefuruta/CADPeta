@@ -8,6 +8,13 @@ internal static class AresPluginDefaults
     public const int PlotCopyCount = 1;
 
     /// <summary>
+    /// PDF デバイスが 1pt の整数へ丸めて書く値。ARES の PDF デバイスはページの大きさを丸め（A4 は 595×842pt、A3 は 1191×842pt）、
+    /// 印刷可能領域の原点は丸めない（ARES 2020・2023・2024・2027 の実測、2026-10-30。2024・2027 は窓の位置が 0.06mm 以内で合う。
+    /// 2020・2023 はページの丸めと別の誤差を 0.2mm ほど持ち、原点も丸めるとかえってずれが大きくなる）。
+    /// </summary>
+    public const PdfPointSnapping PdfPointSnapping = Shared.PdfPointSnapping.PageSize;
+
+    /// <summary>
     /// CVPORT がこの値のとき真のペーパー空間がアクティブ（ARES 2024 実測 2026-07-17:
     /// レイアウトのペーパー空間で CVPORT=1、MSPACE でビューポートへ入ると 2、PSPACE で 1 へ戻る。
     /// AutoCAD・IJCAD・BricsCAD と同じ割当て）。

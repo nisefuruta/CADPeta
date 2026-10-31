@@ -62,9 +62,10 @@ public static class CropTransform
         }
         ir.Nodes = kept;
 
-        // 参照されなくなったクリップ定義を除去する（不可視の整理、非可逆性なし）
-        // ToHashSet() は netstandard2.0 に無いためコンストラクタで等価に書く
-        var referenced = new HashSet<string>(ir.Nodes.Where(n => n.ClipId != null).Select(n => n.ClipId!));
+        // 参照されなくなったクリップ定義を除去する（不可視の整理、非可逆性なし）。
+        // グループの子孫だけが参照する定義もあるので、残したノードの子孫まで参照を集める
+        var referenced = new HashSet<string>();
+        CollectClipIds(ir.Nodes, referenced);
         ir.ClipDefs.RemoveAll(c => !referenced.Contains(c.Id));
 
         ir.ViewMinXMm = view.X0;
@@ -72,6 +73,15 @@ public static class CropTransform
         ir.WidthMm = view.X1 - view.X0;
         ir.HeightMm = view.Y1 - view.Y0;
         return dropped;
+    }
+
+    static void CollectClipIds(IEnumerable<IrNode> nodes, HashSet<string> ids)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.ClipId != null) ids.Add(node.ClipId);
+            if (node is IrGroup group) CollectClipIds(group.Children, ids);
+        }
     }
 
     static string Kind(IrNode n) => n switch

@@ -3,8 +3,65 @@
 #   $evidenceLog     Write-Evidence の追記先ファイル
 #   $PollMilliseconds  待機ループの間隔（ミリ秒）
 . "$PSScriptRoot\test_helpers.ps1"   # ConvertTo-NativeArgString（Start-Process の引数を引用符で囲む）
+. "$PSScriptRoot\..\regression\CadRegGuard.ps1"   # AutoCAD（-Product Acad*）のプロファイルの記録と復元
 # 互換 CAD の試験は Windows PowerShell 5.1 で動く。Get-FileHash などを使う前に PSModulePath を直す
 Repair-WindowsPowerShellModulePath
+
+# AutoCAD の終了の後、acad.exe が起動する accoreconsole が終わるのを待つ上限（秒）。実測では 1～3 秒で終わる
+$CompatAcadExitWaitSeconds = 30
+
+# COM で CAD を操作する試験（gradient_compat_e2e・peta_option_smoke_compat・peta_window_rotation_compat・window_contract_compat）が
+# 共通に使う、製品の固定の情報の唯一の表。試験ごとに違う値（コマンドの入力のしかた、FILEDIA を変えるか、期待する結果）は
+# 各スクリプトの表に置き、Get-CompatProduct で合わせる。
+# ARES の ProgID の版番号は製品表示年ではなく COM API 版（2020=4.4／2023=4.6／2024=23.1／2027=26.8。本機 HKCR 実測）。
+# ARES の net48 世代（2020/2023/2024）は SDK が年式別なので、プラグインも年式別の出力を読む（AresYear。Get-E2ePluginBuildPath）。
+# DiscoverProgId は、ProgID の登録から起動した exe を確かめて接続する製品（ARES）。
+# QuitExitCode は、Quit で正常に終了したときの終了コード（Stop-OwnedCadProcess が違えば失敗にする）。ARES 2020・2023・2024 は 0 だった。
+# AutoCAD は正常に終了しても 0xBEBEBABE・0xD2E2BABE のような値を返し、ARES 2027・IJCAD・BricsCAD は測っていないので $null（判定しない）。
+# NeedsConnectedSession は、利用者のセッションが画面に接続していないと起動できない製品。ARES 2027 は、リモート デスクトップの切断中は
+# 画面を Standard VGA の扱いにし、起動の途中で終了した（2026-10-25・2026-10-31）。ARES 2020・2023・2024 と AutoCAD は切断中も起動できた。
+$CompatProducts = @{
+  Acad2026 = @{ Exe = "C:\Program Files\Autodesk\AutoCAD 2026\acad.exe"; StartArguments = @("/nologo"); ProgId = "AutoCAD.Application.25.1"
+    ProcessName = "acad"; LoadKind = "DirectNetload"; DiscoverProgId = $false; PdfDevice = "AutoCAD PDF (High Quality Print).pc3"
+    PluginKind = "Acad"; Tfm = "net8.0-windows"; AresYear = ""; QuitExitCode = $null; NeedsConnectedSession = $false }
+  Acad2027 = @{ Exe = "C:\Program Files\Autodesk\AutoCAD 2027\acad.exe"; StartArguments = @("/nologo"); ProgId = "AutoCAD.Application.26"
+    ProcessName = "acad"; LoadKind = "DirectNetload"; DiscoverProgId = $false; PdfDevice = "AutoCAD PDF (High Quality Print).pc3"
+    PluginKind = "Acad"; Tfm = "net10.0-windows"; AresYear = ""; QuitExitCode = $null; NeedsConnectedSession = $false }
+  Ares2020 = @{ Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2020\BIN\ARESS.exe"; StartArguments = @(); ProgId = "PCAD_AC_X.AcadApplication.4.4"
+    ProcessName = "ARESS"; LoadKind = "LoadDotNetApplication"; DiscoverProgId = $true; PdfDevice = "PDF"
+    PluginKind = "Ares"; Tfm = "net48"; AresYear = "2020"; QuitExitCode = 0; NeedsConnectedSession = $false }
+  Ares2023 = @{ Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2023\BIN\ARESS.exe"; StartArguments = @(); ProgId = "PCAD_AC_X.AcadApplication.4.6"
+    ProcessName = "ARESS"; LoadKind = "LoadDotNetApplication"; DiscoverProgId = $true; PdfDevice = "PDF"
+    PluginKind = "Ares"; Tfm = "net48"; AresYear = "2023"; QuitExitCode = 0; NeedsConnectedSession = $false }
+  Ares2024 = @{ Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2024\BIN\ARESS.exe"; StartArguments = @(); ProgId = "PCAD_AC_X.AcadApplication.23.1"
+    ProcessName = "ARESS"; LoadKind = "LoadDotNetApplication"; DiscoverProgId = $true; PdfDevice = "PDF"
+    PluginKind = "Ares"; Tfm = "net48"; AresYear = "2024"; QuitExitCode = 0; NeedsConnectedSession = $false }
+  Ares2027 = @{ Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2027\BIN\ARESS.exe"; StartArguments = @(); ProgId = "PCAD_AC_X.AcadApplication.26.8"
+    ProcessName = "ARESS"; LoadKind = "LoadDotNetApplication"; DiscoverProgId = $true; PdfDevice = "PDF"
+    PluginKind = "Ares"; Tfm = "net8.0-windows"; AresYear = "2027"; QuitExitCode = $null; NeedsConnectedSession = $true }
+  Ijcad2026 = @{ Exe = "C:\Program Files\ITJP\IJCAD 2026 PRO\gcad.exe"; StartArguments = @(); ProgId = "Gcad.Application"
+    ProcessName = "gcad"; LoadKind = "DirectNetload"; DiscoverProgId = $false; PdfDevice = "DWG To PDF.pc3"
+    PluginKind = "Ijcad"; Tfm = "net8.0-windows"; AresYear = ""; QuitExitCode = $null; NeedsConnectedSession = $false }
+  BricscadV26 = @{ Exe = "C:\Program Files\Bricsys\BricsCAD V26 ja_JP\bricscad.exe"; StartArguments = @("/Automation"); ProgId = "BricscadApp.AcadApplication.26.0"
+    ProcessName = "bricscad"; LoadKind = "DirectNetload"; DiscoverProgId = $false; PdfDevice = "Print As PDF.pc3"
+    PluginKind = "Bricscad"; Tfm = "net8.0-windows"; AresYear = ""; QuitExitCode = $null; NeedsConnectedSession = $false }
+}
+
+# 製品の固定の情報（$CompatProducts）に、試験ごとの値（$Specific の $Product の行）を足した表を返す。
+# Plugin は、ビルドしたプラグインの DLL の場所（$Config を省くと配布物と同じ構成。DLL があるかは確かめない）。
+# 同じ名前の項目を試験の側で持つと、固定の情報と食い違っても気付けないので止める。
+function Get-CompatProduct([string]$Product, [hashtable]$Specific, [string]$Config = '') {
+  if (-not $CompatProducts.ContainsKey($Product)) { throw "製品の固定の情報が無い: $Product" }
+  if (-not $Specific.ContainsKey($Product)) { throw "この試験に $Product の設定が無い" }
+  $merged = @{}
+  foreach ($entry in $CompatProducts[$Product].GetEnumerator()) { $merged[$entry.Key] = $entry.Value }
+  foreach ($entry in $Specific[$Product].GetEnumerator()) {
+    if ($merged.ContainsKey($entry.Key) -or $entry.Key -eq 'Plugin') { throw "試験の表の $Product.$($entry.Key) は製品の固定の情報と重なる（compat_cad_com.ps1 の `$CompatProducts だけに置く）" }
+    $merged[$entry.Key] = $entry.Value
+  }
+  $merged.Plugin = Get-E2ePluginBuildPath $merged.PluginKind $merged.Tfm $merged.AresYear $Config
+  return $merged
+}
 
 # 証跡ログ（$evidenceLog）へ時刻付きで追記し、同じ行を出力する。
 function Write-Evidence([string]$message) {
@@ -106,20 +163,65 @@ function Wait-CommandIdle($document, [string]$phase, [int]$timeoutSeconds, [swit
   return $false
 }
 
-# 実行環境の前提を確かめる。Marshal.GetActiveObject を使うため、Windows PowerShell 5.1 の STA スレッドが必要。
-function Assert-WindowsPowerShellSta {
+# このプロセスのセッションの接続の状態（WTS_CONNECTSTATE_CLASS。0 = 画面に接続、4 = 切断）を返す。読めなければ例外を投げる
+function Get-CurrentSessionConnectState {
+  if (-not ('CadPetaWtsSession' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+public static class CadPetaWtsSession {
+  [DllImport("wtsapi32.dll", SetLastError = true)]
+  static extern bool WTSQuerySessionInformationW(IntPtr server, int sessionId, int infoClass, out IntPtr buffer, out int bytes);
+  [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(IntPtr memory);
+  public static int ConnectState() {
+    IntPtr buffer; int bytes;
+    // WTS_CURRENT_SERVER_HANDLE = 0、WTS_CURRENT_SESSION = -1、WTSConnectState = 8
+    if (!WTSQuerySessionInformationW(IntPtr.Zero, -1, 8, out buffer, out bytes)) throw new System.ComponentModel.Win32Exception();
+    try { return Marshal.ReadInt32(buffer); } finally { WTSFreeMemory(buffer); }
+  }
+}
+'@
+  }
+  return [CadPetaWtsSession]::ConnectState()
+}
+
+# $product が今のセッションの接続の状態（$connectState）で起動できなければ理由を、起動できれば $null を返す
+function Get-CompatSessionFailure([string]$product, [int]$connectState) {
+  if (-not $CompatProducts[$product].NeedsConnectedSession -or $connectState -eq 0) { return $null }
+  $stateName = if ($connectState -eq 4) { '切断の状態' } else { "画面に接続していない状態（WTS の状態 $connectState）" }
+  return "$product は、画面に接続していないセッションでは起動の途中で終了する。このセッションは${stateName}なので、リモート デスクトップなどで画面に接続してから実行すること"
+}
+
+# CAD を起動する前の前提を確かめる。環境を変える前に呼ぶ。Marshal.GetActiveObject を使うため Windows PowerShell 5.1 の STA スレッドが要り、
+# 製品によっては画面に接続したセッションが要る（$CompatProducts の NeedsConnectedSession）
+function Assert-CompatLaunchReady([string]$product) {
   if ($PSVersionTable.PSEdition -ne "Desktop") {
     throw "Marshal.GetActiveObject のため Windows PowerShell 5.1 が必要です。実際の PSEdition=$($PSVersionTable.PSEdition)"
   }
   if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne [Threading.ApartmentState]::STA) { throw "STA スレッドが必要です" }
+  $connectState = Get-CurrentSessionConnectState
+  Write-Evidence "SESSION connectState=$connectState"
+  $failure = Get-CompatSessionFailure $product $connectState
+  if ($failure) { throw $failure }
 }
 
-# CAD を非表示で起動して Process を返す。$startArguments が空なら引数なしで起動する。
-function Start-CadProcessHidden([string]$exe, $startArguments) {
-  if ($startArguments.Count -gt 0) {
-    Start-Process -FilePath $exe -ArgumentList (ConvertTo-NativeArgString @($startArguments)) -PassThru -WindowStyle Hidden
-  } else {
-    Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
+# 起動する CAD にだけ渡す環境変数（$environment）に、CADPeta の設定のフォルダ（CADPETA_DATA_DIR）があることを確かめる。
+# 無いと、CAD の中の CADPeta が利用者の %APPDATA%\CADPeta\settings.json を読み、ファイル名の形に {comment} があれば
+# コメントのダイアログで止まる（2026-10-31、gradient_compat_e2e.ps1 の ARES 2020 で起きた）
+function Assert-CompatCadEnvironment([hashtable]$environment) {
+  if ($null -eq $environment -or -not $environment.CADPETA_DATA_DIR) {
+    throw "CAD を起動する環境変数に CADPETA_DATA_DIR が無い（Write-E2eSettings で作った設定のフォルダを渡すこと）"
+  }
+}
+
+# CAD を非表示で起動して Process を返す。$startArguments が空なら引数なしで起動する。$environment は起動する CAD にだけ渡す環境変数
+function Start-CadProcessHidden([string]$exe, $startArguments, [hashtable]$environment) {
+  Assert-CompatCadEnvironment $environment
+  Invoke-WithProcessEnvironment $environment {
+    if ($startArguments.Count -gt 0) {
+      Start-Process -FilePath $exe -ArgumentList (ConvertTo-NativeArgString @($startArguments)) -PassThru -WindowStyle Hidden
+    } else {
+      Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
+    }
   }
 }
 
@@ -135,16 +237,17 @@ function Wait-ActiveObject([string]$progId, [int]$timeoutSeconds) {
 
 # exe を指す登録済みの ProgID を調べ、CAD を可視で起動して、いずれかの ProgID が ROT に登録されるまで待つ。
 # 登録済みの ProgID が無い場合と、時間内に ROT へ登録されない場合は例外を投げる（後者の文言の末尾へ $failureHint を付ける）。
-# 起動した Process・見つかった COM オブジェクトと ProgID・調べた候補は参照で返す。
+# 起動した Process・見つかった COM オブジェクトと ProgID・調べた候補は参照で返す。$environment は起動する CAD にだけ渡す環境変数。
 # 単独起動で ROT 未登録が続くとき、$secondaryLaunchDelaySeconds 秒後に 2 つ目を起動して 1 つ目の起動を促す
 # （ARES 2027 対策）。2 つ目も所有プロセスとして終了時に停止対象へ含める（自分が起動し exe を照合したもの）。
 function Start-CadVisibleAndConnect([string]$exe, [int]$secondaryLaunchDelaySeconds, [int]$timeoutSeconds,
                                     [ref]$startedProcess, [ref]$candidateApplication, [ref]$connectedProgId,
-                                    [ref]$secondaryProcess, [ref]$progIds, [string]$failureHint = "") {
+                                    [ref]$secondaryProcess, [ref]$progIds, [hashtable]$environment, [string]$failureHint = "") {
+  Assert-CompatCadEnvironment $environment
   $progIds.Value = @(Get-RegisteredProgIdsForExe $exe)
   if ($progIds.Value.Count -eq 0) { throw "'$exe' を指す登録済み ProgID がありません" }
   Write-Evidence "PROGID candidates=$($progIds.Value -join ',') source=HKLM"
-  $startedProcess.Value = Start-Process -FilePath $exe -WorkingDirectory ([IO.Path]::GetDirectoryName($exe)) -PassThru
+  $startedProcess.Value = Invoke-WithProcessEnvironment $environment { Start-Process -FilePath $exe -WorkingDirectory ([IO.Path]::GetDirectoryName($exe)) -PassThru }
   Write-Evidence "PROCESS visible-start PID=$($startedProcess.Value.Id)"
   $secondaryLaunchAt = (Get-Date).AddSeconds($secondaryLaunchDelaySeconds)
   $deadline = (Get-Date).AddSeconds($timeoutSeconds)
@@ -158,7 +261,7 @@ function Start-CadVisibleAndConnect([string]$exe, [int]$secondaryLaunchDelaySeco
     }
     if ($null -eq $candidateApplication.Value) {
       if ($null -eq $secondaryProcess.Value -and (Get-Date) -gt $secondaryLaunchAt) {
-        $secondaryProcess.Value = Start-Process -FilePath $exe -WorkingDirectory ([IO.Path]::GetDirectoryName($exe)) -PassThru
+        $secondaryProcess.Value = Invoke-WithProcessEnvironment $environment { Start-Process -FilePath $exe -WorkingDirectory ([IO.Path]::GetDirectoryName($exe)) -PassThru }
         Write-Evidence "PROCESS secondary-start PID=$($secondaryProcess.Value.Id)（単独起動不全の回避。1つ目の ROT 登録を促す）"
       }
       Start-Sleep -Milliseconds $PollMilliseconds
@@ -241,11 +344,16 @@ function Get-CadWindowHandle($application, [int]$timeoutSeconds, [string]$exe = 
 }
 
 # COM 接続先のプロセスの実行ファイルが、起動した exe と一致することを確かめる。
+# 照合した Process を返す。終了の後に終了コードを読めるように、動いている間にハンドルを開いておく
+# （開かずに終了すると、Stop-OwnedCadProcess が異常終了を見分けられない）
 function Assert-ConnectedExecutable([int]$candidatePid, [string]$exe) {
-  $actualExe = (Get-Process -Id $candidatePid).Path
+  $process = Get-Process -Id $candidatePid
+  $actualExe = $process.Path
   if (-not [string]::Equals([IO.Path]::GetFullPath($actualExe), $exe, [StringComparison]::OrdinalIgnoreCase)) {
     throw "COM が想定外の実行ファイルへ接続しました。期待='$exe'、実際='$actualExe'"
   }
+  [void]$process.Handle
+  return $process
 }
 
 # $setFileDia が真なら FILEDIA を 0 にする（ファイル名のプロンプトをコマンド行に出す）。変更前の値は参照で返す（復元用）。
@@ -379,12 +487,22 @@ function Stop-ProcessVerified([int]$processId, [string]$label, [ref]$cleanupFail
   if (Get-Process -Id $processId -ErrorAction SilentlyContinue) { $cleanupFailures.Value += "$label PID=$processId が強制停止後も残留" }
 }
 
-# 自分が起動した CAD の所有 PID が終了するまで待ち、残っていれば後始末する。
+# 自分が起動した CAD（Assert-ConnectedExecutable が返した Process）が終了するまで待ち、残っていれば後始末する。
 # -AllowForceStop のときだけ強制停止する（-VerifyForceStop なら停止後の残留まで確かめる）。許可がなければ残留を失敗にする。
-function Stop-OwnedCadProcess([int]$ownedPid, [int]$exitTimeoutSeconds, [ref]$cleanupFailures,
-                              [switch]$AllowForceStop, [switch]$VerifyForceStop) {
-  if ($ownedPid -le 0) { return }
-  Wait-ProcessExit $ownedPid $exitTimeoutSeconds
+# $QuitExitCode（製品の表の QuitExitCode）があれば、自分で終了した CAD の終了コードがそれと違うときに失敗にする。
+# CAD は Quit の後の終了の処理で異常終了しても、Quit は成功を返す。$null の製品は終了コードを証跡に書くだけにする
+function Stop-OwnedCadProcess($ownedProcess, [int]$exitTimeoutSeconds, [ref]$cleanupFailures,
+                              [switch]$AllowForceStop, [switch]$VerifyForceStop, $QuitExitCode = $null) {
+  if ($null -eq $ownedProcess) { return }
+  $ownedPid = $ownedProcess.Id
+  if ($ownedProcess.WaitForExit($exitTimeoutSeconds * 1000)) {
+    $exitCode = $ownedProcess.ExitCode
+    Write-Evidence ("EXIT owned PID={0} code=0x{1:X8}" -f $ownedPid, $exitCode)
+    if ($null -ne $QuitExitCode -and $exitCode -ne $QuitExitCode) {
+      $cleanupFailures.Value += ("owned PID={0} が異常終了した（終了コード 0x{1:X8}、正常な終了は 0x{2:X8}）" -f $ownedPid, $exitCode, [int]$QuitExitCode)
+    }
+    return
+  }
   if (Get-Process -Id $ownedPid -ErrorAction SilentlyContinue) {
     if ($AllowForceStop) {
       Write-Evidence "FORCE_STOP explicitly-allowed owned PID=$ownedPid"
@@ -448,10 +566,11 @@ function Get-NewestSvgSince([string]$dir, [datetime]$startedAt) {
 # 接続先にならなかった起動プロセス（$leftoverProcesses。$null は読み飛ばす）の後始末（Stop-LeftoverCadProcess）、
 # 入力 DWG のコピーが変わっていないことの記録（Confirm-DwgUnchanged）を、この順に行う。
 # -VerifyForceStop は強制停止の残留まで確かめ、-RecordDwgFailures は DWG の変更・欠落を失敗に加える。
-function Stop-CadSessionProcesses([int]$ownedPid, [int]$exitTimeoutSeconds, [object[]]$leftoverProcesses,
+function Stop-CadSessionProcesses($ownedProcess, [int]$exitTimeoutSeconds, [object[]]$leftoverProcesses,
                                   [string]$dwgCopy, [string]$dwgHash, [ref]$cleanupFailures,
-                                  [switch]$AllowForceStop, [switch]$VerifyForceStop, [switch]$RecordDwgFailures) {
-  Stop-OwnedCadProcess $ownedPid $exitTimeoutSeconds $cleanupFailures -AllowForceStop:$AllowForceStop -VerifyForceStop:$VerifyForceStop
+                                  [switch]$AllowForceStop, [switch]$VerifyForceStop, [switch]$RecordDwgFailures, $QuitExitCode = $null) {
+  $ownedPid = if ($null -ne $ownedProcess) { $ownedProcess.Id } else { 0 }
+  Stop-OwnedCadProcess $ownedProcess $exitTimeoutSeconds $cleanupFailures -AllowForceStop:$AllowForceStop -VerifyForceStop:$VerifyForceStop -QuitExitCode $QuitExitCode
   foreach ($extra in $leftoverProcesses) {
     if ($null -ne $extra) {
       Stop-LeftoverCadProcess $extra.Id "extra" $ownedPid $cleanupFailures -AllowForceStop:$AllowForceStop -VerifyForceStop:$VerifyForceStop
@@ -493,9 +612,18 @@ function New-CompatPluginStage([string]$product, [string]$pluginPath) {
   $dir = Join-Path $root ("CADPeta-e2e-" + [guid]::NewGuid().ToString("N"))
   if (Test-Path -LiteralPath $dir) { throw "コピー先が既にあります: $dir" }
   New-Item -ItemType Directory -Path $dir | Out-Null
-  Copy-Item -Path (Join-Path (Split-Path -Parent $pluginPath) "*") -Destination $dir -Recurse
-  $staged = Join-Path $dir (Split-Path -Leaf $pluginPath)
-  if (-not (Test-Path -LiteralPath $staged -PathType Leaf)) { throw "プラグインをコピーできませんでした: $staged" }
+  try {
+    Copy-Item -Path (Join-Path (Split-Path -Parent $pluginPath) "*") -Destination $dir -Recurse
+    $staged = Join-Path $dir (Split-Path -Leaf $pluginPath)
+    if (-not (Test-Path -LiteralPath $staged -PathType Leaf)) { throw "プラグインをコピーできませんでした: $staged" }
+  }
+  catch {
+    # 戻り値を返す前に失敗すると呼び出し側は後始末できないので、作ったフォルダをここで削除してから止まる
+    $copyError = $_
+    try { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop }
+    catch { throw "$($copyError.Exception.Message)（作ったフォルダも削除できなかった: $dir。$($_.Exception.Message)）" }
+    throw $copyError
+  }
   return @{ Plugin = $staged; Dir = $dir }
 }
 
@@ -728,6 +856,18 @@ function Restore-CompatProfileBackup([string]$backupDir) {
 # インストール先の記録だけを行い、登録と profile.xml には触れない。
 function Suspend-CompatProductAutoload([string]$product, [ref]$stateRef, [string[]]$InstallRoots = $null, [switch]$KeepAutoload) {
   if ($null -eq $InstallRoots) { $InstallRoots = Get-CadPetaInstallRoots }
+  if ($product -like 'Acad*') {
+    # acad.exe はインストール済みの bundle を起動時に読み込むので、あればビルドした DLL を試験できない。何も変えずに止まる
+    $installed = @(Get-InstalledCadPetaBundles $InstallRoots)
+    if (-not $KeepAutoload -and $installed.Count) {
+      throw "インストール済みの CADPeta を acad.exe が自動で読み込むので、試験の DLL を確かめられない。アンインストールしてから実行する: $($installed -join ', ')"
+    }
+    # AutoCAD は起動するだけでプロファイルの値を変える。プロファイルの全部の値と .aws とインストール先を記録し（CadRegGuard）、
+    # Resume-CompatProductAutoload で戻して照合する
+    $stateRef.Value = @{ Registry = $null; Profile = $null; InstallTree = $null
+      AcadRegGuard = (Get-CadRegSnapshot -InstallRoots $InstallRoots -AcadVersion ($product -replace '^Acad', '')) }
+    return
+  }
   $state = @{ Registry = $null; Profile = $null; InstallTree = @(Save-RecordBaseline @($InstallRoots | ForEach-Object { New-RecordRow 'インストール先' $_ 'Verify' })) }
   $stateRef.Value = $state
   # ここから先は環境を変える（登録を外し、CAD を起動する）。戻し終えるまで、実行前の記録は取らせない
@@ -777,6 +917,17 @@ function Resume-CompatProductAutoload($state, [string]$exe, [ref]$cleanupFailure
   if ($null -eq $state) { return }
   $running = Get-CompatCadRunningFailure $exe
   if ($running) { $cleanupFailures.Value += $running; return }
+  if ($null -ne $state.AcadRegGuard) {
+    # acad.exe（2024・2026）は終了の直前に accoreconsole を起動し、それは 1～3 秒後に終わる。終わるのを待ってから戻す
+    # （動いている AutoCAD が残れば、Restore-CadRegState はその設定を書き換えないように戻さず、失敗と記録を残す）
+    $deadline = (Get-Date).AddSeconds($CompatAcadExitWaitSeconds)
+    while (@(Get-CadRegRunningCad).Count -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds $PollMilliseconds }
+    $report = Restore-CadRegState $state.AcadRegGuard
+    $summary = Get-CadRegRestoreSummary $report
+    if ($summary) { Write-Evidence "REGISTRY $summary" }
+    if (-not $report.ok) { $cleanupFailures.Value += "AutoCAD のプロファイルの復元: $($report.mismatch -join '; ')" }
+    return
+  }
   $failuresBefore = @($cleanupFailures.Value).Count
   Resume-CompatAutoload $state.Registry $cleanupFailures
   Resume-CompatProfileAutoload $state.Profile $cleanupFailures

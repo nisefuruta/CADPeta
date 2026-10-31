@@ -11,49 +11,67 @@ namespace CadPeta.UseCases;
 public static class PetaOutcome
 {
     /// <summary>
-    /// クリップボード登録失敗時に、必要なら一時 EMF を回復場所へ退避する。
-    /// 返り値は「利用者が使える EMF の実パス」。ファイル出力ありのときは出力済みの
-    /// EMF がそのまま使えるため退避せず null を返す（呼び出し元は元の emfPath を案内する）。
-    /// ファイル出力オフのときは EMF を回復場所へ移し、移動できなければ一時フォルダごと
-    /// 残す（<paramref name="scope"/>.PreserveOnDispose）ことで、どちらでも EMF を回収できる。
+    /// クリップボードに登録できなかったときに、利用者が使える EMF のパスを返す。出力先に EMF を出していればそれを使い、
+    /// 一時フォルダの EMF は動かさない。出していなければ一時フォルダの EMF を回復の場所へ移し、移せなければ一時フォルダごと
+    /// 残す（<paramref name="work"/>.PreserveOnDispose）ので、どちらでも EMF を使える。
     /// </summary>
-    public static string? RecoverIfNeeded(ArtifactScope scope, string emfPath,
-                                          bool effectiveFileOutput, Action<string> warn)
+    public static string AvailableEmf(ArtifactScope work, string workEmfPath, string? publishedEmfPath, Action<string> warn)
     {
-        if (effectiveFileOutput)
-            return null; // 出力済み EMF がそのまま利用可能
-        string? recovered = ArtifactRecovery.PreserveEmf(emfPath, warn: warn);
-        if (recovered == null)
-            scope.PreserveOnDispose(); // 退避に失敗したので一時 EMF を消さずに残す
-        return recovered;
+        if (publishedEmfPath != null)
+            return publishedEmfPath;
+        string? recovered = ArtifactRecovery.PreserveEmf(workEmfPath, warn: warn);
+        if (recovered != null)
+            return recovered;
+        work.PreserveOnDispose(); // 移せなかったので一時の EMF を消さずに残す
+        return workEmfPath;
     }
 
     /// <summary>
-    /// 後始末（<see cref="ArtifactScope.Dispose"/>）が済んだ後に呼ぶ。クリップボード登録が
-    /// 失敗していれば回復手段を案内し、通常モードでは結果サマリを1行（＋オンのオプション行）出す。
-    /// 診断モード（PETADIAG）はサマリを出さない（詳細な診断ログ側が担う）。
+    /// 後始末（<see cref="ArtifactScope.Dispose"/>）が済んだ後に呼ぶ。写せなかったファイルとクリップボードの失敗は必ず表示し、
+    /// 通常は結果の要約を、診断（PETADIAG）は出力したファイルだけを出す（詳しいことは診断のログが表示する）。
     /// </summary>
-    /// <param name="msgs">表示文言カタログ（クリップボード失敗案内の枠と結果サマリの文言）。</param>
     /// <param name="clipboardError">登録失敗の理由。null なら登録成功。文面は下位層の原文のまま内挿する。</param>
-    /// <param name="recoveredEmfPath"><see cref="RecoverIfNeeded"/> の戻り値。null なら emfPath を案内する。</param>
+    /// <param name="availableEmf">登録に失敗したときに案内する EMF（<see cref="AvailableEmf"/> の戻り値）。</param>
     public static void Report(MessageCatalog msgs,
-                              TextWriter log, bool diagnostic, bool effectiveFileOutput, string emfPath,
-                              string? clipboardError, string? recoveredEmfPath,
+                              TextWriter log, bool diagnostic, PublishResult publish,
+                              string? clipboardError, string availableEmf,
                               long emfBytes, int nodeCount,
                               bool groupByLayer, bool shxSubstitute, bool textOutline,
                               double marginMm)
     {
+        WriteFailures(log, publish);
         if (clipboardError != null)
         {
-            string available = recoveredEmfPath ?? emfPath;
             log.WriteLine(msgs.Format("outcome.clipboard_failed", clipboardError));
-            log.WriteLine(msgs.Format("outcome.available_emf", available));
+            log.WriteLine(msgs.Format("outcome.available_emf", availableEmf));
             log.WriteLine(msgs.Format("outcome.reuse_hint"));
         }
         if (!diagnostic)
-            log.WriteLine(RunSummary.Build(msgs,
-                effectiveFileOutput ? Path.GetFileName(emfPath) : null,
+            log.WriteLine(RunSummary.Build(msgs, publish.Published,
                 emfBytes, nodeCount, clipboardError == null,
                 groupByLayer, shxSubstitute, textOutline, marginMm));
+        else
+            WritePublished(msgs, log, publish);
+    }
+
+    /// <summary>成果物を作らずに中止した診断（PETADIAG）で、写せなかったファイルと写したファイルを出す。</summary>
+    public static void ReportPublished(MessageCatalog msgs, TextWriter log, PublishResult publish)
+    {
+        WriteFailures(log, publish);
+        WritePublished(msgs, log, publish);
+    }
+
+    // 写せなかったファイルの理由（1 件 1 行）
+    static void WriteFailures(TextWriter log, PublishResult publish)
+    {
+        foreach (string failure in publish.Failures)
+            log.WriteLine(failure);
+    }
+
+    // 出力したファイルの名前とフォルダの 1 行（1 つも出していなければ何も出さない）
+    static void WritePublished(MessageCatalog msgs, TextWriter log, PublishResult publish)
+    {
+        if (publish.Published.Count > 0)
+            log.WriteLine(RunSummary.Published(msgs, publish.Published));
     }
 }

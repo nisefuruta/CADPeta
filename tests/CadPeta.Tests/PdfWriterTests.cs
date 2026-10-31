@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using CadPeta.Geometry;
 using CadPeta.Ir;
 using CadPeta.Out.Emf;
 using CadPeta.Out.Pdf;
@@ -33,7 +34,7 @@ public class PdfWriterTests
     {
         var ir = new IrDocument { WidthMm = 210, HeightMm = 297 };
         var (_, text) = WritePdf(ir);
-        double wPt = 210 * PdfWriter.PtPerMm, hPt = 297 * PdfWriter.PtPerMm;
+        double wPt = 210 * Units.PtPerMm, hPt = 297 * Units.PtPerMm;
         Assert.Contains($"/MediaBox [0 0 {IrNumber.Coordinate(wPt)} {IrNumber.Coordinate(hPt)}]", text);
         // 1pt=1/72インチ・1インチ=25.4mmの定義どおり（210mm→595.28pt、297mm→841.89pt 相当）
         Assert.Equal(595.2756, wPt, 3);

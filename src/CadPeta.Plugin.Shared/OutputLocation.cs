@@ -1,8 +1,9 @@
-// 出力先の決定（既定は図面と同じフォルダ、書き込み不可・未保存時は利用者へ問い合わせ、
-// 無応答なら %TEMP%\CadPeta へ退避）。CAD 依存（保存状態・図面パス・文字列入力）は
+// 出力先の決定（PETA は設定の出力先、PETADATA は図面と同じフォルダ。書き込めないときと、未保存の図面で起点が無いときは
+// 利用者へ問い合わせ、無応答なら %TEMP%\CadPeta へ退避）。CAD 依存（保存状態・図面パス・文字列入力）は
 // IEditorPort 越しに得て、フォルダ判定・生成は中立な IO で行う。
 using System;
 using System.IO;
+using CadPeta.UseCases;
 
 namespace CadPeta.Plugin.Shared;
 
@@ -20,24 +21,31 @@ public static class OutputLocation
     /// <summary>PETADATA用。出力先プロンプトをEscで中断した場合は成果物を作らずnull
     /// （中止メッセージは呼び出し側が出す。コマンド名をここへ焼き込まないため）。</summary>
     public static string? TryResolveExport(IEditorPort ed, TextWriter log) =>
-        ResolveCore(ed, log, CancelPolicy.Abort);
+        ResolveCore(ed, log, CancelPolicy.Abort, DrawingDir(ed));
 
-    /// <summary>出力フォルダを決定する。必要なら利用者へ問い合わせる。Escは退避先へ続行する。</summary>
-    public static string Resolve(IEditorPort ed, TextWriter log) =>
-        ResolveCore(ed, log, CancelPolicy.FallbackToTemp)!; // FallbackToTemp は null を返さない
+    /// <summary>
+    /// PETA 用。設定の出力先（相対パスは図面のフォルダが起点）に書き込めればそれを使う（フォルダは成果物を写すときに作る）。
+    /// 起点が無いか書き込めなければ利用者へ問い合わせる。
+    /// Escは退避先へ続行する。
+    /// </summary>
+    public static string ResolveFor(IEditorPort ed, TextWriter log, CadPetaSettings settings) =>
+        ResolveCore(ed, log, CancelPolicy.FallbackToTemp, settings.ResolveOutputFolder(DrawingDir(ed)))!; // FallbackToTemp は null を返さない
+
+    // 保存した図面のフォルダ（未保存なら null）
+    static string? DrawingDir(IEditorPort ed) => ed.IsDrawingSaved ? Path.GetDirectoryName(ed.DrawingPath) : null;
 
     // 出力先決定の単一実装。Esc 時の挙動（退避先へ続行／中止）だけをポリシーで分岐し、
     // 図面フォルダ判定・利用者入力の評価・退避先の確保（CreateDirectory ガード＋文脈付き例外）は
     // 一本化する（旧 TryResolveExport は Resolve の複製で、退避先 CreateDirectory の
     // 例外変換だけが欠落していた）。
-    static string? ResolveCore(IEditorPort ed, TextWriter log, CancelPolicy cancelPolicy)
+    // preferred は使いたい出力先（null は未保存の図面で起点が無い）。無ければ作り、書き込めればそれを使う
+    static string? ResolveCore(IEditorPort ed, TextWriter log, CancelPolicy cancelPolicy, string? preferred)
     {
-        if (ed.IsDrawingSaved)
+        if (preferred != null)
         {
-            var dwgDir = Path.GetDirectoryName(ed.DrawingPath);
-            if (dwgDir != null && IsWritable(dwgDir))
-                return dwgDir;
-            log.WriteLine(Msg.Format("output.dwg_dir_unwritable", dwgDir ?? ""));
+            if (UnusableReason(preferred) is not { } reason)
+                return preferred;
+            log.WriteLine(Msg.Format("output.dir_unwritable", preferred, reason));
         }
         else
         {
@@ -55,58 +63,71 @@ public static class OutputLocation
         }
         else if (!string.IsNullOrWhiteSpace(answer))
         {
+            // 不正パス・権限不足など。理由を示した上で退避先へ進む（無言の付け替えはしない）
             var chosen = answer.Trim();
-            try
-            {
-                Directory.CreateDirectory(chosen);
-                if (IsWritable(chosen))
-                    return chosen;
-                log.WriteLine(Msg.Format("output.chosen_unwritable", chosen));
-            }
-            catch (System.Exception ex) when (IsPathFailure(ex))
-            {
-                // 不正パス・権限不足等。理由を示した上で退避先へ進む（無言の付け替えはしない）
-                log.WriteLine(Msg.Format("output.chosen_create_failed", chosen, ex.Message));
-            }
+            if (UnusableReason(chosen) is not { } reason)
+                return chosen;
+            log.WriteLine(Msg.Format("output.chosen_create_failed", chosen, reason));
         }
 
-        // 退避先も確保できなければ出力手段がないため、ここで初めて中止（例外）とする
-        try
-        {
-            Directory.CreateDirectory(fallback);
-        }
-        catch (System.Exception ex) when (IsPathFailure(ex))
-        {
-            throw new IOException(Msg.Format("output.fallback_create_failed", fallback), ex);
-        }
-        if (!IsWritable(fallback))
-            throw new IOException(Msg.Format("output.fallback_unwritable", fallback));
+        // 退避先も使えなければ出力手段がないため、ここで初めて中止（例外）とする
+        if (UnusableReason(fallback) is { } fallbackReason)
+            throw new IOException(Msg.Format("output.fallback_unusable", fallback, fallbackReason));
         return fallback;
     }
 
-    public static string Stem(IEditorPort ed) => ed.DrawingStem;
-
-    /// <summary>パス操作・ファイル生成で「その場所は使えない」を意味する例外の判別。
-    /// これ以外（OutOfMemory 等の実行系異常）は握りつぶさず上へ通す。</summary>
-    static bool IsPathFailure(System.Exception ex) =>
-        ex is IOException                    // PathTooLongException・DirectoryNotFoundException を含む
-           or UnauthorizedAccessException    // ACL 拒否
-           or System.Security.SecurityException
-           or NotSupportedException          // "con:" 等の非対応形式
-           or ArgumentException;             // 不正文字・空パス
-
-    static bool IsWritable(string dir)
+    /// <summary>
+    /// フォルダを作り（あれば何もしない）、ファイルを 1 つ作って消して、書き込めるかを確かめる。使えなければ理由（例外の文を 1 行にしたもの）、
+    /// 使えれば null。確かめるために作ったフォルダは消す（成果物を写すときに作り直す。何も出さない実行でフォルダを残さない）。
+    /// </summary>
+    static string? UnusableReason(string dir)
     {
+        string? created = null;
         try
         {
+            created = FirstMissing(Path.GetFullPath(dir));
+            Directory.CreateDirectory(dir);
             var probe = Path.Combine(dir, Path.GetRandomFileName());
             using (File.Create(probe)) { }
             File.Delete(probe);
-            return true;
+            return null;
         }
-        catch (System.Exception ex) when (IsPathFailure(ex))
+        catch (System.Exception ex) when (FileFailures.IsPathFailure(ex))
         {
-            return false;
+            return FileFailures.OneLine(ex.Message);
+        }
+        finally
+        {
+            if (created != null)
+                RemoveCreated(Path.GetFullPath(dir), created);
         }
     }
-}
+
+    // dir と、その上のフォルダのうち無いものの一番上（すべてあれば null）
+    static string? FirstMissing(string dir)
+    {
+        string? missing = null;
+        for (string? d = dir; d != null && !Directory.Exists(d); d = Path.GetDirectoryName(d))
+            missing = d;
+        return missing;
+    }
+
+    // 確かめるために作ったフォルダ（dir から top まで）を、下から 1 つずつ消す。空でないフォルダ（作った後にほかのプロセスが
+    // ファイルを置いた）は Directory.Delete が失敗するので消さない
+    static void RemoveCreated(string dir, string top)
+    {
+        try
+        {
+            // 作るのに途中で失敗したときは、下のフォルダが無いことがあるので、あるものだけ消す
+            for (string? d = dir; d != null; d = Path.GetDirectoryName(d))
+            {
+                if (Directory.Exists(d))
+                    Directory.Delete(d, recursive: false);
+                if (string.Equals(d, top, StringComparison.OrdinalIgnoreCase)) break;
+            }
+        }
+        catch (System.Exception ex) when (FileFailures.IsPathFailure(ex))
+        {
+            // 消せなくても、残るのは書き込めると確かめたフォルダで、出力先の判定は変わらない（成果物はそこへ写す）
+        }
+    }}

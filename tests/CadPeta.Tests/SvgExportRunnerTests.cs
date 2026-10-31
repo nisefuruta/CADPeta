@@ -62,10 +62,14 @@ public class SvgExportRunnerTests
         public string CurrentLayoutName => "Model";
         public object? GetPickfirstSelection() => new object(); // 先選択あり→選択プロンプトを出さない
         public SelectionResult PromptSelection() => SelectionResult.OfEmpty();
+        public bool HasScreen => false;
+        public bool ShowCommentDialog(CommentForm form) => throw new InvalidOperationException("コメントのダイアログは開かない");
         public string? PromptString(string message) => null;
         public PromptResult<double> PromptDouble(string message, IReadOnlyList<PromptKeyword> keywords,
             double defaultValue, bool useDefault, bool allowNone, bool allowZero, bool allowNegative) =>
             PromptResult<double>.OfNone(); // 尺度・オプションは既定のまま確定
+        public PromptResult<string> PromptKeywords(string message, IReadOnlyList<PromptKeyword> keywords) =>
+            throw new InvalidOperationException("キーワードの入力は呼ばれない");
         public void WriteLine(string message) { }
         public IDisposable BeginWindowPickScope(TextWriter verbose) => new Scope();
         public PromptResult<PlotWindow> PromptWindow(string firstMessage,

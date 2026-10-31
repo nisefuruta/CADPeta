@@ -9,6 +9,7 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 using CadRuntimeException = Autodesk.AutoCAD.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Acad.AcadPluginDefaults;
+using CadTransaction = CadPeta.Acquire.Acad.CadTransaction;
 namespace CadPeta.Plugin.Acad;
 #elif CADPETA_ARES
 using Teigha.ApplicationServices;
@@ -16,6 +17,7 @@ using Teigha.DatabaseServices;
 using Teigha.Geometry;
 using CadRuntimeException = Teigha.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Ares.AresPluginDefaults;
+using CadTransaction = CadPeta.Acquire.Ares.CadTransaction;
 namespace CadPeta.Plugin.Ares;
 #elif CADPETA_IJCAD
 using Itjp.Ijcad.ApplicationServices;
@@ -23,6 +25,7 @@ using Itjp.Ijcad.DatabaseServices;
 using Itjp.Ijcad.Geometry;
 using CadRuntimeException = Itjp.Ijcad.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Ijcad.IjcadPluginDefaults;
+using CadTransaction = CadPeta.Acquire.Ijcad.CadTransaction;
 namespace CadPeta.Plugin.Ijcad;
 #elif CADPETA_BRICSCAD
 using Bricscad.ApplicationServices;
@@ -30,10 +33,12 @@ using Teigha.DatabaseServices;
 using Teigha.Geometry;
 using CadRuntimeException = Teigha.Runtime.Exception;
 using ProductPluginDefaults = CadPeta.Plugin.Bricscad.BricscadPluginDefaults;
+using CadTransaction = CadPeta.Acquire.Bricscad.CadTransaction;
 namespace CadPeta.Plugin.Bricscad;
 #else
 #error CAD product symbol is required
 #endif
+using CadPeta.Acquire.Common;
 using CadPeta.Plugin.Shared;
 using System.Globalization;
 
@@ -62,7 +67,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         Database? _sideDb;
         readonly Database _sourceDb;
         readonly Document _sourceDoc;
-        Transaction? _sourceIsolation;
+        CadTransaction? _sourceIsolation;
         IsolationSnapshot? _isolationSnapshot;
         bool _disposed;
 
@@ -87,7 +92,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                 bool sourceIsModelSpace;
                 bool hasSelectedViewport = false;
                 string sourceLayoutName;
-                using (var tr = doc.Database.TransactionManager.StartTransaction())
+                using (var tr = new CadTransaction(doc.Database))
                 {
                     var bt = (BlockTable)tr.GetObject(doc.Database.BlockTableId, OpenMode.ForRead);
                     ObjectId currentSpaceId = doc.Database.CurrentSpaceId;
@@ -243,7 +248,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             }
         }
 
-        static Transaction BeginPaperViewportIsolation(Database db,
+        static CadTransaction BeginPaperViewportIsolation(Database db,
             ObjectIdCollection selected, ObjectIdCollection clipIds,
             out IsolationSnapshot snapshot)
         {
@@ -252,7 +257,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             foreach (ObjectId id in clipIds) keep.Add(id);
             var changed = new List<IsolationEntityState>();
             var temporaryLayers = new List<ObjectId>();
-            var tr = db.TransactionManager.StartTransaction();
+            var tr = new CadTransaction(db);
             try
             {
                 var space = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForRead);
@@ -309,7 +314,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         static void VerifyPaperViewportIsolationRestored(Database db,
             IsolationSnapshot snapshot)
         {
-            using var tr = db.TransactionManager.StartTransaction();
+            using var tr = new CadTransaction(db);
             foreach (var state in snapshot.Entities)
             {
                 if (!state.Id.IsValid || state.Id.IsErased ||
@@ -346,7 +351,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         /// 元の画層の色・線の太さ・線種・印刷スタイルを写した、印刷する画層を画層テーブルに足して返す
         /// （非表示・凍結・印刷しない画層の図形を、印刷のあいだだけ移す先）。
         /// </summary>
-        static LayerTableRecord AddPlotEnabledLayer(Transaction tr, LayerTable lt, string name, LayerTableRecord source)
+        static LayerTableRecord AddPlotEnabledLayer(CadTransaction tr, LayerTable lt, string name, LayerTableRecord source)
         {
             lt.UpgradeOpen();
             var record = NewPlotEnabledLayerRecord(name, source);
@@ -433,7 +438,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             ObjectId targetOwnerId)
         {
             var sourceTypes = new Dictionary<ObjectId, string>();
-            using (var tr = source.TransactionManager.StartTransaction())
+            using (var tr = new CadTransaction(source))
             {
                 foreach (ObjectId id in sourceIds)
                 {
@@ -536,7 +541,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             try
             {
                 ObjectId modelId;
-                using (var tr = side.TransactionManager.StartTransaction())
+                using (var tr = new CadTransaction(side))
                 {
                     var bt = (BlockTable)tr.GetObject(side.BlockTableId, OpenMode.ForRead);
                     modelId = bt[BlockTableRecord.ModelSpace];
@@ -624,7 +629,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             ObjectIdCollection ids)
         {
             var inventory = new EntityInventory();
-            using (var tr = db.TransactionManager.StartTransaction())
+            using (var tr = new CadTransaction(db))
             {
                 foreach (ObjectId id in ids)
                     inventory.Add(tr, id);
@@ -648,7 +653,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             var layoutValues = new SortedDictionary<string, string?>(StringComparer.Ordinal);
             var plotValues = new SortedDictionary<string, string?>(StringComparer.Ordinal);
 
-            using (var tr = db.TransactionManager.StartTransaction())
+            using (var tr = new CadTransaction(db))
             {
                 var space = (BlockTableRecord)tr.GetObject(btrId, OpenMode.ForRead);
                 foreach (ObjectId id in space)
@@ -710,7 +715,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
 
             void CountType(string type) => Types[type] = Types.TryGetValue(type, out int old) ? old + 1 : 1;
 
-            public void Add(Transaction tr, ObjectId id)
+            public void Add(CadTransaction tr, ObjectId id)
             {
                 Count++;
                 Entity? entity = null;
@@ -815,7 +820,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
                 extents.MinPoint.Z <= extents.MaxPoint.Z;
         }
 
-        static BlockTableRecord OpenModelSpace(Transaction tr, Database db)
+        static BlockTableRecord OpenModelSpace(CadTransaction tr, Database db)
         {
             var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
             return (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
@@ -823,7 +828,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
 
         static bool ModelSpaceHasEntities(Database db)
         {
-            using var tr = db.TransactionManager.StartTransaction();
+            using var tr = new CadTransaction(db);
             var model = OpenModelSpace(tr, db);
             foreach (ObjectId _ in model) return true;
             return false;
@@ -831,7 +836,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
 
         static (ObjectId LayoutId, ObjectId BtrId) GetModelLayout(Database db)
         {
-            using var tr = db.TransactionManager.StartTransaction();
+            using var tr = new CadTransaction(db);
             var model = OpenModelSpace(tr, db);
             return (model.LayoutId, model.ObjectId);
         }
@@ -855,14 +860,14 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         }
 
         /// <summary><paramref name="db"/> を作業中の図面にし、そのトランザクションで <paramref name="body"/> を実行する（確定は body が Commit で行う）。</summary>
-        static T InWorkingDatabase<T>(Database db, Func<Transaction, T> body) =>
+        static T InWorkingDatabase<T>(Database db, Func<CadTransaction, T> body) =>
             WithWorkingDatabase(db, () =>
             {
-                using var tr = db.TransactionManager.StartTransaction();
+                using var tr = new CadTransaction(db);
                 return body(tr);
             });
 
-        static void InWorkingDatabase(Database db, Action<Transaction> body) =>
+        static void InWorkingDatabase(Database db, Action<CadTransaction> body) =>
             InWorkingDatabase(db, tr => { body(tr); return true; });
 
         static (ObjectId LayoutId, ObjectId BtrId) FindPaperLayout(Database db,
@@ -893,8 +898,8 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
             const string activeName = "*Active";
             try
             {
-                using var trS = source.TransactionManager.StartTransaction();
-                using var trD = side.TransactionManager.StartTransaction();
+                using var trS = new CadTransaction(source);
+                using var trD = new CadTransaction(side);
                 var vtS = (ViewportTable)trS.GetObject(source.ViewportTableId, OpenMode.ForRead);
                 var vtD = (ViewportTable)trD.GetObject(side.ViewportTableId, OpenMode.ForRead);
                 if (!vtS.Has(activeName) || !vtD.Has(activeName))
@@ -925,7 +930,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         static void MakeLayoutCurrent(Database db, ObjectId layoutId)
         {
             string layoutName;
-            using (var tr = db.TransactionManager.StartTransaction())
+            using (var tr = new CadTransaction(db))
             {
                 var layout = (Layout)tr.GetObject(layoutId, OpenMode.ForRead);
                 layoutName = layout.LayoutName;
@@ -936,7 +941,7 @@ internal sealed class CadSelectionPlotPort : ISelectionPlotPort
         /// <summary>側DBの対象レイアウトへ元レイアウトのページ設定を複製する。</summary>
         static void ApplySourceSettings(Database db, ObjectId layoutId, PlotSettings sourceSettings)
         {
-            using var tr = db.TransactionManager.StartTransaction();
+            using var tr = new CadTransaction(db);
             var layout = (Layout)tr.GetObject(layoutId, OpenMode.ForWrite);
             layout.CopyFrom(sourceSettings);
             tr.Commit();

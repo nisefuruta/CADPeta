@@ -276,6 +276,34 @@ try {
   finally { $CadPetaTrustedDotnetFolder = $savedTrusted }
   $checked.Add('COM の試験の AutoCAD は、信頼済みのフォルダの直下へコピーし、コピーしたものだけを削除し、同じ名前のファイルがあれば何もコピーしない')
 
+  # 16b. ARES の信頼するフォルダ(%AppData%\ARES Standard Edition x64)の下へのコピーが途中で失敗したとき(プラグインの DLL が無い):
+  #      例外で止まり、作った実行ごとのフォルダを残さない(呼び出し側は戻り値を受け取れないので、後始末できない)
+  $savedAppData = $env:APPDATA
+  $env:APPDATA = Join-Path $backupDir 'appdata'
+  try {
+    $aresRoot = Join-Path $env:APPDATA 'ARES Standard Edition x64'
+    $aresBuild = Join-Path $backupDir 'ares-build'
+    New-Item -ItemType Directory -Force $aresRoot, $aresBuild | Out-Null
+    [IO.File]::WriteAllText((Join-Path $aresBuild 'CadPeta.Core.dll'), 'core')
+    $threw = $false
+    try { [void](New-CompatPluginStage 'Ares2027' (Join-Path $aresBuild 'CadPeta.Plugin.Ares.dll')) } catch { $threw = $true }
+    if (-not $threw) { throw '16b: プラグインの DLL をコピーできなかったのに止まらなかった' }
+    $leftStages = @(Get-ChildItem -LiteralPath $aresRoot -Directory -Filter 'CADPeta-e2e-*')
+    if ($leftStages.Count) { throw "16b: コピーの途中で失敗したのに、作ったフォルダが残った: $($leftStages.Name -join ', ')" }
+  }
+  finally { $env:APPDATA = $savedAppData }
+  $checked.Add('ARES の信頼するフォルダへのコピーが途中で失敗したら、作ったフォルダを残さずに止まる')
+
+  # 16c. COM の試験で AutoCAD を使うとき、インストール済みの bundle があれば、プロファイルの記録も含めて何も変えずに止まる
+  $installedBundle = Join-Path $backupDir 'Autodesk\ApplicationPlugins\CADPeta.bundle'
+  New-Item -ItemType Directory -Force $installedBundle | Out-Null
+  $threw = $false
+  try { $acadState = $null; Suspend-CompatProductAutoload 'Acad2026' ([ref]$acadState) -InstallRoots @($installedBundle) } catch { $threw = $true }
+  if (-not $threw) { throw '16c: インストール済みの bundle があるのに止まらなかった' }
+  if ($null -ne $acadState) { throw '16c: 止まったのに、プロファイルの記録を取った' }
+  Assert-RecordEnvironmentUnchanged '16c'
+  $checked.Add('COM の試験の AutoCAD は、インストール済みの bundle があれば何も変えずに止まる')
+
   # 17. 実行前の記録は、環境を変える前の 1 か所で取る。登録を外した後(戻す前)に、もう一度実行前の記録を取ろうとしたら止め、戻した後は取れる
   $product = $null; Suspend-CompatProductAutoload 'Ijcad' ([ref]$product) -InstallRoots @($install)
   $threw = $false

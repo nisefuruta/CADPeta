@@ -3,6 +3,7 @@
 // CAD SDK で実装する。ここに CAD 型を持ち込まない（参照方向テストが機械検査する）。
 using System;
 using System.Collections.Generic;
+using CadPeta.UseCases;
 
 namespace CadPeta.Plugin.Shared;
 
@@ -140,6 +141,15 @@ public interface IEditorPort
     /// <summary>文字列入力（出力先フォルダ問い合わせ）。キャンセルは null。</summary>
     string? PromptString(string message);
 
+    /// <summary>ダイアログを開ける（画面のある）CAD か。AutoCAD の accoreconsole は false。</summary>
+    bool HasScreen { get; }
+
+    /// <summary>
+    /// ファイル名のコメントのダイアログ（<see cref="HasScreen"/> のときだけ呼ぶ）。OK なら入力したコメントを <paramref name="form"/> に入れて true、
+    /// キャンセルなら false を返す。使えないコメントでは OK を押せない。
+    /// </summary>
+    bool ShowCommentDialog(CommentForm form);
+
     /// <summary>
     /// 数値入力（貼付尺度・余白）。キーワードは SDK の戻り表記にかかわらず、
     /// <see cref="PromptKeyword.Global"/> の値へ正規化して返す。
@@ -147,6 +157,11 @@ public interface IEditorPort
     PromptResult<double> PromptDouble(string message, IReadOnlyList<PromptKeyword> keywords,
                                       double defaultValue, bool useDefault,
                                       bool allowNone, bool allowZero, bool allowNegative);
+
+    /// <summary>
+    /// キーワードだけの入力（-PETAOPT）。Enter は None、Esc は Cancelled、キーワードは <see cref="PromptKeyword.Global"/> の値で返す。
+    /// </summary>
+    PromptResult<string> PromptKeywords(string message, IReadOnlyList<PromptKeyword> keywords);
 
     /// <summary>コマンドラインへ1行出す（オプション切替の確認表示など）。</summary>
     void WriteLine(string message);
@@ -169,7 +184,7 @@ public interface IEditorPort
 }
 
 /// <summary>
-/// 用紙実寸（mm）とプロット設定の中立ビュー。IPlotPort が検証済みプロット設定から算出して返す。
+/// 発行される PDF のページの大きさ・印刷可能領域（mm）とプロット設定の中立ビュー。IPlotPort が検証済みプロット設定から算出して返す。
 /// 座標系は用紙座標（左下原点・Y上向き）。窓クロップ矩形の算出に PlotOrchestrator が使う。
 /// </summary>
 public readonly struct PaperMetrics
@@ -185,10 +200,14 @@ public readonly struct PaperMetrics
         ScaleMmPerUnit = scaleMmPerUnit; QuarterTurnsCw = quarterTurnsCw; IsModel = isModel;
     }
 
+    /// <summary>発行される PDF のページの幅（PDF ドライバの 1pt の丸めを含む。PdfPageGeometry）。</summary>
     public double PageWidthMm { get; }
+    /// <summary>発行される PDF のページの高さ（PageWidthMm と同じく丸めを含む）。</summary>
     public double PageHeightMm { get; }
+    /// <summary>印刷可能領域の幅（用紙の公称の大きさから余白を除いた値。フィットの尺度と収まりの判定に使う）。</summary>
     public double PrintableWidthMm { get; }
     public double PrintableHeightMm { get; }
+    /// <summary>窓を置く印刷可能領域の中心（用紙座標。PDF ドライバが印刷可能領域の原点を丸める製品では、丸めた原点から測る）。</summary>
     public double PrintCenterXMm { get; }
     public double PrintCenterYMm { get; }
 

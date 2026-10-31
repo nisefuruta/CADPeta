@@ -19,6 +19,8 @@ from pathlib import Path
 
 from PIL import Image, ImageChops
 
+from pixel_diff import changed_pixels
+
 # Windows の既定コードページのままだと日本語が化けて結果を読めない（この repo の実測則）
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
@@ -45,9 +47,8 @@ def main() -> int:
         return 1
 
     diff = ImageChops.difference(ia, ib)
-    gray = diff.convert("L")
     total = ia.size[0] * ia.size[1]
-    diff_px = sum(1 for v in gray.getdata() if v != 0)
+    diff_px = changed_pixels(diff)
     percent = diff_px / total * 100 if total else 0.0
     worst = max(hi for _, hi in diff.getextrema())
     print(f"寸法={ia.size} 最大チャンネル差={worst} 差分画素={diff_px}/{total} 差分範囲={diff.getbbox()}")

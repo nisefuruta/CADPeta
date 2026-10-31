@@ -13,74 +13,6 @@ namespace CadPeta.Tests;
 
 public class RangePromptTests
 {
-    // スクリプト化した偽エディタ。各プロンプトはキューへ積んだ応答を順に返す。
-    sealed class FakeEditor : IEditorPort
-    {
-        public bool IsDrawingSaved { get; set; } = true;
-        public string DrawingPath { get; set; } = @"C:\dwg\test.dwg";
-        public string DrawingStem { get; set; } = "test";
-        public string CurrentLayoutName { get; set; } = "Model";
-
-        public object? Pickfirst;
-        public Queue<SelectionResult> Selections { get; } = new();
-        public Queue<PromptResult<PlotWindow>> Windows { get; } = new();
-        public Queue<PromptResult<double>> Doubles { get; } = new();
-        public string? StringResponse { get; set; }
-        // 1回の PromptString ごとに異なる応答を返したいテスト向け。空なら StringResponse を使う。
-        public Queue<string?> StringResponses { get; } = new();
-        public List<string> StringMessages { get; } = new();
-        public List<string> Lines { get; } = new();
-        public List<IReadOnlyList<PromptKeyword>> DoubleKeywordSets { get; } = new();
-        public List<IReadOnlyList<PromptKeyword>> WindowKeywordSets { get; } = new();
-        public int ScopeBeginCount;
-        public int ScopeDisposeCount;
-        public int SelectionPromptCount;
-        public Exception? PromptWindowException;
-        public Exception? ScopeDisposeException;
-
-        public object? GetPickfirstSelection() => Pickfirst;
-        public SelectionResult PromptSelection()
-        {
-            SelectionPromptCount++;
-            return Selections.Dequeue();
-        }
-        public string? PromptString(string message)
-        {
-            StringMessages.Add(message);
-            return StringResponses.Count > 0 ? StringResponses.Dequeue() : StringResponse;
-        }
-        public PromptResult<double> PromptDouble(string message, IReadOnlyList<PromptKeyword> keywords,
-            double defaultValue, bool useDefault, bool allowNone, bool allowZero, bool allowNegative)
-        {
-            DoubleKeywordSets.Add(keywords);
-            return Doubles.Dequeue();
-        }
-        public void WriteLine(string message) => Lines.Add(message);
-        public IDisposable BeginWindowPickScope(TextWriter verbose)
-        {
-            ScopeBeginCount++;
-            return new Noop(this);
-        }
-        public PromptResult<PlotWindow> PromptWindow(string firstMessage,
-            IReadOnlyList<PromptKeyword> keywords, string secondMessage)
-        {
-            WindowKeywordSets.Add(keywords);
-            if (PromptWindowException != null) throw PromptWindowException;
-            return Windows.Dequeue();
-        }
-
-        sealed class Noop : IDisposable
-        {
-            readonly FakeEditor _owner;
-            public Noop(FakeEditor owner) => _owner = owner;
-            public void Dispose()
-            {
-                _owner.ScopeDisposeCount++;
-                if (_owner.ScopeDisposeException != null) throw _owner.ScopeDisposeException;
-            }
-        }
-    }
-
     static RangeChoice? Run(FakeEditor ed) =>
         RangePrompt.TryGetChoice(ed, TextWriter.Null, TextWriter.Null);
 
@@ -234,17 +166,6 @@ public class RangePromptTests
         Assert.NotNull(c);
         Assert.Equal(50, c!.Window!.Value.Width, 9);
         Assert.Contains(ed.Lines, l => l.Contains("指定し直す"));
-    }
-
-    [Fact]
-    public void ファイル出力トグルは全体選択後も保持される()
-    {
-        var ed = new FakeEditor();
-        ed.Windows.Enqueue(PromptResult<PlotWindow>.OfKeyword(PluginDefaults.KeywordFileOutput));
-        ed.Windows.Enqueue(PromptResult<PlotWindow>.OfKeyword(PluginDefaults.KeywordAll));
-        var c = Run(ed);
-        Assert.NotNull(c);
-        Assert.False(c!.FileOutput); // 既定 true をトグルでオフ
     }
 
     [Fact]
@@ -422,11 +343,9 @@ public class RangePromptTests
         ed.Doubles.Enqueue(PromptResult<double>.OfNone());
         var choice = RangePrompt.TryGetDataChoice(ed, TextWriter.Null, TextWriter.Null);
         Assert.NotNull(choice);
-        Assert.True(choice!.FileOutput);
         var globals = ed.DoubleKeywordSets.Single().Select(k => k.Global).ToArray();
         Assert.Contains(PluginDefaults.KeywordShxSubstitute, globals);
         Assert.Contains(PluginDefaults.KeywordGradientDpi, globals);
-        Assert.DoesNotContain(PluginDefaults.KeywordFileOutput, globals);
         Assert.DoesNotContain(PluginDefaults.KeywordEmfBackground, globals);
     }
 
@@ -450,14 +369,15 @@ public class RangePromptTests
         Assert.Equal(new[]
         {
             PluginDefaults.KeywordAll, PluginDefaults.KeywordObject, PluginDefaults.KeywordMargin,
-            PluginDefaults.KeywordLayer, PluginDefaults.KeywordTextOutline,
-            PluginDefaults.KeywordFileOutput, PluginDefaults.KeywordEmfBackground,
+            PluginDefaults.KeywordLayer, PluginDefaults.KeywordTextOutline, PluginDefaults.KeywordEmfBackground,
         }, globals);
     }
 
+    // ファイル出力(F)は PETAOPT の設定に置き換えたので、範囲のプロンプトでは受け付けない
     [Theory]
     [InlineData(PluginDefaults.KeywordShxSubstitute)]
     [InlineData(PluginDefaults.KeywordGradientDpi)]
+    [InlineData("Fileoutput")]
     public void 範囲プロンプトは非提示の構造書き出しキーワードを受理しない(string keyword)
     {
         var ed = new FakeEditor();
@@ -472,7 +392,6 @@ public class RangePromptTests
     }
 
     [Theory]
-    [InlineData(PluginDefaults.KeywordFileOutput)]
     [InlineData(PluginDefaults.KeywordEmfBackground)]
     public void PETADATAは非提示の印刷用キーワードを受理しない(string keyword)
     {
@@ -482,8 +401,7 @@ public class RangePromptTests
         var log = new StringWriter();
         var choice = RangePrompt.TryGetDataChoice(ed, log, TextWriter.Null);
         Assert.NotNull(choice);
-        Assert.True(choice!.FileOutput);
-        Assert.Equal(PluginDefaults.DefaultEmfBackground, choice.EmfBackground);
+        Assert.Equal(PluginDefaults.DefaultEmfBackground, choice!.EmfBackground);
         Assert.Contains("未知のキーワード", log.ToString());
     }
 

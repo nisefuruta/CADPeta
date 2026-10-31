@@ -14,27 +14,39 @@
          AutoCAD 参照は ExcludeAssets=runtime のため複製対象外（ホストが提供） -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <DefineConstants>$(DefineConstants);CADPETA_ACAD</DefineConstants>
+    <!-- PETAOPT のダイアログ（Ui.Wpf の Window）を開くため -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup>
     <!-- 4 製品で共有するソース（#if CADPETA_<製品> で SDK の違いを分ける）。フォルダの全ファイルを読むので、ファイルを足しても 4 つの csproj を直さない -->
     <Compile Include="..\CadPeta.Plugin.CadCommon\*.cs" LinkBase="CadCommon" />
   </ItemGroup>
 
-  <!-- AutoCAD 参照アセンブリ: AutoCAD.NET.Core（accoremgd: PlottingServices・Editor 等）と
-       AutoCAD.NET.Model（acdbmgd: Database・Layout 等）のみ。GUI 専用層 acmgd を持つ
-       AutoCAD.NET は参照せず、accoreconsole（コアコンソール）でも NETLOAD 可能に保つ
-       （2026-07-07 実機確認）。ExcludeAssets=runtime でコンパイル専用（配布物に含めない） -->
+  <!-- AutoCAD 参照アセンブリ: AutoCAD.NET.Core（accoremgd: PlottingServices・Editor 等）、AutoCAD.NET.Model（acdbmgd: Database・Layout 等）、
+       AutoCAD.NET（acmgd・AdWindows: ShowModalWindow とリボン）。acmgd と AdWindows は accoreconsole に無いので、その型は
+       CadCommon の GuiCommands.cs だけで使い、画面のある AutoCAD のときだけ呼ぶ（accoreconsole でも NETLOAD できる）。
+       ExcludeAssets=runtime でコンパイル専用（配布物に含めない） -->
   <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet48Tfm)'">
     <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet48)" ExcludeAssets="runtime" />
     <PackageReference Include="AutoCAD.NET.Model" Version="$(AcadNetVersionNet48)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET" Version="$(AcadNetVersionNet48)" ExcludeAssets="runtime" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">
     <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet8)" ExcludeAssets="runtime" />
     <PackageReference Include="AutoCAD.NET.Model" Version="$(AcadNetVersionNet8)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET" Version="$(AcadNetVersionNet8)" ExcludeAssets="runtime" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == '$(CadPetaNet10Tfm)'">
     <PackageReference Include="AutoCAD.NET.Core" Version="$(AcadNetVersionNet10)" ExcludeAssets="runtime" />
     <PackageReference Include="AutoCAD.NET.Model" Version="$(AcadNetVersionNet10)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET" Version="$(AcadNetVersionNet10)" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <!-- リボンのボタンのアイコン（GuiCommands.IconFrame。ARES と共有）。元の絵は CadCommon\Resources\Icons の <名前>-32.svg と
+       <名前>-16.svg で、ICO は同じフォルダの Build-Icons.ps1 が作る（16・24・32・48 px）。LogicalName はコードが探す名前 -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\CadPeta.Plugin.CadCommon\Resources\Icons\Peta.ico" LogicalName="CadPeta.Peta.ico" />
+    <EmbeddedResource Include="..\CadPeta.Plugin.CadCommon\Resources\Icons\PetaOpt.ico" LogicalName="CadPeta.PetaOpt.ico" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,6 +55,8 @@
     <ProjectReference Include="..\CadPeta.Acquire.Pdf\CadPeta.Acquire.Pdf.csproj" />
     <ProjectReference Include="..\CadPeta.Acquire.Acad\CadPeta.Acquire.Acad.csproj" />
     <ProjectReference Include="..\CadPeta.Out.Emf\CadPeta.Out.Emf.csproj" />
+    <ProjectReference Include="..\CadPeta.Out.Png\CadPeta.Out.Png.csproj" />
+    <ProjectReference Include="..\CadPeta.Ui.Wpf\CadPeta.Ui.Wpf.csproj" />
   </ItemGroup>
 
 </Project>

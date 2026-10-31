@@ -39,7 +39,20 @@ public sealed class PluginApp : IExtensionApplication
         PluginStartup.Run("Plugin.Load", () => PromptTrace.Write("Plugin.Load", "Loaded",
             typeof(PluginApp).Assembly.Location, valueIsNull: false, count: null), ReportOptionalFailure);
         PluginStartup.Run("Version", ShowLoadedBuild, ReportOptionalFailure);
+#if CADPETA_ACAD || (CADPETA_ARES && !CADPETA_ARES2020)
+        // リボンは画面のある AutoCAD と ARES 2023 以降（accoreconsole には無い）。置けなくてもコマンドは使える。
+        // ARES 2020 は、実行時に作ったタブの Id を読むと API が NullReferenceException を投げ、それを避けてパネルを入れると
+        // ARES が応答しなくなった（2026-10-28）ので、リボンを置かずにコマンドだけを使う
+        if (PetaCommand.HasScreen)
+            PluginStartup.Run("Ribbon", InstallRibbon, ReportOptionalFailure);
+#endif
     }
+
+#if CADPETA_ACAD || (CADPETA_ARES && !CADPETA_ARES2020)
+    // リボンの型を読み込むのはこのメソッドを JIT するときだけ（HasScreen を確かめてから呼ぶ）
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static void InstallRibbon() => GuiCommands.InstallRibbon();
+#endif
 
     static void ShowLoadedBuild()
     {
@@ -56,8 +69,12 @@ public sealed class PluginApp : IExtensionApplication
                 BuildStamp.Describe(typeof(PluginApp).Assembly, includePath: true)) + "\n");
     }
 
-    static void ReportOptionalFailure(string step, System.Exception ex) =>
+    static void ReportOptionalFailure(string step, System.Exception ex)
+    {
         System.Diagnostics.Trace.WriteLine($"[CadPeta] 読み込み時の {step} に失敗した: {ex}");
+        // 自動の試験のときだけ、失敗の全文を試験の記録にも書く（デバッグの記録は試験から読めない）
+        PromptTrace.Write("Plugin.StartupFailed", step, ex.ToString(), valueIsNull: false, count: null);
+    }
 
     public void Terminate() { }
 }

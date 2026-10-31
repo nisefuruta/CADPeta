@@ -8,22 +8,22 @@ CAD 図面をドキュメントの説明図として使う方法として、2000
 
 ## 主な機能
 
-- **印刷と同じ仕上がりで貼る** — 全体・2点窓・選択オブジェクトをすべてPDF印刷経由で処理し、CTB/STBの色・線幅を反映する。
-- **選択オブジェクトを実寸尺度で貼る** — 元図面を変更せず側DBから尺度1:Nで印刷する。非印刷図形も明示選択時は出力できる。
-- **CAD構造をSVGへ書き出す** — `PETADATA` で文字・レイヤ・元の色を保った外部編集用SVGを作る。
-- **4 形式で出力する** — EMF（Enhanced Metafile＝拡張メタファイル。Office 貼り付け用の主形式）、SVG（Scalable Vector Graphics）、PDF（変換元の印刷イメージ）、PNG（画像）。
-- **Office 上で図形に分解できる** — 貼り付けた図を Excel / PowerPoint で線・塗り・文字へ分解し、個別に編集できる。
-- **CAD なしで PDF を貼る** — コマンドライン版 `cadpeta.exe` で、受け取ったベクタ PDF を同じ品質で貼り付けられる（色変換・範囲切り出しにも対応）。
-- **CAD なしでPDFを画面操作する** — GUI版 `cadpeta-gui.exe` へPDFをドロップし、プレビューを見ながら色調整してOfficeへ貼るか4形式で保存できる。
+- **印刷と同じ仕上がりで貼る** — 全体・2点窓・選択オブジェクトをすべてPDF印刷経由で処理し、CTB/STBの色・線幅を反映します。
+- **選択オブジェクトを実寸尺度で貼る** — 元図面を変更せず、選択図形を画面に開かない一時的な図面データベースへ複製して、尺度1:Nで印刷します。非印刷図形も明示選択時は出力できます。
+- **CAD構造をSVGへ書き出す** — `PETADATA` で文字・レイヤ・元の色を保った外部編集用SVGを作ります。
+- **4 形式で出力する** — EMF（Enhanced Metafile＝拡張メタファイル。Office 貼り付け用の主形式）、SVG（Scalable Vector Graphics）、PDF（変換元の印刷イメージ）、PNG（画像）。出力する形式、出力先、ファイル名の形は `PETAOPT` で設定します（既定は EMF だけを、図面のフォルダの下の `CADPeta` フォルダへ出力します）。
+- **Office 上で図形に分解できる** — 貼り付けた図を Excel / PowerPoint で線・塗り・文字へ分解し、個別に編集できます。
+- **CAD なしで PDF の図を貼る** — コマンドライン版 `cadpeta.exe` で、受け取ったベクタ PDF の図を同じ品質で Office へ貼り付けられます（ページの選択、色変換、範囲切り出しにも対応）。
+- **CAD なしでPDFを画面操作する** — GUI版 `cadpeta-gui.exe` へPDFをドロップし、ページを選んでプレビューを見ながら色調整し、クリップボードにコピーするか4形式で保存できます。
 
 ## 対応環境
 
 - **AutoCAD** 2024 / 2025 / 2026 / 2027（実行基盤: 2024 以前 = .NET Framework 4.8、2025・2026 = .NET 8、2027 = .NET 10）
-- **互換 CAD** ARES Standard 2020 / 2023 / 2024 / 2027、IJCAD 2026 PRO、BricsCAD V26
+- **互換 CAD** ARES Standard 2020 / 2023 / 2024 / 2027、IJCAD 2026 PRO、BricsCAD V26（v1.1.0 は IJCAD と BricsCAD の実機で確かめていません）
 - **Office** Word / Excel / PowerPoint（Windows デスクトップ版）
 - **OS** Windows 11
-- コマンドライン版 `cadpeta.exe` は CAD のインストールを必要としない
-- GUI版 `cadpeta-gui.exe` はCADを必要としない（.NET 10 Desktop Runtime x64が必要）
+- コマンドライン版 `cadpeta.exe` は CAD のインストールを必要としません
+- GUI版 `cadpeta-gui.exe` はCADを必要としません（.NET 10 Desktop Runtime x64が必要です）
 
 ## 入手とインストール
 
@@ -31,30 +31,32 @@ CAD 図面をドキュメントの説明図として使う方法として、2000
 
 **AutoCAD**
 
-1. `CADPeta-AutoCAD-x.y.z.zip` を任意のフォルダへ展開する
-2. `install.bat` を実行する（管理者権限は不要。`CADPeta.bundle` が `%APPDATA%\Autodesk\ApplicationPlugins\` へコピーされます）手動で読み込みたい場合は `NETLOAD` も使えます。
-3. AutoCAD を起動し、コマンド行に `PETA` と入力する（bundle が版に合った DLL を自動で選び、初回実行時に自動ロードされます。以降 `NETLOAD` は不要）
+1. `CADPeta-AutoCAD-x.y.z.zip` を任意のフォルダへ展開します
+2. `install.bat` を実行します（管理者権限は不要。`CADPeta.bundle` が `%APPDATA%\Autodesk\ApplicationPlugins\` へコピーされます）。手動で読み込みたい場合は `NETLOAD` も使えます
+3. AutoCAD を起動し、コマンド行に `PETA` と入力します（bundle が版に合った DLL を自動で選び、初回実行時に自動ロードされます。以降 `NETLOAD` は不要です）
 
-アンインストールは同梱の `uninstall.bat`。
+アンインストールは同梱の `uninstall.bat` で行います。
 
 **互換 CAD（ARES / IJCAD / BricsCAD）**
 
-`CADPeta-CompatCAD-x.y.z.zip` を展開し、同梱の `register.ps1` で製品へ登録します。
+`CADPeta-CompatCAD-x.y.z.zip` を展開し、同梱の `install.bat` を実行して製品を選ぶと、自動で読み込まれるように登録されます。
 
 **コマンドライン版（CAD 不要）**
 
-`CADPeta-CLI-x.y.z.zip` を展開し、`cadpeta.exe` を実行します（要 .NET 10 ランタイム）。受け取ったベクタ PDF を貼り付ける用途です。
+`CADPeta-CLI-x.y.z.zip` を展開し、`cadpeta.exe` を実行します（要 .NET 10 ランタイム）。受け取ったベクタ PDF の図を貼り付ける用途です。
 
 **GUI版（CAD不要）**
 
-`CADPeta-GUI-x.y.z.zip` を展開して `cadpeta-gui.exe` をダブルクリックします。PDFを画面へドロップし、色調整、クロップ、プレビュー、Office貼り付け、EMF/SVG/PDF/PNG保存を操作できます。`.NET 10 Desktop Runtime (x64)` 環境が必要です。
+`CADPeta-GUI-x.y.z.zip` を展開して `cadpeta-gui.exe` をダブルクリックします。PDFを画面へドロップし、ページの選択、色調整、クロップ、プレビュー、クリップボードへのコピー、EMF/SVG/PDF/PNG保存を操作できます。`.NET 10 Desktop Runtime (x64)` 環境が必要です。
 
-版ごとのフォルダ、SECURELOAD の対処、貼り付け先ごとの注意などの詳細は[利用者向け文書](docs/04_利用者向け文書.md)を参照してください。
+インストールと使い方、貼り付け先ごとの注意などの詳細は[利用者向け文書](docs/04_利用者向け文書.md)を参照してください。
 
 ## 基本操作
 
 1. 貼りたいレイアウト（またはモデル空間）で `PETA` を実行し、全体を貼るなら Enter、範囲を切り出すなら 2 点、現在のモデル空間またはペーパー空間の図形を貼るなら `O` を指定します（ペーパー空間のビューポート自体は対象外です）
 2. Word / Excel / PowerPoint 等で Ctrl+V(ペースト) します
+
+`PETA` と設定の `PETAOPT` は、リボンの「アドイン」タブの CADPeta のパネルからも実行できます（ARES 2020 を除く）。
 
 ## ソースからビルド
 

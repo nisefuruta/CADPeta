@@ -23,6 +23,8 @@
          いずれもコンパイル専用参照（Private=false、実行時はホスト IJCAD が提供）で実害が
          ないため、この既知の警告だけを抑制する -->
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+    <!-- PETAOPT のダイアログ（Ui.Wpf の Window）を開くため -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup>
     <!-- 4 製品で共有するソース（#if CADPETA_<製品> で SDK の違いを分ける）。フォルダの全ファイルを読むので、ファイルを足しても 4 つの csproj を直さない -->
@@ -57,6 +59,8 @@
     <ProjectReference Include="..\CadPeta.Acquire.Ijcad\CadPeta.Acquire.Ijcad.csproj" />
     <ProjectReference Include="..\CadPeta.Acquire.Pdf\CadPeta.Acquire.Pdf.csproj" />
     <ProjectReference Include="..\CadPeta.Out.Emf\CadPeta.Out.Emf.csproj" />
+    <ProjectReference Include="..\CadPeta.Out.Png\CadPeta.Out.Png.csproj" />
+    <ProjectReference Include="..\CadPeta.Ui.Wpf\CadPeta.Ui.Wpf.csproj" />
   </ItemGroup>
 
 </Project>

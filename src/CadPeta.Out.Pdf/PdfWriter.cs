@@ -45,8 +45,6 @@ public sealed class PdfWriter : IIrOutput
         _log = log;
     }
 
-    internal const double PtPerMm = Units.PtPerInch / Units.MmPerInch;
-
     public void Write(IrDocument ir, string outputPath, IrDiagnostics diag)
     {
         string path = Path.GetFullPath(outputPath);
@@ -221,14 +219,14 @@ public sealed class PdfWriter : IIrOutput
         }
 
         // ---------- コンテンツストリームの組み立て ----------
-        double widthPt = ir.WidthMm * PtPerMm, heightPt = ir.HeightMm * PtPerMm;
+        double widthPt = ir.WidthMm * Units.PtPerMm, heightPt = ir.HeightMm * Units.PtPerMm;
         content.Append("q\n");
         // mm→pt変換とY軸反転（PDFはY上向き、IRはY下向き）をこの一回の cm にまとめる。
-        // 導出: 望む写像は x'=(x-ox)*PtPerMm, y'=Hpt-(y-oy)*PtPerMm。
+        // 導出: 望む写像は x'=(x-ox)*Units.PtPerMm, y'=Hpt-(y-oy)*Units.PtPerMm。
         // cm の行列 (a b c d e f) は (x,y)→(a·x+c·y+e, b·x+d·y+f) なので
-        // a=PtPerMm, d=-PtPerMm, e=-ox·PtPerMm, f=Hpt+oy·PtPerMm となる
-        content.Append($"{IrNumber.Matrix(PtPerMm)} 0 0 {IrNumber.Matrix(-PtPerMm)} " +
-                       $"{IrNumber.Matrix(-ir.ViewMinXMm * PtPerMm)} {IrNumber.Matrix(heightPt + ir.ViewMinYMm * PtPerMm)} cm\n");
+        // a=Units.PtPerMm, d=-Units.PtPerMm, e=-ox·Units.PtPerMm, f=Hpt+oy·Units.PtPerMm となる
+        content.Append($"{IrNumber.Matrix(Units.PtPerMm)} 0 0 {IrNumber.Matrix(-Units.PtPerMm)} " +
+                       $"{IrNumber.Matrix(-ir.ViewMinXMm * Units.PtPerMm)} {IrNumber.Matrix(heightPt + ir.ViewMinYMm * Units.PtPerMm)} cm\n");
         // ページ全体（viewBox）の恒常クリップ。ノード個別のクリップとは別に、
         // クロップ範囲を常に効かせる（EMF出力の page rect と同じ考え方）
         content.Append($"{IrNumber.Coordinate(ir.ViewMinXMm)} {IrNumber.Coordinate(ir.ViewMinYMm)} " +

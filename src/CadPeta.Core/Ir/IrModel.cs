@@ -186,6 +186,12 @@ public sealed class IrText : IrNode
     public double FontSizeMm;
     /// <summary>幅係数（PDF Tz 水平スケーリング → 係数。1.0 が標準）。</summary>
     public double WidthFactor = 1.0;
+    /// <summary>幅係数を標準（1.0）とみなす帯。丸め誤差程度の差で、描画に幅係数の変換を足さない。</summary>
+    public const double StandardWidthFactorTolerance = 0.001;
+    /// <summary>幅係数を標準とみなすか。EMF・PNG の文字の描画が、幅を指定したフォントや変換を足すかの判定に使う
+    /// （SVG・PDF・文字の輪郭化は、この判定を使わずに IR の値をそのまま使う）。NaN（壊れた PDF の水平スケーリング）は
+    /// 帯の外と判定しないので標準として扱い、幅係数の変換を足さない。</summary>
+    public bool HasStandardWidth => !(Math.Abs(WidthFactor - 1.0) > StandardWidthFactorTolerance);
     /// <summary>回転角（度、IR座標系=Y下向きで時計回り正。0 が水平）。
     /// PDF印刷経路ではPDFのベースライン方向から得る（回転寸法値の類型、実物図面で実測）。</summary>
     public double RotationDeg;

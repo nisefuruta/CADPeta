@@ -13,7 +13,6 @@ public sealed class ArtifactScope : IDisposable
     const int ErrorAlreadyExists = 183;
     // 同一秒・並行実行の連番退避の上限（暴走防止。実運用では 1〜2 で収束する）
     const int MaxCollisionAttempts = 10_000;
-    const string TimestampFormat = "yyyyMMdd_HHmmss";
 
     readonly string? _lockPath;
     readonly string? _deleteRoot;
@@ -34,25 +33,28 @@ public sealed class ArtifactScope : IDisposable
     public string Dir { get; }
     public string BaseName { get; }
 
+    /// <summary>この予約の名前で <paramref name="kind"/> の形式の成果物を置くパス。</summary>
+    public string PathOf(ArtifactKind kind) => Path.Combine(Dir, BaseName + ArtifactKinds.Extension(kind));
+
     // basename の原子的予約。予約ロックは利用者の出力フォルダではなく一時領域
     // （%TEMP%\CadPeta\locks）へ置く: 出力フォルダ（DWG と同じ場所）に .lock を作ると、
     // 異常終了（プロセス強制終了・電源断）で 0 バイトの残骸が利用者の作業フォルダに
     // 溜まるため。ロック名は「出力先フォルダ＋basename」から決まるプロセス間安定な
     // トークンにし、別フォルダの同名実行が偽競合しないようにする。
-    public static ArtifactScope ReserveInDir(string dir, string stem, string layout, DateTime now,
-                                             Action<string>? warn = null)
+    // rootName は拡張子を除いたファイル名（FileNameTemplate.Expand の結果）。
+    public static ArtifactScope ReserveInDir(string dir, string rootName, Action<string>? warn = null)
     {
         if (dir == null) throw new ArgumentNullException(nameof(dir));
         Directory.CreateDirectory(dir);
         string locksRoot = LocksRoot;
         Directory.CreateDirectory(locksRoot);
-        string rootName = BuildBaseName(stem, layout, now);
 
         for (int attempt = 1; attempt <= MaxCollisionAttempts; attempt++)
         {
+            // 重複したら名前の直後に (1)、(2)… を付ける（前に空白を入れない。利用者の指定）
             string baseName = attempt == 1
                 ? rootName
-                : rootName + "_" + attempt.ToString(CultureInfo.InvariantCulture);
+                : rootName + "(" + (attempt - 1).ToString(CultureInfo.InvariantCulture) + ")";
             // 予約対象は「その出力先に置く basename の成果物一式」。フォルダ＋basename から
             // 安定トークンを作り、同一対象を狙う並行実行だけが競合するようにする
             string token = StableToken(Path.GetFullPath(Path.Combine(dir, baseName)));
@@ -80,20 +82,13 @@ public sealed class ArtifactScope : IDisposable
             "artifact.reserve_failed", MaxCollisionAttempts, dir, rootName));
     }
 
-    public static ArtifactScope CreateTemp(string stem, string layout, DateTime now,
-                                           Action<string>? warn = null, string? tempRoot = null)
+    public static ArtifactScope CreateTemp(string rootName, Action<string>? warn = null)
     {
-        string root = Path.GetFullPath(tempRoot ?? DefaultTempRoot);
-        string defaultRoot = Path.GetFullPath(DefaultTempRoot);
-        if (!string.Equals(root.TrimEnd(Path.DirectorySeparatorChar),
-                           defaultRoot.TrimEnd(Path.DirectorySeparatorChar),
-                           StringComparison.OrdinalIgnoreCase) &&
-            !IsUnderRoot(root, defaultRoot))
-            throw new IOException(MessageCatalogs.Current.Format("artifact.temp_root_outside", root));
+        string root = Path.GetFullPath(DefaultTempRoot);
         Directory.CreateDirectory(root);
         string dir = Path.Combine(root, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        return new ArtifactScope(dir, BuildBaseName(stem, layout, now), null, root, warn);
+        return new ArtifactScope(dir, rootName, null, root, warn);
     }
 
     public static string DefaultTempRoot => Path.Combine(Path.GetTempPath(), "CadPeta");
@@ -143,7 +138,7 @@ public sealed class ArtifactScope : IDisposable
     void TryCleanup(Action cleanup, string failureMessage)
     {
         try { cleanup(); }
-        catch (Exception ex) when (IsCleanupFailure(ex))
+        catch (Exception ex) when (FileFailures.IsPathFailure(ex))
         {
             Warn(MessageCatalogs.Current.Format("artifact.warn_frame", failureMessage, ex.Message));
         }
@@ -153,17 +148,6 @@ public sealed class ArtifactScope : IDisposable
     {
         try { _warn?.Invoke(message); }
         catch { /* 後始末の警告通知が元の結果（成功・例外）を置き換えてはならない */ }
-    }
-
-    internal static string BuildBaseName(string stem, string layout, DateTime now) =>
-        Sanitize(stem) + "_" + Sanitize(layout) + "_" +
-        now.ToString(TimestampFormat, CultureInfo.InvariantCulture);
-
-    internal static string Sanitize(string name)
-    {
-        if (name == null) throw new ArgumentNullException(nameof(name));
-        char[] invalid = Path.GetInvalidFileNameChars();
-        return new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
     }
 
     internal static bool IsAlreadyExists(IOException ex)
@@ -183,7 +167,4 @@ public sealed class ArtifactScope : IDisposable
     static string EnsureTrailingSeparator(string path) =>
         path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
 
-    static bool IsCleanupFailure(Exception ex) =>
-        ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or
-        NotSupportedException or ArgumentException;
 }

@@ -66,23 +66,24 @@ public class CropTransformTests
         Assert.Equal(40, ir.HeightMm);  // (50-20) + 5*2
     }
 
+    static IrClipDef SquareClip(string id, double x0, double y0, double x1, double y1) => new()
+    {
+        Id = id,
+        Segments = new List<IrSegment>
+        {
+            new IrMove(x0, y0), new IrLine(x1, y0), new IrLine(x1, y1),
+            new IrLine(x0, y1), new IrClose(),
+        },
+    };
+
     [Fact]
     public void クリップ範囲が切り出し範囲外のノードは不可視として間引く()
     {
-        var clip = new IrClipDef
-        {
-            Id = "clip0",
-            Segments = new List<IrSegment>
-            {
-                new IrMove(200, 200), new IrLine(300, 200), new IrLine(300, 300),
-                new IrLine(200, 300), new IrClose(),
-            },
-        };
         // ノード幾何は切り出し範囲と重なるが、クリップ窓が範囲外 → 不可視
         var clipped = Line(10, 10, 290, 290);
         clipped.ClipId = "clip0";
         var ir = A3Page(clipped);
-        ir.ClipDefs.Add(clip);
+        ir.ClipDefs.Add(SquareClip("clip0", 200, 200, 300, 300));
 
         int dropped = CropTransform.Apply(ir, new RectMm(0, 0, 100, 100), 0, new IrDiagnostics());
 
@@ -94,23 +95,44 @@ public class CropTransformTests
     [Fact]
     public void 保持ノードが参照するクリップ定義は残す()
     {
-        var clip = new IrClipDef
-        {
-            Id = "clip0",
-            Segments = new List<IrSegment>
-            {
-                new IrMove(0, 0), new IrLine(100, 0), new IrLine(100, 100),
-                new IrLine(0, 100), new IrClose(),
-            },
-        };
         var node = Line(10, 10, 90, 90);
         node.ClipId = "clip0";
         var ir = A3Page(node);
-        ir.ClipDefs.Add(clip);
+        ir.ClipDefs.Add(SquareClip("clip0", 0, 0, 100, 100));
 
         CropTransform.Apply(ir, new RectMm(0, 0, 100, 100), 0, new IrDiagnostics());
 
         Assert.Single(ir.Nodes);
         Assert.Single(ir.ClipDefs);
+    }
+
+    [Fact]
+    public void 保持したグループの子が参照するクリップ定義は残す()
+    {
+        // グループ自身はクリップを持たず、子のパスだけが clip0 を参照する
+        var child = Line(10, 10, 90, 90);
+        child.ClipId = "clip0";
+        var ir = A3Page(new IrGroup { Children = { child } });
+        ir.ClipDefs.Add(SquareClip("clip0", 0, 0, 100, 100));
+
+        CropTransform.Apply(ir, new RectMm(0, 0, 100, 100), 0, new IrDiagnostics());
+
+        Assert.Single(ir.Nodes);
+        Assert.Equal(new[] { "clip0" }, ir.ClipDefs.ConvertAll(c => c.Id));
+    }
+
+    [Fact]
+    public void 間引いたグループの子だけが参照するクリップ定義は除去する()
+    {
+        var keptNode = Line(10, 10, 90, 90);
+        var droppedChild = Line(200, 200, 300, 250);
+        droppedChild.ClipId = "clip0";
+        var ir = A3Page(keptNode, new IrGroup { Children = { droppedChild } });
+        ir.ClipDefs.Add(SquareClip("clip0", 200, 200, 300, 300));
+
+        CropTransform.Apply(ir, new RectMm(0, 0, 100, 100), 0, new IrDiagnostics());
+
+        Assert.Equal(new IrNode[] { keptNode }, ir.Nodes);
+        Assert.Empty(ir.ClipDefs);
     }
 }

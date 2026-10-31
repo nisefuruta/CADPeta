@@ -47,25 +47,12 @@ elseif ($Version -ne $appVersion) { throw "-Version ($Version) が PackageConten
 . (Join-Path $PSScriptRoot "sign_record.ps1")
 
 # 実行時に再配布する DLL に AutoCAD/互換CAD の参照アセンブリが混入していないことを機械検査する
-# （compile 専用参照は ExcludeAssets=runtime で除外されている前提の裏取り。混入は配布事故）
-$forbiddenDlls = @(
-    "accoremgd.dll", "acdbmgd.dll", "acmgd.dll", "AcCoreMgd.dll", "AcDbMgd.dll", "AcMgd.dll",
-    "AutoCAD.NET.dll",
-    "TD_Mgd.dll", "FxCoreMgd.dll", "FxProperties.dll",                         # ARES(Graebert)
-    "GcaddMgd.dll", "GrxMgd.dll", "Itjp.Ijcad.dll",                            # IJCAD
-    "Teigha.Runtime.dll", "Teigha.TD.dll", "Bricscad.dll", "TD_DbMgd.dll"     # BricsCAD/ODA
-)
-# ARES の SDK は年式ごとの版サフィックス付き名（TD_Mgd_4.03_14.dll・FxCoreMgd_23.1_16.dll・
-# TD_Mgd_Net8_26.8_17.dll 等）なので、名前の列挙では漏れる。パターンでも検査する
-$forbiddenDllPatterns = @("TD_Mgd_*.dll", "FxCoreMgd_*.dll")
+# （判定は cad_reference_dlls.ps1。ZIP の最終の検査 package_verify.ps1 と同じ定義を使う）
+. (Join-Path $PSScriptRoot "cad_reference_dlls.ps1")
 
 function Assert-NoForbidden([string]$dir, [string]$label) {
     $hit = Get-ChildItem $dir -Filter *.dll -ErrorAction SilentlyContinue |
-        Where-Object {
-            $name = $_.Name
-            ($forbiddenDlls -contains $name) -or
-            [bool]($forbiddenDllPatterns | Where-Object { $name -like $_ })
-        }
+        Where-Object { Test-CadReferenceDllName $_.Name }
     if ($hit) {
         throw "[$label] CAD 本体の参照 DLL が混入している: $($hit.Name -join ', ')（ExcludeAssets=runtime を確認）"
     }
@@ -387,6 +374,10 @@ switch ($Only) {
     "compat" { Build-Compat }
     "all"    { Build-Bundle; Build-Cli; Build-Gui; Build-Compat }
 }
+
+# 同じ名前で同じ TargetFramework の自作の DLL は、置き場が違っても中身を 1 種類にする（署名の回数を増やさない）。
+# ARES の SDK の年式ごとに作り分ける 2 つだけを除く。止まったら署名の記録と manifest を書かない
+Assert-OneBuildPerTarget $staging "staging" @("CadPeta.Acquire.Ares.dll", "CadPeta.Plugin.Ares.dll")
 
 # sign_dist.ps1 が署名の前に照合するため、署名する自作のファイルごとの SHA256 を staging の記録に書く
 $builtTargets = if ($Only -eq "all") { @("bundle", "cli", "gui", "compat") } else { @($Only) }

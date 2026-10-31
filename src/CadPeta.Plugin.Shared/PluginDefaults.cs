@@ -16,6 +16,12 @@ public static class PluginDefaults
 
     public const string DataCommandName = "PETADATA";
 
+    /// <summary>設定のダイアログのコマンド名。</summary>
+    public const string OptCommandName = "PETAOPT";
+
+    /// <summary>設定のコマンドライン版のコマンド名（画面の無い accoreconsole と自動の試験でも使える）。</summary>
+    public const string OptCommandLineName = "-PETAOPT";
+
     /// <summary>
     /// 未保存図面・書き込み不可時の退避出力先（%TEMP% 配下のサブフォルダ名）。
     /// 既定の出力先は図面と同じフォルダ。
@@ -34,9 +40,6 @@ public static class PluginDefaults
     /// <summary>尺度プロンプトの「レイヤ」キーワード（グローバル名）。SVG のレイヤ別
     /// グループ化（既定オフ）を切り替える。</summary>
     public const string KeywordLayer = "Layer";
-
-    /// <summary>「ファイル出力」キーワード（グローバル名）。オフでクリップボード登録のみにする。</summary>
-    public const string KeywordFileOutput = "Fileoutput";
 
     /// <summary>尺度プロンプトの「SHX代替」キーワード（グローバル名）。SHX 文字を輪郭化
     /// （既定）せず代替書体の text で出力する近似（貼り付け先での文字編集を優先する場合）を

@@ -34,7 +34,9 @@ namespace CadPeta.Plugin.Bricscad;
 #endif
 using CadPeta.Acquire.Pdf;
 using CadPeta.Out.Emf;
+using CadPeta.Out.Png;
 using CadPeta.Plugin.Shared;
+using CadPeta.UseCases;
 
 // CAD の薄い殻（4 製品で共有）。PETA/PETADIAGはPDF印刷単一経路のPetaRunnerへ、PETADATA/PETADATADIAGは
 // DB直接取得のSvgExportRunnerへ、それぞれCAD固有ポートだけを結線する。PETADATA系の結線は
@@ -43,6 +45,9 @@ using CadPeta.Plugin.Shared;
 
 public static partial class PetaCommand
 {
+    // 利用者の設定（CAD の 1 つのプロセスに 1 つ）。PETA と PETAOPT が同じものを使う
+    internal static readonly SettingsHolder Settings = new(CadPetaSettingsStore.DefaultPath());
+
     // UsePickSet: コマンド起動時の選択（先選択）を SelectImplied で引き継ぐ（COPYCLIP と同じ作法）
     [CommandMethod(PluginDefaults.CommandName, CommandFlags.Modal | CommandFlags.UsePickSet)]
     public static void Execute() => Invoke(diagnostic: false);
@@ -104,8 +109,10 @@ public static partial class PetaCommand
             Editor = new CadEditorPort(doc),
             Plotter = new CadPlotPort(doc),
             SelectionPlotter = new CadSelectionPlotPort(doc),
-            PdfAcquirer = new PdfIrAcquirer(log, verbose),
-            EmfWriterFactory = background => new EmfWriter(background, log, verbose),
+            PdfAcquirerFactory = (messages, details) => new PdfIrAcquirer(messages, details),
+            EmfWriterFactory = (background, messages, details) => new EmfWriter(background, messages, details),
+            PngWriterFactory = (dpi, details) => new PngWriter(dpi, details),
+            Settings = Settings,
             SetClipboardFromFile = path => EmfClipboard.SetFromFile(path, log, verbose),
             TrueTypeOutlinerFactory = () => new GdiGlyphOutliner(),
         };

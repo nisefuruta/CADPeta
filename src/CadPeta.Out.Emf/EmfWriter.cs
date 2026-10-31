@@ -52,9 +52,6 @@ public sealed class EmfWriter : IIrOutput
     /// <summary>mm/論理単位（1.0/LogicalPerMm。逆変換用）。</summary>
     internal const double MmPerLogical = 1.0 / LogicalPerMm;
 
-    // 幅係数（Tz由来）が標準とみなせる帯。これ未満の差で幅指定フォントを作らない
-    const double WidthFactorTol = 0.001;
-
     static int L(double mm) => (int)Math.Round(mm * LogicalPerMm);
 
     // Math.Clamp は net48 に無いため Min/Max で等価に書く（3系マルチターゲット共通）
@@ -432,7 +429,7 @@ public sealed class EmfWriter : IIrOutput
                         // CreateFont の escapement/orientation は 0.1度単位（Win32仕様）。
                         // IR の時計回り正 → GDI の反時計回り正のため符号反転
                         int esc10 = (int)Math.Round(-t.RotationDeg * Gdi.FONT_ANGLE_UNITS_PER_DEG);
-                        int widthL = Math.Abs(t.WidthFactor - 1.0) > WidthFactorTol
+                        int widthL = !t.HasStandardWidth
                             ? Math.Max(1, (int)Math.Round(AveWidth(t.FontFamily, hL) * t.WidthFactor))
                             : 0;
                         SelFont(Font(t.FontFamily, hL, esc10, widthL));

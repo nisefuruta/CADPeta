@@ -9,4 +9,10 @@ public static class Units
 
     /// <summary>1インチ=72pt（PDF のデフォルトユーザー空間の単位。PDF32000-1 §7.9.5）。</summary>
     public const double PtPerInch = 72.0;
+
+    /// <summary>PDF の 1pt の mm（25.4/72）。</summary>
+    public const double MmPerPt = MmPerInch / PtPerInch;
+
+    /// <summary>1mm の PDF の pt（72/25.4）。</summary>
+    public const double PtPerMm = PtPerInch / MmPerInch;
 }

@@ -206,12 +206,18 @@ public static class SvgWriter
                 }
                 case IrImage im:
                 {
+                    // Word は image に直付けした clip-path を image の x,y だけずらして適用し、
+                    // クリップが画像から外れると画像を表示しない（実測）。クリップは外側 g に置く
+                    bool clipOnWrapper = im.ClipId != null;
+                    if (clipOnWrapper)
+                        sb.Append($"<g clip-path=\"url(#{im.ClipId})\">");
                     sb.Append($"<image x=\"{N(im.XMm)}\" y=\"{N(im.YMm)}\" " +
                               $"width=\"{N(im.WidthMm)}\" height=\"{N(im.HeightMm)}\" " +
                               $"preserveAspectRatio=\"none\" " +
                               $"href=\"data:image/png;base64,{Convert.ToBase64String(im.PngBytes)}\"");
-                    CommonAttrs(sb, im, includeProvenance);
-                    sb.AppendLine("/>");
+                    ProvenanceAttrs(sb, im, includeProvenance);
+                    sb.Append("/>");
+                    sb.AppendLine(clipOnWrapper ? "</g>" : "");
                     break;
                 }
                 case IrGroup grp:

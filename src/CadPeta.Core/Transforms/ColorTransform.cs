@@ -6,6 +6,7 @@
 // 色の書き換えは元へ戻せないため、件数と対象を診断ログへ記録する。記録はノード単位ではなく
 // 「対象属性×変換前色→変換後色」の集約（件数付き）とする。実物図面では数万ノードの全色に
 // 触れる一方、変換は色値ごとに決定的で、ノード単位の記録は診断価値を足さずログを肥大させる。
+using System;
 using System.Collections.Generic;
 using CadPeta.Ir;
 
@@ -19,8 +20,33 @@ public enum ColorMode
     Grayscale,
 }
 
-/// <summary>色の一括置換規則。一致判定は 8bit 量子化後の等値（SVG 出力の量子と同一）。</summary>
-public readonly record struct ColorReplacement(IrRgb From, IrRgb To);
+/// <summary>色の一括置換規則。一致判定は 8bit 量子化後（SVG 出力の量子と同一）の R・G・B のそれぞれの差が
+/// <paramref name="Tolerance"/> 以内（0 は同じ色だけ。範囲は 0..<see cref="MaxTolerance"/>）。</summary>
+public readonly record struct ColorReplacement(IrRgb From, IrRgb To, int Tolerance = 0)
+{
+    /// <summary>許容差の上限（8bit の成分の差の最大）。</summary>
+    public const int MaxTolerance = 255;
+
+    /// <summary>許容差の文字（前後の空白は除く）を数にする。0～<see cref="MaxTolerance"/> の整数でなければ理由を返す（数にできれば null）。</summary>
+    public static string? ParseTolerance(string text, out int tolerance)
+    {
+        if (int.TryParse(text.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out tolerance)
+            && tolerance <= MaxTolerance)
+            return null;
+        tolerance = 0;
+        return $"色置換の許容差は 0～{MaxTolerance} の整数で指定する: {text.Trim()}";
+    }
+
+    public bool Matches(IrRgb color)
+    {
+        var (r, g, b) = color.ToRgb8();
+        var (fr, fg, fb) = From.ToRgb8();
+        return Math.Max(Math.Abs(r - fr), Math.Max(Math.Abs(g - fg), Math.Abs(b - fb))) <= Tolerance;
+    }
+}
+
+/// <summary>置換の 1 行に一致した、使用色の一覧の色の数と件数（件数は属性の数）。</summary>
+public readonly record struct ReplacementMatch(int Colors, int Count);
 
 public static class ColorTransform
 {
@@ -91,14 +117,11 @@ public static class ColorTransform
 
         // 1) 色の一括置換。規則は指定順に評価し、最初に一致した1件だけを適用する
         //    （置換結果へ後続規則を連鎖適用しない＝A→B, B→C を並べても A は B で止まる）
-        foreach (var r in replacements)
+        int rule = FirstMatch(c, replacements);
+        if (rule >= 0)
         {
-            if (SameQuantized(c, r.From))
-            {
-                Record(counts, order, "色変換（色の一括置換）", attr, c, r.To);
-                c = r.To;
-                break;
-            }
+            Record(counts, order, "色変換（色の一括置換）", attr, c, replacements[rule].To);
+            c = replacements[rule].To;
         }
 
         // 2) モード適用
@@ -114,6 +137,32 @@ public static class ColorTransform
                mode == ColorMode.Monochrome ? "色変換（モノクロ化）" : "色変換（グレースケール化）",
                attr, c, after);
         return after;
+    }
+
+    /// <summary>置換の行ごとに、一致する使用色の数と件数を数える。色が複数の行に一致するときは、置き換えと同じく上の行だけに数える。</summary>
+    public static IReadOnlyList<ReplacementMatch> SummarizeMatches(IReadOnlyList<ColorUse> inventory,
+                                                                   IReadOnlyList<ColorReplacement> replacements)
+    {
+        var colors = new int[replacements.Count];
+        var uses = new int[replacements.Count];
+        foreach (var use in inventory)
+        {
+            int rule = FirstMatch(use.Color, replacements);
+            if (rule < 0) continue;
+            colors[rule]++;
+            uses[rule] += use.Count;
+        }
+        var matches = new ReplacementMatch[replacements.Count];
+        for (int i = 0; i < matches.Length; i++) matches[i] = new ReplacementMatch(colors[i], uses[i]);
+        return matches;
+    }
+
+    // 規則は指定順に評価し、最初に一致した 1 件の番号を返す（無ければ -1）
+    static int FirstMatch(IrRgb color, IReadOnlyList<ColorReplacement> replacements)
+    {
+        for (int i = 0; i < replacements.Count; i++)
+            if (replacements[i].Matches(color)) return i;
+        return -1;
     }
 
     static IrRgb Gray(IrRgb c)

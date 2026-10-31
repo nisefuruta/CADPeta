@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -14,14 +14,17 @@ namespace CadPeta.Tests;
 // JSON として読み直して確かめる。直列化の部品の型情報（"__type"）は書かない。
 // プラグインは System.Text.Json を参照しない（net48 で、その依存の System.Memory などの版が PdfPig の依存と食い違い、
 // プラグインは bindingRedirect を持てないので読み込みに失敗した。2026-10-28、AutoCAD 2024）
-public class PluginJsonFormatTests
+public class JsonTextFormatTests
 {
     const string Special = "日本語 \"引用\" \\ / \t\r\n<&>";
 
-    [Fact]
-    public void プラグインのアセンブリはSystem_Text_Jsonを参照しない()
+    // JSON を書く JsonText はユースケース層にあり、プラグインと同じプロセスに読み込まれる
+    [Theory]
+    [InlineData(typeof(PromptTrace))]
+    [InlineData(typeof(CadPeta.UseCases.JsonText))]
+    public void プラグインが読み込むアセンブリはSystem_Text_Jsonを参照しない(Type type)
     {
-        var names = typeof(PromptTrace).Assembly.GetReferencedAssemblies().Select(a => a.Name).ToArray();
+        var names = type.Assembly.GetReferencedAssemblies().Select(a => a.Name).ToArray();
         Assert.DoesNotContain("System.Text.Json", names);
     }
 

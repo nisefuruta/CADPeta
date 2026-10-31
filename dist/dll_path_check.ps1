@@ -118,8 +118,81 @@ function Assert-ConsistentAssemblyReferences([string]$dir, [string]$label) {
     }
 }
 
-# 配布する（Release の）自作の DLL の検査: 開発機のパスと失敗の注入が無いこと。配布スクリプトと、CAD を起動する試験の DLL の確認が呼ぶ
+# $dir の自作の DLL が参照する自作の DLL（CadPeta.*）が、すべて同じフォルダにあることを確かめる。無ければ、どの DLL がどれを参照しているかを
+# 書いて止める（本体の DLL があるかだけでは、設定のダイアログの CadPeta.Ui.Wpf.dll などの入れ忘れを見つけられない）
+function Assert-OwnReferencesBundled([string]$dir, [string]$label) {
+    $failures = New-Object System.Collections.Generic.List[string]
+    foreach ($dll in @(Get-ChildItem -LiteralPath $dir -Filter $OwnAssemblyFilter -File)) {
+        $stream = [IO.File]::OpenRead($dll.FullName)
+        try {
+            $pe = [System.Reflection.PortableExecutable.PEReader]::new($stream)
+            try {
+                if (-not $pe.HasMetadata) { $failures.Add("$($dll.Name): マネージドのアセンブリではない"); continue }
+                $md = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
+                foreach ($handle in $md.AssemblyReferences) {
+                    $name = $md.GetString($md.GetAssemblyReference($handle).Name)
+                    if ($name -like 'CadPeta.*' -and -not (Test-Path -LiteralPath (Join-Path $dir "$name.dll"))) { $failures.Add("$($dll.Name) -> $name") }
+                }
+            }
+            finally { $pe.Dispose() }
+        }
+        catch { $failures.Add("$($dll.Name): 読めない（$($_.Exception.Message)）") }
+        finally { $stream.Dispose() }
+    }
+    if ($failures.Count -gt 0) {
+        throw "[$label] 自作の DLL が参照する自作の DLL が同じフォルダに無い:`n" + ($failures -join "`n")
+    }
+}
+
+# アセンブリの TargetFrameworkAttribute の値（例 .NETFramework,Version=v4.8）。無ければ空
+function Get-AssemblyTargetFramework($md) {
+    foreach ($handle in $md.GetAssemblyDefinition().GetCustomAttributes()) {
+        $attribute = $md.GetCustomAttribute($handle)
+        if ($attribute.Constructor.Kind -ne [System.Reflection.Metadata.HandleKind]::MemberReference) { continue }
+        $parent = $md.GetMemberReference([System.Reflection.Metadata.MemberReferenceHandle]$attribute.Constructor).Parent
+        if ($parent.Kind -ne [System.Reflection.Metadata.HandleKind]::TypeReference) { continue }
+        if ($md.GetString($md.GetTypeReference([System.Reflection.Metadata.TypeReferenceHandle]$parent).Name) -ne 'TargetFrameworkAttribute') { continue }
+        $blob = $md.GetBlobReader($attribute.Value)
+        [void]$blob.ReadUInt16()   # 先頭の 0x0001
+        return $blob.ReadSerializedString()
+    }
+    ''
+}
+
+# $root の下の自作の DLL を名前と TargetFramework で分け、どの組も中身が 1 種類であることを確かめる。同じソースを別の中間のフォルダで
+# 作り直すと PDB のパスが変わって別の中身になり、署名の回数が増える。製品ごとに作り分ける DLL（ARES の SDK の年ごとに作る DLL など）は
+# $perProduct に名前で渡して除く
+function Assert-OneBuildPerTarget([string]$root, [string]$label, [string[]]$perProduct) {
+    $groups = @{}
+    $failures = New-Object System.Collections.Generic.List[string]
+    foreach ($dll in @(Get-ChildItem -LiteralPath $root -Recurse -Filter $OwnAssemblyFilter -File)) {
+        if ($perProduct -contains $dll.Name) { continue }
+        $stream = [IO.File]::OpenRead($dll.FullName)
+        try {
+            $pe = [System.Reflection.PortableExecutable.PEReader]::new($stream)
+            try {
+                if (-not $pe.HasMetadata) { $failures.Add("$($dll.FullName): マネージドのアセンブリではない"); continue }
+                $key = "$($dll.Name)（$(Get-AssemblyTargetFramework ([System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)))）"
+            }
+            finally { $pe.Dispose() }
+        }
+        catch { $failures.Add("$($dll.FullName): 読めない（$($_.Exception.Message)）"); continue }
+        finally { $stream.Dispose() }
+        if (-not $groups.ContainsKey($key)) { $groups[$key] = @{} }
+        $groups[$key][(Get-FileHash -LiteralPath $dll.FullName -Algorithm SHA256).Hash] = $dll.FullName
+    }
+    foreach ($key in $groups.Keys) {
+        if ($groups[$key].Count -gt 1) { $failures.Add("$key の中身が $($groups[$key].Count) 種類: $($groups[$key].Values -join ', ')") }
+    }
+    if ($failures.Count -gt 0) {
+        throw "[$label] 同じ名前で同じ TargetFramework の自作の DLL の中身がそろっていない（同じソースを別の中間のフォルダで作り直している）:`n" + ($failures -join "`n")
+    }
+}
+
+# 配布する（Release の）自作の DLL の検査: 開発機のパスと失敗の注入が無く、参照する自作の DLL がそろっていること。
+# 配布スクリプトと、CAD を起動する試験の DLL の確認が呼ぶ
 function Assert-ReleaseOwnAssemblies([string]$dir, [string]$label) {
     Assert-NoDevPathsInOwnAssemblies $dir $label
     Assert-NoFailureInjectionInOwnAssemblies $dir $label
+    Assert-OwnReferencesBundled $dir $label
 }

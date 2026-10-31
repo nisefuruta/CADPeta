@@ -1,5 +1,4 @@
 import re
-import sys
 
 path = r"C:\Users\wk\AppData\Local\Temp\cadpeta_p3b_ltjust\derive_chart.svg"
 data = open(path, encoding="utf-8").read()

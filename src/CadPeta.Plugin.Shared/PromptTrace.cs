@@ -24,6 +24,9 @@ public static class PromptTrace
         return new CommandScope(command, previous);
     }
 
+    /// <summary>試験の記録が有効か（環境変数がある）。記録のためだけに CAD の値を読む処理は、有効なときだけ行う。</summary>
+    public static bool IsEnabled => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(PathEnvironmentVariable));
+
     /// <summary>SDK から得た生値を記録する。環境変数未設定時はファイル API を呼ばない。</summary>
     public static void Write(string operation, string status, string? stringResult,
                              bool valueIsNull, int? count)
@@ -82,7 +85,7 @@ public static class PromptTrace
             ValueIsNull = valueIsNull,
             Count = count,
         };
-        var json = PluginJson.Serialize(record, indented: false);
+        var json = JsonText.Serialize(record, indented: false);
         lock (WriteLock)
             appendLine(tracePath, json);
     }

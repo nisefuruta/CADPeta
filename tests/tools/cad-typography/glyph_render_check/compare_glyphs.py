@@ -15,23 +15,18 @@
 """
 import json
 import pathlib
-import subprocess
 import sys
-import re
 
 import numpy as np
 import pypdfium2 as pdfium
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image
+# 描画・見当枠・ぼかした差の指標は、ほかの比較の試験と共有する（tests/tools/common/render_compare.py）
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "common"))
+from render_compare import render_svg_via_chrome, detect_frame_bbox, blurred_diff_metrics  # noqa: E402
 
-BLUR = 1.5          # AAずれ許容のための前処理ぼかし半径(px)（compare_tiles.py と同一方式）
-DIFF_TH = 40         # 「異なる画素」とみなす階調差（ぼかし後）
 FRAC_FLAG = 0.01      # 行/セルの異画素率がこれを超えたら要目視（文字は線が疎なので compare_tiles.py より緩める）
 MEAN_FLAG = 3.0       # 行/セルの平均差がこれを超えたら要目視
 
-DARK_THRESHOLD = 128   # 見当枠検出: これ未満のグレースケール値を「黒」とみなす
-FRAME_RUN_RATIO = 0.5  # 見当枠検出: 行/列の最大連続黒画素数がこの比率を超えたら枠の辺とみなす
-
-CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 # 見当枠のCAD座標（build_glyph_chart.lsp・ShxGlyphProbe/Program.cs と共有する定数）
 FRAME_X0, FRAME_Y0, FRAME_X1, FRAME_Y1 = 10.0, 10.0, 410.0, 287.0
@@ -43,84 +38,6 @@ def render_pdf(pdf_path: str, dpi: float) -> Image.Image:
     page = pdf[0]
     bitmap = page.render(scale=dpi / 72.0)
     return bitmap.to_pil().convert("RGB")
-
-
-def render_svg_via_chrome(svg_path: str, dpi: float, out_png: str) -> Image.Image:
-    text = pathlib.Path(svg_path).read_text(encoding="utf-8")
-    m = re.search(r'width="([\d.]+)mm"\s+height="([\d.]+)mm"', text)
-    if not m:
-        raise ValueError(f"SVG の width/height(mm) が読み取れない: {svg_path}")
-    w_mm, h_mm = float(m.group(1)), float(m.group(2))
-
-    css_px_per_mm = 96.0 / 25.4
-    scale_factor = dpi / 96.0
-    css_w = round(w_mm * css_px_per_mm)
-    css_h = round(h_mm * css_px_per_mm)
-
-    svg_uri = pathlib.Path(svg_path).resolve().as_uri()
-    subprocess.run([
-        CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
-        "--default-background-color=FFFFFFFF",
-        f"--force-device-scale-factor={scale_factor}",
-        f"--window-size={css_w},{css_h}",
-        f"--screenshot={out_png}",
-        svg_uri,
-    ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return Image.open(out_png).convert("RGB")
-
-
-def max_run_lengths(dark: np.ndarray, axis: int) -> np.ndarray:
-    """dark[i, axis方向] の最大連続True run長を、axisと垂直な各インデックスごとに返す。
-    axis=1: 各行(row)についてX方向の最大連続run（横辺=水平エッジの検出に使う）
-    axis=0: 各列(col)についてY方向の最大連続run（縦辺=垂直エッジの検出に使う）"""
-    if axis == 1:
-        h, w = dark.shape
-        run = np.zeros(h, dtype=np.int32)
-        best = np.zeros(h, dtype=np.int32)
-        for j in range(w):
-            col = dark[:, j]
-            run = np.where(col, run + 1, 0)
-            np.maximum(best, run, out=best)
-        return best
-    else:
-        h, w = dark.shape
-        run = np.zeros(w, dtype=np.int32)
-        best = np.zeros(w, dtype=np.int32)
-        for i in range(h):
-            row = dark[i, :]
-            run = np.where(row, run + 1, 0)
-            np.maximum(best, run, out=best)
-        return best
-
-
-def detect_frame_bbox(img: Image.Image) -> tuple[float, float, float, float]:
-    """見当枠（最外郭の黒矩形）の画素bboxを検出する（x0,y0,x1,y1）。"""
-    gray = np.asarray(img.convert("L"))
-    dark = gray < DARK_THRESHOLD
-    h, w = dark.shape
-
-    row_runs = max_run_lengths(dark, axis=1)  # 各行の最大連続横ラン
-    col_runs = max_run_lengths(dark, axis=0)  # 各列の最大連続縦ラン
-
-    horiz_rows = np.where(row_runs > FRAME_RUN_RATIO * w)[0]
-    vert_cols = np.where(col_runs > FRAME_RUN_RATIO * h)[0]
-    if len(horiz_rows) == 0 or len(vert_cols) == 0:
-        raise ValueError("見当枠が検出できない（水平/垂直の長い黒ランが見つからない）")
-
-    return float(vert_cols.min()), float(horiz_rows.min()), float(vert_cols.max()), float(horiz_rows.max())
-
-
-def metrics(a: Image.Image, b: Image.Image):
-    ab = a.filter(ImageFilter.GaussianBlur(BLUR))
-    bb = b.filter(ImageFilter.GaussianBlur(BLUR))
-    d = ImageChops.difference(ab, bb).convert("L")
-    hist = d.histogram()
-    n = sum(hist)
-    if n == 0:
-        return 0.0, 0.0, d
-    bad = sum(hist[DIFF_TH:])
-    mean = sum(i * v for i, v in enumerate(hist)) / n
-    return bad / n, mean, d
 
 
 def main():
@@ -186,7 +103,7 @@ def main():
             mat = crop_matrix(build_matrix(dx, dy), search_box[0], search_box[1])
             probe_search = probe_raw.transform(search_size, Image.AFFINE, mat,
                                                 resample=Image.BILINEAR, fillcolor=(255, 255, 255))
-            frac, _, _ = metrics(gt_search, probe_search)
+            frac, _, _ = blurred_diff_metrics(gt_search, probe_search)
             if best_frac is None or frac < best_frac:
                 best_frac, best_dx, best_dy = frac, dx, dy
     print(f"  サブピクセル微調整: dx={best_dx:.2f} dy={best_dy:.2f} px（探索領域frac_bad={best_frac:.5f}）")
@@ -196,7 +113,7 @@ def main():
     probe.save(out / "probe_aligned.png")
 
     # 全ページ
-    frac_all, mean_all, diff_all = metrics(gt, probe)
+    frac_all, mean_all, diff_all = blurred_diff_metrics(gt, probe)
     print(f"\n全ページ: frac_bad={frac_all:.5f} mean={mean_all:.3f}")
 
     W, H = gt.size
@@ -242,7 +159,7 @@ def main():
 
         gt_c = gt.crop(box)
         pr_c = probe.crop(box)
-        frac, mean, d = metrics(gt_c, pr_c)
+        frac, mean, d = blurred_diff_metrics(gt_c, pr_c)
         flag = frac > FRAC_FLAG or mean > MEAN_FLAG
         row_results.append({"row": r, "text": "".join(c["char"] for c in row_cells),
                              "box": box, "frac_bad": round(frac, 5), "mean": round(mean, 3),
@@ -267,7 +184,7 @@ def main():
                     continue
                 gt_cc = gt.crop(cbox)
                 pr_cc = probe.crop(cbox)
-                cfrac, cmean, _ = metrics(gt_cc, pr_cc)
+                cfrac, cmean, _ = blurred_diff_metrics(gt_cc, pr_cc)
                 cell_results.append({"row": r, "charIndex": c["charIndex"], "char": c["char"],
                                       "frac_bad": round(cfrac, 5), "mean": round(cmean, 3),
                                       "flag": cfrac > FRAC_FLAG or cmean > MEAN_FLAG})

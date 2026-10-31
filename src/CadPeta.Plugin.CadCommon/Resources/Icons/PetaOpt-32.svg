@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PETAOPT（32 px 以上）。PETA の絵をそのまま使い、右下を白の円で切り抜いて濃い灰の歯車（設定）を重ねる -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <rect x="5" y="4" width="22" height="27" rx="2.5" fill="#F28C28" />
+  <rect x="11" y="1.5" width="10" height="5.5" rx="1.5" fill="#8C96A8" />
+  <rect x="8" y="8.5" width="16" height="19.5" rx="1" fill="#FFFFFF" />
+  <path d="M10.5 24.5 L14.5 14 L18 20.5 L21.5 15.5" fill="none" stroke="#2E7FD9" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" />
+  <circle cx="24" cy="24" r="7.8" fill="#FFFFFF" />
+  <g fill="#5B6475">
+    <rect x="22.7" y="17.1" width="2.6" height="2.8" />
+    <rect x="22.7" y="17.1" width="2.6" height="2.8" transform="rotate(45 24 24)" />
+    <rect x="22.7" y="17.1" width="2.6" height="2.8" transform="rotate(90 24 24)" />
+    <rect x="22.7" y="17.1" width="2.6" height="2.8" transform="rotate(135 24 24)" />
+    <rect x="22.7" y="17.1" width="2.6" height="2.8" transform="rotate(180 24 24)" />
+    <rect x="22.7" y="17.1" width="2.6" height="2.8" transform="rotate(225 24 24)" />
+    <rect x="22.7" y="17.1" width="2.6" height="2.8" transform="rotate(270 24 24)" />
+    <rect x="22.7" y="17.1" width="2.6" height="2.8" transform="rotate(315 24 24)" />
+  </g>
+  <circle cx="24" cy="24" r="3.7" fill="none" stroke="#5B6475" stroke-width="2.8" />
+</svg>

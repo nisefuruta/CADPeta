@@ -7,7 +7,6 @@
 keyword.all=All(A)
 keyword.object=Object(O)
 keyword.margin=Margin(M)
-keyword.file_output=File output(F)
 keyword.emf_background=EMF background(B)
 keyword.layer=Layer(L)
 keyword.text_outline=Text outline(T)
@@ -41,8 +40,6 @@ scale.emf_bg_invalid=Specify the EMF background color in #RRGGBB format
 scale.emf_bg_state=EMF flattening base color: {0}
 
 # ---- Option toggle confirmations ----
-toggle.file_output.on=File output: on
-toggle.file_output.off=File output: off
 toggle.layer.on=Group by layer: on (drawing order may change and the appearance may break; affects both the SVG group structure and the EMF drawing order)
 toggle.layer.off=Group by layer: off
 toggle.shx.on=SHX text via substitute font: on (glyph shapes become an approximation in the substitute font, but text stays editable after pasting)
@@ -51,15 +48,16 @@ toggle.outline.on=Text outlining: on (all text becomes outline shapes; environme
 toggle.outline.off=Text outlining: off (default; fonts are kept and text stays editable after pasting)
 
 # ---- PETA/PETADIAG main flow ----
-runner.diag_forces_file_output=Diagnostic mode ignores the file-output-off setting and writes the full set
 runner.no_ocg=The published PDF has no layer (OCG) information, so output continues without layer grouping. Check the layer output setting of the PDF driver
 runner.pdf_published=PDF published: {0} ({1:N0} bytes, {2}ms)
-runner.diag_stage_dump=Diagnostic mode: dumping SVG before and after each conversion stage → {0}
+runner.diag_stage_dump=Diagnostic mode: dumping SVG before and after each conversion stage
 runner.diag_empty_ir=Diagnostic mode: the IR is empty, so normal output (SVG/EMF/clipboard) is skipped, but the diagnostic log is written
 runner.empty_ir_warning=Warning: the IR is empty (no drawable elements in the plot area). Check the plot area of the layout
 runner.svg_written=SVG output: {0}
 runner.emf_written=EMF output: {0} ({1:N0} bytes, {2}ms)
 runner.emf_opacity_flattened=Transparency detected. Use the SVG file to keep it
+runner.png_dpi_reduced=PNG written at {0} DPI because of the image size limit (setting: {1} DPI). Use a smaller area or a lower resolution
+runner.png_failed=Could not write the PNG: {0}. Use a smaller area or a lower resolution
 runner.empty_selection_ir=[CadPeta] No drawable elements were acquired from the narrowed output; output and clipboard update aborted (check that the range contains the selected objects)
 runner.background_removed_all=[CadPeta] Background removal may have removed all elements. Check with PETADIAG
 
@@ -71,8 +69,7 @@ outcome.reuse_hint=[CadPeta] This EMF can be used directly via Insert → Pictur
 # ---- Result summary ----
 summary.clipboard_ok=copied to clipboard
 summary.clipboard_failed=clipboard registration failed
-summary.file_output_off=(file output off)
-summary.line={0}{1:N0} bytes / {2} shapes → {3}{4}
+summary.line={0:N0} bytes / {1} shapes → {2}
 summary.option.layer=group by layer
 summary.option.shx=SHX substitute font
 summary.option.outline=text outlining
@@ -94,8 +91,6 @@ selplot.reason.viewport_controller=the paper-space controller viewport cannot be
 selplot.reason.viewport_off=an off viewport has no displayed content and cannot be selected for output
 selplot.reason.xref=an external reference is not self-contained in the side database
 selplot.stb_mismatch=The CTB/STB mode of the side database does not match the source drawing
-selplot.media_fallback=Cannot restore paper size {0}; using the closest match
-selplot.stylesheet_fallback=Cannot apply plot style {0}; printing with the default
 selplot.session_summary=Narrowing: {1} of {0} selected objects will be output
 selplot.view_copy_failed=Cannot copy the model view into the side database; continuing with a plan view: {0}
 selplot.force_clone={0}=1, so the side database is built by object cloning instead of Wblock
@@ -108,7 +103,7 @@ prompt.unknown_keyword=CAD returned an unknown prompt keyword: {0}
 
 # ---- Plot decisions ----
 plot.window_fit_switch=The window {0:F1}×{1:F1}mm does not fit the printable area {2:F1}×{3:F1}mm at the page setup scale; switching to fit-to-paper
-plot.window_verbose=Window plot: window={0} drawing units, scale={1:F6}mm/unit, rotation={2} deg, paper={3:F3}×{4:F3}mm, printable={5:F3}×{6:F3}mm center=({7:F3},{8:F3}), crop rect=({9:F3},{10:F3})-({11:F3},{12:F3})mm
+plot.window_verbose=Window plot: window={0} drawing units, scale={1:F6}mm/unit, display rotation (clockwise)={2} deg, PDF page={3:F3}×{4:F3}mm, printable={5:F3}×{6:F3}mm center=({7:F3},{8:F3}), crop rect=({9:F3},{10:F3})-({11:F3},{12:F3})mm
 
 # ---- Plot port (full/window PDF plot; same text for all 4 products, {0} etc. take the device name) ----
 plotport.busy=Another plot is in progress; cannot start (ProcessPlotState={0})
@@ -129,9 +124,6 @@ plotport.rotation_normalized=Plot rotation {0} does not produce an upright image
 plotport.window_failed=Cannot set the plot window (window={0} drawing units, ErrorStatus={1}). Check the two specified points
 plotport.validate_failed=Plot settings validation failed (layout={0}, paper={1}, ErrorStatus={2}). Check the page setup of the layout
 plotport.paper_units_fit=Paper unit {0} cannot be used for the window scale calculation; treating as fit-to-paper
-plotport.media_bounds_null=Cannot get the actual paper size (the current plotter configuration is unavailable even after setting device {0}). Check the PC3 configuration
-plotport.media_bounds_failed=Cannot get the actual paper size (device={0}, paper={1}, ErrorStatus={2}). Check the PC3 configuration
-plotport.config_restore_failed=Failed to restore the current plot configuration (still {0}): {1} (ErrorStatus={2})
 editor.paper_pick_switch=Inside a viewport; switching to paper space while specifying the window (the window is in paper coordinates)
 editor.cvport_restore_mismatch=Cannot restore the viewport after the window pick (expected CVPORT={0}, actual CVPORT={1})
 editor.view_plane_degenerate=The UCS plane is viewed edge-on, so the window collapses to a line and no area can be determined. Change the UCS or the view direction and retry
@@ -143,15 +135,11 @@ engine.pdf_missing=The plot completed but no PDF was generated: {0}. Check the P
 engine.pdf_done=PDF plot completed: {0}
 
 # ---- Output location ----
-output.dwg_dir_unwritable=Cannot write to the drawing folder: {0}
 output.unsaved=The drawing is unsaved, so its folder cannot be determined
 output.esc_suffix=, Esc to abort
 output.prompt=\nEnter the output folder (Enter for {0}{1}):\s
 output.cancelled_fallback=Input was interrupted; using the fallback folder
-output.chosen_unwritable=Cannot write to the specified folder; using the fallback: {0}
-output.chosen_create_failed=Cannot create the specified folder; using the fallback: {0} ({1})
-output.fallback_create_failed=Cannot create the fallback folder {0}. Aborting because no output location is available
-output.fallback_unwritable=Cannot write to the fallback folder {0}. Aborting because no output location is available
+output.chosen_create_failed=Cannot use the specified folder; using the fallback: {0} ({1})
 
 # ---- Diagnostics display ({0} diagnostic category names are language-invariant) ----
 diag.dump=Diagnostic dump: {0}
@@ -167,12 +155,11 @@ data.aborted=PETADATA aborted
 data.empty_ir=[CadPeta] No drawable elements were acquired from the selected objects; SVG export aborted
 data.svg_written=Structured SVG export: {0} ({1} elements, {2}ms)
 data.done=[CadPeta] PETADATA completed: {0} ({1} elements)
-data.temp_delete_failed=Cannot delete the temporary SVG: {0} ({1})
 data.gradient.zero=0 item(s)
 data.gradient.count={0} item(s)
 data.gradient.count_dpi={0} item(s) (actual DPI {1:0.##}-{2:0.##})
 data.gradient.summary=[CadPeta] PETADATA gradients: rasterized {0}, reduced {1} item(s) to representative colors
-data.db_acquired=Direct DB acquisition: {0} object(s) ({1}ms)
+data.db_acquired=Direct DB acquisition: {0} object(s) ({1}ms; {2} database object(s) opened)
 data.other_space_excluded=[CadPeta] PETADATA only targets objects directly owned by the current space: excluded {0} item(s) (of {1})
 
 # ---- Clipboard (EMF registration and read-back; Win32 error numbers keep the original text) ----
@@ -203,7 +190,6 @@ acquire.pdf_clip_merged=Clip consolidation: {0} → {1}
 
 # ---- Temporary artifacts (reservation, cleanup, recovery) ----
 artifact.reserve_failed=Could not reserve an output name after {0:N0} attempts: {1} / {2}
-artifact.temp_root_outside=The temporary work root is outside the CadPeta temp folder: {0}
 artifact.lock_delete_failed=Cannot delete the reservation file: {0}
 artifact.unsafe_delete_refused=Warning: refused to delete an unsafe temporary path: {0}
 artifact.temp_delete_failed=Cannot delete temporary artifacts: {0}
@@ -236,3 +222,95 @@ lang.file_missing=Language catalog {0} not found; using the built-in messages
 lang.file_invalid=Language catalog {0} could not be read; using the built-in messages ({1})
 lang.missing_keys=Language catalog {0} is missing {1} key(s); filled from the built-in messages: {2}
 lang.format_fallback=Language catalog {0}: the value for key {1} cannot be formatted ({2}); continuing with the built-in message
+filename.empty=The file name pattern is empty
+filename.unknown_token=The file name pattern has placeholders that cannot be used: {0} (available: {1})
+filename.unbalanced=The braces in the file name pattern do not match: {0}
+filename.invalid_chars=The file name pattern has characters that cannot be used in a file name: {0}
+filename.comment_only=The file name would be empty when no comment is entered. Add a placeholder such as {{drawing}} or some text
+settings.png_dpi_range=Specify a PNG resolution from {0} to {1} DPI
+settings.folder_empty=The output folder is empty
+settings.folder_invalid_chars=The output folder has characters that cannot be used in a folder name: {0}
+settings.folder_partially_rooted=Specify the output folder as a relative path (from the drawing folder) or a path that starts with a drive name or \\: {0}
+settings.unreadable=Cannot read the settings file: {0} ({1}). Close the CAD and try again, or delete this file to recreate the default settings
+settings.newer_version=These settings were written by a newer CADPeta (version {0}; this CADPeta supports up to version {1})
+settings.newer_version_guide=The settings file is left unchanged and the default settings are used: {0}
+settings.newer_version_not_saved=Not saved because the settings were written by a newer CADPeta (version {1}; this CADPeta supports up to version {2}): {0}
+settings.version_missing=The settings version is missing or unreadable (repaired as version {0})
+settings.unknown_item=Unknown item (removed)
+settings.wrong_type=The value has the wrong type: {0}
+settings.not_json=The settings file cannot be read as JSON ({0})
+settings.not_object=The top level of the settings file is not an object enclosed in {{ }}
+settings.repair_failed=Cannot save the repaired settings: {0} ({1}). The repaired values are used this time. Close the CAD and delete this file to recreate the default settings
+settings.recreate_failed=Cannot keep the broken settings file and recreate it: {0} ({1}). The default settings are used this time. Close the CAD and delete this file to recreate the default settings
+settings.truncated=The settings file is cut off (the braces are not closed)
+settings.duplicate_item=The same item appears {0} times (repaired with the first value)
+filename.seq_once={{seq}} can be used only once
+filename.trailing_dot_space=A file name cannot end with . or a space: {0}
+filename.reserved=This name is reserved by Windows and cannot be used as a file name: {0}
+settings.unknown_format=Unknown format: {0} (available: {1}; only this name is removed)
+settings.message=[CadPeta] {0}
+settings.problem=[CadPeta] Setting {0}: {1}
+settings.backup=[CadPeta] Kept the settings file before the fix: {0}
+publish.copy_failed=[CadPeta] Could not write file: {0} ({1})
+publish.folder_failed=[CadPeta] Cannot write to the output folder; no files were written: {0} ({1})
+summary.name_separator=, 
+summary.no_files=No files written. Set the formats with PETAOPT
+summary.published=Output: {0} ({1})
+comment.prompt=\nEnter a comment for the file name (Enter for none):\s
+comment.invalid=The comment contains characters not allowed in file names: {0}. Enter it again
+comment.cancelled=Comment input cancelled; command aborted
+comment.dialog_title=Comment for the file name
+comment.dialog_label=Comment
+output.dir_unwritable=Cannot write to the output folder: {0} ({1})
+opt.keyword.formats=Formats(F)
+opt.keyword.folder=Output folder(O)
+opt.keyword.name=file Name(N)
+opt.keyword.dpi=png Dpi(D)
+opt.keyword.exit=save and eXit(X)
+opt.prompt=\nSelect a setting to change [{0}] <{1}>:\s
+opt.formats_prompt=\nEnter the output formats separated by commas, or the sum of their values ({0}; {1} for no files; Enter keeps {2}):\s
+opt.folder_prompt=\nEnter the output folder (relative paths start at the drawing folder; Enter keeps {0}):\s
+opt.name_prompt=\nEnter the file name pattern (fields: {0}; Enter keeps {1}):\s
+opt.dpi_prompt=\nEnter the PNG resolution ({0}-{1} DPI) <{2}>:\s
+opt.current.formats=Output formats: {0}
+opt.current.folder=Output folder: {0}
+opt.current.name=File name pattern: {0}
+opt.current.dpi=PNG resolution: {0} DPI
+opt.current.file=Settings file: {0}
+opt.discarded=Settings changes discarded
+opt.unchanged=Settings not changed
+opt.saved=Settings saved: {0}
+opt.save_failed=Cannot save the settings: {0} ({1}). Settings not changed
+settings.example_comment=comment
+dialog.title=CADPeta Settings
+dialog.formats=Formats
+dialog.folder=Output folder
+dialog.browse=Choose a folder
+dialog.name=File name
+dialog.errors={0} (and {1} more)
+dialog.ok=OK
+dialog.cancel=Cancel
+opt.no_screen=This CAD has no screen, so the dialog cannot open. Use {0}
+ribbon.peta_tip=Specify a range and copy a print-quality drawing to the clipboard for pasting into Office. Files in the set formats are also written.
+ribbon.petaopt=Settings
+ribbon.petaopt_tip=Set the output formats, output folder, file name, and PNG resolution.
+ribbon.tip_command=Command: {0}
+ribbon.fallback_tab=Add-ins
+ribbon.no_addins_tab=[CadPeta] The ribbon has no Add-ins tab, so a substitute tab was created. Current tabs: {0}
+ribbon.failed=[CadPeta] Ribbon processing failed: {0}
+settings.formats_invalid=Unknown format: {0} (available: {1} and {2}; {2} cannot be combined with other formats)
+settings.formats_value_range=Specify the format value as a sum from 0 to {0}: {1}
+dialog.formats_tip=File formats to write. EMF is always copied to the clipboard, whatever the formats.
+dialog.dpi_tip=PNG resolution ({0}). Used only when PNG is written.
+dialog.dpi_range={0}-{1} DPI
+dialog.folder_tip=Folder for the files. Relative paths start at the drawing folder (example: .\\CADPeta is the CADPeta folder under the drawing folder).
+dialog.name_tip=File name pattern without the extension. If the name exists, (1) is added.
+dialog.insert=Insert ▾
+dialog.insert_tip=Inserts the chosen field at the cursor in the file name.
+dialog.preview=Preview: {0}
+dialog.token.drawing=drawing name
+dialog.token.tab=tab name (Model, or the layout name)
+dialog.token.datetime=date and time (yyyyMMdd_HHmmss)
+dialog.token.seq=sequence number (next after existing numbers)
+dialog.token.comment=comment entered at each PETA
+output.fallback_unusable=Cannot use the fallback folder {0} ({1}). Aborting because no output location is available

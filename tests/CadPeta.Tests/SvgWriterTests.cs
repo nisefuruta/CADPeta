@@ -33,15 +33,7 @@ public class SvgWriterTests
     public void transformを持つ文字のクリップは親gへ退避する()
     {
         var ir = new IrDocument { WidthMm = 100, HeightMm = 100 };
-        ir.ClipDefs.Add(new IrClipDef
-        {
-            Id = "clip0",
-            Segments = new List<IrSegment>
-            {
-                new IrMove(0, 0), new IrLine(50, 0), new IrLine(50, 50),
-                new IrLine(0, 50), new IrClose(),
-            },
-        });
+        ir.ClipDefs.Add(Square50Clip("clip0"));
         ir.Nodes.Add(new IrText
         {
             Value = "12000", XMm = 10, YMm = 10, FontSizeMm = 3,
@@ -51,6 +43,34 @@ public class SvgWriterTests
         Assert.Contains("<g clip-path=\"url(#clip0)\"><text", svg);
         Assert.Contains("rotate(-90)", svg);
     }
+
+    // Word は image に直付けした clip-path を、image の x,y だけずらした位置で適用し、
+    // クリップが画像から外れると塗り（半透明の塗りを埋め込んだ PNG）を表示しない。
+    // 外側の g に付けたクリップは仕様どおりに適用する（2026-10-30 に Word で実測）
+    [Fact]
+    public void クリップ付きの画像はクリップを外側gへ退避する()
+    {
+        var ir = new IrDocument { WidthMm = 100, HeightMm = 100 };
+        ir.ClipDefs.Add(Square50Clip("clip0"));
+        ir.Nodes.Add(new IrImage
+        {
+            XMm = 20, YMm = 10, WidthMm = 30, HeightMm = 20,
+            PngBytes = new byte[] { 1 }, ClipId = "clip0",
+        });
+        var svg = SvgWriter.Write(ir);
+        Assert.Matches("<g clip-path=\"url\\(#clip0\\)\">\\s*<image [^>]*/>\\s*</g>", svg);
+        Assert.DoesNotMatch("<image [^>]*clip-path", svg);
+    }
+
+    static IrClipDef Square50Clip(string id) => new()
+    {
+        Id = id,
+        Segments = new List<IrSegment>
+        {
+            new IrMove(0, 0), new IrLine(50, 0), new IrLine(50, 50),
+            new IrLine(0, 50), new IrClose(),
+        },
+    };
 
     // 出所メタデータ（data-*）の関門。通常出力（既定）は除去し、
     // 診断用出力（includeProvenance: true）でのみ残す。現行の data-* は data-layer のみ
@@ -213,15 +233,7 @@ public class SvgWriterTests
     public void クリップ付きグループはクリップを外側gへ退避する()
     {
         var doc = GroupedDoc();
-        doc.ClipDefs.Add(new IrClipDef
-        {
-            Id = "c0",
-            Segments = new List<IrSegment>
-            {
-                new IrMove(0, 0), new IrLine(50, 0), new IrLine(50, 50),
-                new IrLine(0, 50), new IrClose(),
-            },
-        });
+        doc.ClipDefs.Add(Square50Clip("c0"));
         doc.Nodes.OfType<IrGroup>().First().ClipId = "c0";
         var svg = SvgWriter.Write(doc);
         // clip-path は transform を持つ g へ直付けせず、外側の g に置く

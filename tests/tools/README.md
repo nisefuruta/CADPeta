@@ -191,12 +191,13 @@ pwsh -File tests/tools/regression/window_fit_scale_matrix.ps1 -Ver 2026
 `regression/peta_option_matrix.ps1` は、AutoCAD の accoreconsole でコマンドのオプションを
 全因子で駆動し、成果物と表示文言を機械判定する。セットは次のとおり。
 
-- `PetaFull` … PETA の 空間×範囲×絞り込み×余白×レイヤ×文字輪郭×ファイル出力×EMF背景 の 2^8=256
+- `PetaFull` … PETA の 空間×範囲×絞り込み×余白×レイヤ×文字輪郭×ファイル出力×EMF背景 の 2^8=256。
+  ファイル出力の軸は、ケースの直前に設定のファイル（CADPETA_DATA_DIR）の形式を 0 件か PDF・SVG・EMF に書き替えて切り替える
 - `PetaEdge` … A=Enter一致、縮退窓の聞き直し、EMF背景の不正入力、Enter維持、トグル偶奇、
   絞り込み解除、先選択 の10件
 - `PetaData` … PETADATA の 尺度×余白×レイヤ×文字輪郭×SHX代替 の 2^5=32＋グラデーションDPI 2＋空選択 1
-- `DiagSmoke` … PETADIAG／PETADATADIAG の診断出力（diag.json・stage ダンプ・ファイル出力強制）
-- `Smoke` … 版差確認の固定12件（`-Ver 2027` 用）
+- `DiagSmoke` … PETADIAG／PETADATADIAG の診断出力（diag.json・stage ダンプ。設定の形式が 0 件でも全形式を出力する）
+- `Smoke` … 版差確認の固定14件（`-Ver 2027` 用。13 件目は -PETAOPT で形式を値の合計 13 にした後の PETA、14 件目はファイル名のコメント）
 - `Trial` … 内容フラグと golden の採取（合否判定の材料作り）
 
 ```powershell
@@ -210,10 +211,31 @@ pwsh -File tests/tools/regression/peta_option_matrix.ps1 -Set Smoke -Ver 2027 -C
 クリップボード読み戻しとファイル出力オンの EMF のバイト一致、レイヤ対の描画要素数不変、
 モデル空間の寸法一貫性と余白の算術）で行う。内容フラグと golden は
 `peta_option_matrix_flags.json`（試走から人手承認で固定）を出典とし、未確定なら実行を拒否する。
-ファイル出力オフの一時領域（%TEMP%\CadPeta）残留ゼロ、入力 DWG 不変、完了マーカー
+一時領域（%TEMP%\CadPeta）残留ゼロ、入力 DWG 不変、完了マーカー
 （CADPETA_CASE_END）も全ケースで確認する。キャンペーン記録（campaign.json）に実行時 HEAD・
 差分・untracked の SHA256 を残す。
 
+レイアウトの窓の既知正解は `regression/peta_a3_window_expect.ps1` の表にあり、`crop_regression.ps1` と `peta_option_smoke_compat.ps1` も同じ表から読む。
+viewBox の Y は PDF のページの高さで変わるので、表はページの高さごとに分けてある。
+
+`regression/petadata_size_measure.ps1`（1 回の起動）は、図形の多い図面で PETADATA を実行し、図面から開いたオブジェクトの数が選択の数の 2 倍を超えたら失敗にする（同じ画層・線種・ブロックを図形ごとに開き直すと、メモリと時間が図形の数に比例して増える）。
+時間とメモリは版や PC で変わるので、判定せずに表示する。`-Plugin` に別のコミットで作った DLL を渡すと、同じ図面・同じ版で前後を比べられる。
+
+CAD を起動する試験は、CADPeta の設定のフォルダ（`CADPETA_DATA_DIR`）を、起動する CAD のプロセスにだけ渡す
+（`common/test_helpers.ps1` の `Write-E2eSettings`。既定は今までの試験と同じく、図面のフォルダに PDF・SVG・EMF を出力する）。
+利用者の `%APPDATA%\CADPeta\settings.json` は読まず、作らない。互換 CAD の試験の起動の関数（`common/compat_cad_com.ps1` の `Start-CadVisibleAndConnect`・`Start-CadProcessHidden`）は、
+`CADPETA_DATA_DIR` の無い起動を止める（自己試験 `common/compat_launch_selftest.ps1`）。
+
+ARES 2027 は、利用者のセッションがリモート デスクトップの切断の状態だと起動の途中で終了するので、互換 CAD の試験は、環境を変える前に
+接続の状態を確かめて止まる（`` の `NeedsConnectedSession`、`Assert-CompatLaunchReady`）。画面に接続してから実行する。
+
+PETAOPT のダイアログとリボンは、`regression/petaopt_gui_check.ps1`（画面のある acad.exe の 1 回の起動）で確かめる。
+PETAOPT でファイル名に `{comment}` を設定し、続く PETA のコメントのダイアログ（開く位置、フォーカス、使えない文字、ファイル名の表示、
+Enter・[キャンセル]・Esc）も確かめる。互換 CAD では、`regression/peta_option_smoke_compat.ps1` の最後の 4 ケース
+（settings-dialog、comment-dialog、comment-cancel、comment-escape）が同じことを確かめる。ダイアログの操作と判定は、
+両方が `common/cad_dialog_ui.ps1` の同じ関数を使う。互換 CAD は製品によって SendCommand がダイアログを閉じるまで戻らないので、
+ダイアログの操作は別のプロセス（Start-Job）で行う。互換 CAD のリボンは UI オートメーションに出ないので、リボンの確認は AutoCAD だけで行う。
+インストール済みの CADPeta.bundle があると acad.exe がその DLL を読み込むので、アンインストールしてから実行する（あれば起動の前に止まる）。
 前提を2つハーネス自身が守る。(1) AutoCAD のプロファイルは、開始時に `HKCU\Software\Autodesk\AutoCAD` と
 `DWGCommon` の全部のキーと値、各バージョンの `Support\Profiles` の .aws を記録し、エラー終了を含む finally で
 開始時の状態へ戻して、もう一度読んで一致を確かめる（共有実装は `regression/CadRegGuard.ps1`）。
@@ -299,21 +321,37 @@ cadpeta.exe のコンソール出力は CP932 で、stdout 照合はその前提
 ## 用紙の寸法対応付けとプロット回転の実機回帰
 
 `regression/peta_window_rotation_compat.ps1` は、レイアウト（PETA_A3・A3・1:1）に 100×70mm の
-窓を指定した PETADIAG を PlotRotation 0/90/180/270 で流し、次の2点を機械判定する。
+窓を指定した PETADIAG を PlotRotation 0/90/180/270 で流し、続けてモデル空間の窓のケースを流して、次の4点を機械判定する。
 
 - 用紙の寸法対応付け（PaperMediaMatcher／SelectMedia）: 出力 SVG の寸法が全回転で 100×70mm に
   なる。用紙が既定用紙へ落ちて用紙単位が変わると 1:1 の意味が壊れ、この寸法にならない
 - プロット回転のクロップ（QuarterTurnsCw）: クロップ後の内容が全回転で同一になる。判定は
   EMF のバイト一致を第一とし、不一致なら GDI で描画して平行移動 0.2mm 以内・残差 1% 未満を
   要求する（回転経由の PDF は描線座標の丸めが変わり、バイトは一致しないことがある）
+- モデル空間 × 窓 × 用紙合わせ × 回転の実効尺度とクロップの位置: PDF デバイスの縦の A4（余白のある用紙と
+  フルブリード）× 横長・縦長の窓 × 回転 0/90/270 度の 12 件で、窓と同じ矩形と対角線を描いて出力し、
+  最終 SVG の内容が四辺まで 1mm 以内で届くことと、SVG の縦横比が窓のままであることを確かめる
+  （window_fit_scale_matrix.ps1 の互換 CAD 版。互換 CAD は「有効な印刷領域」を表示しないので、図面の内容を正解にする）
+- 窓のクリップとクロップの中心（AutoCAD だけ）: AutoCAD の PDF の窓のクリップは印字した窓そのものなので、クロップの中心との
+  差を 0.05mm まで許す（PDF ドライバの 1pt の丸めを扱わないと 0.07〜0.29mm ずれる）。ARES はクリップが窓より広いので、差を証跡
+  （WINDOW_CLIP）に書くだけにする
+
+PETA_A3 は余白の無い A3 なので、余白が非対称な用紙での回転は `-LayoutMedia` でレイアウトの用紙を替えて確かめる。
+ARES 2020〜2024 の PDF デバイスの余白のある用紙は上の余白だけが大きく、回転 90 度の向き（ARES は用紙を反時計回りに回す）を
+取り違えるとクロップが横へずれる（docs/validation/architecture-decisions.md、2026-10-30）。
+`-LogMediaMargins` は、PDF デバイスの全部の用紙の余白を証跡へ書く。`-FitPapers` でモデル空間の用紙を替え、
+`-SkipModelFit` でモデル空間のケースを省く（IJCAD・BricsCAD は、PDF デバイスの A4 の正式名を確かめていない）。
+AutoCAD（`-Product Acad*`）は、ほかの AutoCAD の試験と同じく CadRegGuard でプロファイルを記録して戻し、インストール済みの bundle があれば起動の前に止まる。
 
 ```powershell
-powershell -Sta -File tests/tools/regression/peta_window_rotation_compat.ps1 -Product BricscadV26
-powershell -Sta -File tests/tools/regression/peta_window_rotation_compat.ps1 -Product Ijcad2026
-powershell -Sta -File tests/tools/regression/peta_window_rotation_compat.ps1 -Product Ares2024
-powershell -Sta -File tests/tools/regression/peta_window_rotation_compat.ps1 -Product Ares2027 -AllowForceStop
-powershell -Sta -File tests/tools/regression/peta_window_rotation_compat.ps1 -Product Acad2026
-powershell -Sta -File tests/tools/regression/peta_window_rotation_compat.ps1 -Product Acad2027
+powershell -Sta -Command "& 'tests\tools\regression\peta_window_rotation_compat.ps1' -Product Ares2020 -LayoutMedia 'ISO_A3_(420.00_x_297.00_MM)' -Confirm:`$false"
+powershell -Sta -Command "& 'tests\tools\regression\peta_window_rotation_compat.ps1' -Product Ares2023 -LayoutMedia 'ISO_A3_(420.00_x_297.00_MM)' -Confirm:`$false"
+powershell -Sta -Command "& 'tests\tools\regression\peta_window_rotation_compat.ps1' -Product Ares2024 -LayoutMedia 'ISO_A3_(420.00_x_297.00_MM)' -Confirm:`$false"
+powershell -Sta -Command "& 'tests\tools\regression\peta_window_rotation_compat.ps1' -Product Ares2027 -AllowForceStop -LayoutMedia 'ISO_A3_(420.00_x_297.00_MM)' -Confirm:`$false"
+powershell -Sta -Command "& 'tests\tools\regression\peta_window_rotation_compat.ps1' -Product BricscadV26 -SkipModelFit -Confirm:`$false"
+powershell -Sta -Command "& 'tests\tools\regression\peta_window_rotation_compat.ps1' -Product Ijcad2026 -SkipModelFit -Confirm:`$false"
+powershell -Sta -Command "& 'tests\tools\regression\peta_window_rotation_compat.ps1' -Product Acad2026 -LayoutMedia 'ISO_A3_(420.00_x_297.00_MM)' -Confirm:`$false"
+powershell -Sta -Command "& 'tests\tools\regression\peta_window_rotation_compat.ps1' -Product Acad2027 -LayoutMedia 'ISO_A3_(420.00_x_297.00_MM)' -Confirm:`$false"
 ```
 
 GUI COM 駆動のため実行条件は window_contract_compat.ps1 と同じ。AutoCAD も `-Product Acad2026` で
@@ -514,6 +552,12 @@ SVGのバイト一致まで比較できる。コミット済みのスナップ�
   （common/compat_cad_com.ps1 の Assert-CadPluginFolderTrusted。IJCAD・BricsCAD は、この PC に製品が無く確かめていない）。
 - 起動時の未保存図面を含め、全図面を`Close(false)`してから`Quit`する。保存確認を残さない。
 - 自分が起動し、実行ファイルまで照合したPIDだけを終了対象にする。既定では強制終了せず、残留を失敗証跡にする。
+  `Quit`の後に CAD が、製品の表（common/compat_cad_com.ps1 の`QuitExitCode`）の正常な終了の終了コードと違う値で終了したら失敗にする
+  （証跡は`EXIT owned PID=... code=0x...`）。ARES 2020・2023・2024 は 0 で終了した。AutoCAD は正常に終了しても 0xBEBEBABE・0xD2E2BABE の
+  ような値を返すので判定せず、ARES 2027・IJCAD・BricsCAD は測っていないので判定しない。
+  CAD は終了の処理の中で異常終了しても`Quit`に成功を返すので、終了コードを見ないと合格になる
+  （ARES 2020・2023・2024 の net48 が、解放されなかった DBObject のラッパーの解放でアクセス違反になった）。
+  異常終了がファイナライザの実行の時機で決まる場合は毎回は起きないので、合格は起きなかったことしか示さない。
 - 成功条件はコマンド終了だけでなく、SVG内画像数、EMF、診断JSON、縮退件数、残留プロセス0で判定する。
 
 製品のインストール先やProgIDは環境依存である。スクリプトのparam既定値を確認してから実行し、

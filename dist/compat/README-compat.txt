@@ -124,7 +124,10 @@ CADPeta は AutoCAD 互換の CAD でも動きます（PETAのPDF印刷経路と
   - PETA     : 指定した範囲を、印刷（プロット）したとおりの見た目のベクタ図にします。
                [Enter] で現在空間の全体、2点の指定でその窓の切り出しです。
                オプション O（オブジェクト）で出力対象を選んだ図形だけに絞り込めます。
-               EMF/SVG をファイル出力し、クリップボードへも載せます（Office で Ctrl+V）。
+               EMF をクリップボードへ載せます（Office で Ctrl+V）。
+  - PETAOPT  : PETA が出力するファイルの形式（PDF・SVG・EMF・PNG）、出力先、
+               ファイル名を設定します。既定では EMF だけを、図面のフォルダの下の
+               CADPeta フォルダへ出力します。
   - PETADATA : CTB/STB を通さず、TrueColor、線種、文字、レイヤを保ったままの SVG を
                保存します。Inkscape 等で編集し直したいときに使います。
 

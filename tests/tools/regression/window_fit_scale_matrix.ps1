@@ -63,6 +63,7 @@ $ContentBboxTolMm = 1.0
 # 図面は各ケースで別の名前で保存する（保存した図面は開いたままなので、ケースのフォルダへ移さない）。
 # SECURELOAD と TRUSTEDPATHS は変えず、信頼済みのフォルダへコピーしたプラグインを NETLOAD する（起動ごとに 1 回）
 . "$PSScriptRoot\..\common\accore_batch.ps1"
+. "$PSScriptRoot\..\common\svg_compare.ps1"
 $head = Get-AccoreNetloadLines $plugin
 $tail = @('_.CLOSE', '_Y', '_.QUIT')
 $batchCases = @(foreach ($c in $cases) {
@@ -103,7 +104,7 @@ try {
 
         $lines = $r.Output -split "`r?`n"
         $effective = @($lines | Select-String '有効な印刷領域:\s*幅=\s*([0-9.]+)\s*高さ=\s*([0-9.]+)')
-        $scaleLine = @($lines | Select-String '窓プロット:.*尺度=([0-9.]+)mm/単位、回転=(\d+)度')
+        $scaleLine = @($lines | Select-String '窓プロット:.*尺度=([0-9.]+)mm/単位、表示の回転（時計回り）=(\d+)度')
         if ($effective.Count -lt 2 -or $scaleLine.Count -lt 1) {
             $failures += "$($c.id): 実効領域または尺度の診断行が取れない（stdout=$($r.StdoutPath)）"
             continue
@@ -124,29 +125,16 @@ try {
 
         $svg = @(Get-ChildItem $r.CaseDir -Filter *.svg | Where-Object { $_.Name -notmatch '\.stage\d+\.' })
         if ($svg.Count -ne 1) { $failures += "$($c.id): 最終SVGが1つでない（$($svg.Count)）"; continue }
-        $svgText = Get-Content $svg[0].FullName -Raw
-        $vb = [regex]::Match($svgText, 'viewBox="([-0-9.]+) ([-0-9.]+) ([0-9.]+) ([0-9.]+)"')
-        if (-not $vb.Success) { $failures += "$($c.id): viewBox が読めない"; continue }
-        $vbX = [double]$vb.Groups[1].Value; $vbY = [double]$vb.Groups[2].Value
-        $vbW = [double]$vb.Groups[3].Value; $vbH = [double]$vb.Groups[4].Value
+        $gaps = Get-SvgContentEdgeGaps $svg[0].FullName
+        $vbW = $gaps.ViewBox.Width; $vbH = $gaps.ViewBox.Height
         # 表示フレームの期待寸法: 内容は表示フレームで窓×尺度のまま（回転で入れ替わらない）
         if ([math]::Abs($vbW - $c.w * $s) -gt $EffectiveAreaTolMm -or [math]::Abs($vbH - $c.h * $s) -gt $EffectiveAreaTolMm) {
             $failures += "$($c.id): viewBox ${vbW}x${vbH} が 窓×尺度 $([math]::Round($c.w*$s,2))x$([math]::Round($c.h*$s,2)) と不一致"
         }
         # 内容 bbox（clipPath 定義を除く描画パスの座標全部）が viewBox の四辺まで届く
-        $minX = [double]::MaxValue; $minY = [double]::MaxValue
-        $maxX = [double]::MinValue; $maxY = [double]::MinValue
-        $body = [regex]::Replace($svgText, '<defs>.*?</defs>', '', 'Singleline')
-        foreach ($m in [regex]::Matches($body, 'd="([^"]+)"')) {
-            foreach ($pt in [regex]::Matches($m.Groups[1].Value, '(-?[0-9.]+) (-?[0-9.]+)')) {
-                $px = [double]$pt.Groups[1].Value; $py = [double]$pt.Groups[2].Value
-                if ($px -lt $minX) { $minX = $px }; if ($px -gt $maxX) { $maxX = $px }
-                if ($py -lt $minY) { $minY = $py }; if ($py -gt $maxY) { $maxY = $py }
-            }
-        }
         $edges = @(
-            @{ n = "左"; d = $minX - $vbX }, @{ n = "上"; d = $minY - $vbY },
-            @{ n = "右"; d = ($vbX + $vbW) - $maxX }, @{ n = "下"; d = ($vbY + $vbH) - $maxY })
+            @{ n = "左"; d = $gaps.Left }, @{ n = "上"; d = $gaps.Top },
+            @{ n = "右"; d = $gaps.Right }, @{ n = "下"; d = $gaps.Bottom })
         foreach ($e in $edges) {
             if ([math]::Abs($e.d) -gt $ContentBboxTolMm) {
                 $failures += "$($c.id): 内容が viewBox の$($e.n)辺へ届かない（差 $([math]::Round($e.d,3))mm = 窓の縁が欠落）"

@@ -6,79 +6,89 @@ using Xunit;
 
 namespace CadPeta.Tests;
 
+// PETA の最後の処理。クリップボードに登録できなければ、使える EMF（出力した EMF、無ければ一時フォルダから移した EMF）を案内する。
+// 写せなかったファイルは、PETADIAG でも必ず表示する
 public sealed class PetaOutcomeTests
 {
-    static readonly DateTime Now = new(2026, 7, 12, 14, 35, 2);
-
-    static string Report(bool diagnostic, bool fileOutput, string emfPath, string? clipError,
-                         string? recovered, long emfBytes, int nodeCount,
-                         bool groupByLayer = false, bool shx = false, bool textOutline = false,
-                         double margin = 0)
+    static string Report(bool diagnostic, PublishResult publish, string? clipError = null, string availableEmf = @"C:\tmp\x.emf",
+                         bool groupByLayer = false)
     {
         var sw = new StringWriter();
-        PetaOutcome.Report(Msg.Japanese, sw, diagnostic, fileOutput, emfPath, clipError, recovered,
-            emfBytes, nodeCount, groupByLayer, shx, textOutline, margin);
+        PetaOutcome.Report(Msg.Japanese, sw, diagnostic, publish, clipError, availableEmf,
+            15204, 47, groupByLayer, false, false, 0);
         return sw.ToString();
     }
 
+    static PublishResult Published(params string[] paths) => new(paths, Array.Empty<string>());
+
     [Fact]
-    public void Report_Success_WritesOnlySummary()
+    public void 成功したら要約と出力したファイルを出す()
     {
-        string text = Report(false, true, @"C:\out\dwg_Model_20260712_143502.emf",
-            null, null, 15204, 47, groupByLayer: true);
-        Assert.Contains("dwg_Model_20260712_143502.emf", text);
-        Assert.Contains("15,204 bytes / 47図形 → クリップボード登録", text);
-        Assert.Contains("オプション: レイヤ別グループ化", text);
+        var publish = Published(@"C:\out\dwg_Model.emf");
+
+        string text = Report(false, publish, groupByLayer: true);
+
+        // 要約の文の形は RunSummaryTests が確かめる。ここは Report がその要約を出すことだけを確かめる
+        Assert.Contains(RunSummary.Build(Msg.Japanese, publish.Published, 15204, 47, true, true, false, false, 0), text);
         Assert.DoesNotContain("失敗", text);
-        Assert.DoesNotContain("系統", text);
     }
 
     [Fact]
-    public void Report_Diagnostic_WritesNothing()
+    public void 診断は要約を出さず出力したファイルだけを出す()
     {
-        Assert.Equal("", Report(true, true, @"C:\out\x.emf", null, null, 1, 1).Trim());
+        string text = Report(true, Published(@"C:\out\x.emf"));
+
+        Assert.Contains(@"出力: x.emf（C:\out）", text);
+        Assert.DoesNotContain("bytes", text);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void 写せなかったファイルは診断でも出す(bool diagnostic)
+    {
+        var publish = new PublishResult(Array.Empty<string>(), new[] { @"出力できなかったファイル: C:\out\x.pdf（拒否）" });
+
+        Assert.Contains(@"出力できなかったファイル: C:\out\x.pdf（拒否）", Report(diagnostic, publish));
     }
 
     [Fact]
-    public void Report_ClipboardFailure_GuidesToEmfAndReportsFailureInSummary()
+    public void クリップボードに登録できなければ使えるEMFを案内する()
     {
-        string text = Report(false, true, @"C:\out\x.emf", "クリップボードを開けない", null, 100, 2);
+        string text = Report(false, Published(@"C:\out\x.emf"), "クリップボードを開けない", @"C:\out\x.emf");
+
         Assert.Contains("クリップボード登録に失敗した: クリップボードを開けない", text);
         Assert.Contains(@"利用可能な EMF: C:\out\x.emf", text);
-        Assert.Contains("クリップボード登録失敗", text); // 結果サマリ側
+        Assert.Contains("クリップボード登録失敗", text);
     }
 
     [Fact]
-    public void Report_ClipboardFailure_PrefersRecoveredPathWhenGiven()
+    public void 出力したEMFがあれば一時フォルダのEMFを動かさずにそれを使う()
     {
-        string text = Report(false, false, @"C:\tmp\x.emf", "busy", @"C:\recovered\x.emf", 100, 2);
-        Assert.Contains(@"利用可能な EMF: C:\recovered\x.emf", text);
-        Assert.DoesNotContain(@"利用可能な EMF: C:\tmp\x.emf", text);
-    }
-
-    [Fact]
-    public void RecoverIfNeeded_FileOutputOn_ReturnsNullWithoutTouchingFiles()
-    {
-        using var scope = ArtifactScope.CreateTemp("d", "l", Now);
-        string? r = PetaOutcome.RecoverIfNeeded(scope, Path.Combine(scope.Dir, "x.emf"),
-                                                effectiveFileOutput: true, warn: _ => { });
-        Assert.Null(r);
-    }
-
-    [Fact]
-    public void RecoverIfNeeded_FileOutputOff_MovesEmfOutOfWorkDir()
-    {
-        using var scope = ArtifactScope.CreateTemp("d", "l", Now);
-        string emf = Path.Combine(scope.Dir, "d_l.emf");
+        using var scope = ArtifactScope.CreateTemp("d_l");
+        string emf = scope.PathOf(ArtifactKind.Emf);
         File.WriteAllBytes(emf, MinimalArtifactBytes.Emf());
-        string? r = PetaOutcome.RecoverIfNeeded(scope, emf, effectiveFileOutput: false, warn: _ => { });
+
+        string available = PetaOutcome.AvailableEmf(scope, emf, @"C:\out\d_l.emf", warn: _ => { });
+
+        Assert.Equal(@"C:\out\d_l.emf", available);
+        Assert.True(File.Exists(emf));
+    }
+
+    [Fact]
+    public void 出力したEMFが無ければ一時フォルダのEMFを移して使う()
+    {
+        using var scope = ArtifactScope.CreateTemp("d_l");
+        string emf = scope.PathOf(ArtifactKind.Emf);
+        File.WriteAllBytes(emf, MinimalArtifactBytes.Emf());
+
+        string available = PetaOutcome.AvailableEmf(scope, emf, null, warn: _ => { });
         try
         {
-            Assert.NotNull(r);
-            Assert.False(File.Exists(emf)); // 作業フォルダから退避された
-            Assert.True(File.Exists(r));
+            Assert.NotEqual(emf, available);
+            Assert.False(File.Exists(emf));
+            Assert.True(File.Exists(available));
         }
-        finally { if (r != null && File.Exists(r)) File.Delete(r); }
+        finally { if (File.Exists(available)) File.Delete(available); }
     }
-
 }

@@ -15,19 +15,8 @@ import json
 import sys
 
 import pikepdf
+from pdf_matrix import mat_mul
 from testchart_grid import PT2MM, N_ROW, N_COL, ROW_NAMES, classify
-
-
-def mat_mul(a, b):
-    """行列 a×b（PDF の 6要素アフィン、行ベクトル規約）"""
-    return [
-        a[0] * b[0] + a[1] * b[2],
-        a[0] * b[1] + a[1] * b[3],
-        a[2] * b[0] + a[3] * b[2],
-        a[2] * b[1] + a[3] * b[3],
-        a[4] * b[0] + a[5] * b[2] + b[4],
-        a[4] * b[1] + a[5] * b[3] + b[5],
-    ]
 
 
 def apply(m, x, y):

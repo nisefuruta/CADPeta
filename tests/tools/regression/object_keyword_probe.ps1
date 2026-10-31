@@ -236,6 +236,8 @@ function Invoke-ObjectKeywordCase($Case, $Files) {
         CADPETA_PROMPT_TRACE_CASE_ID = $Case.Id
         CADPETA_DUMP_SIDE_DB = ''
         CADPETA_LANG = $Case.Lang
+        # CADPeta の設定（今までの試験と同じく図面のフォルダに PDF・SVG・EMF）。利用者の %APPDATA%\CADPeta を使わない
+        CADPETA_DATA_DIR = (Write-E2eSettings (Join-Path (Split-Path -Parent $Files.Scr) 'cadpeta-data'))
     }
     if ($Case.Dump) { $childEnv.CADPETA_DUMP_SIDE_DB = $Files.DumpStem }
 

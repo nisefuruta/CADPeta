@@ -7,7 +7,6 @@
 keyword.all=全体(A)
 keyword.object=オブジェクト(O)
 keyword.margin=余白(M)
-keyword.file_output=ファイル出力(F)
 keyword.emf_background=EMF背景(B)
 keyword.layer=レイヤ(L)
 keyword.text_outline=文字輪郭(T)
@@ -41,8 +40,6 @@ scale.emf_bg_invalid=EMF背景色は #RRGGBB 形式で指定すること
 scale.emf_bg_state=EMF合成下地色: {0}
 
 # ---- オプション切替の確認表示 ----
-toggle.file_output.on=ファイル出力: オン
-toggle.file_output.off=ファイル出力: オフ
 toggle.layer.on=レイヤ別グループ化: オン（描画順が変わり見た目が崩れ得る。SVG のグループ構造と EMF の描画順の両方に反映）
 toggle.layer.off=レイヤ別グループ化: オフ
 toggle.shx.on=SHX文字の代替書体出力: オン（字形は代替書体の近似になるが、貼り付け先で文字編集できる）
@@ -51,15 +48,16 @@ toggle.outline.on=文字アウトライン化: オン（すべての文字を輪
 toggle.outline.off=文字アウトライン化: オフ（既定。フォント保持＝貼り付け先で文字編集できる）
 
 # ---- PETA/PETADIAG 本体フロー ----
-runner.diag_forces_file_output=診断モードのためファイル出力オフ指定を無視し一式を書き出す
 runner.no_ocg=発行 PDF にレイヤ情報(OCG)がないためレイヤ別グループ化を行わずに出力する。PDF ドライバのレイヤ出力設定を確認すること
 runner.pdf_published=PDF発行: {0}（{1:N0} bytes, {2}ms）
-runner.diag_stage_dump=診断モード: 変換層の各段の前後を SVG ダンプする → {0}
+runner.diag_stage_dump=診断モード: 変換層の各段の前後を SVG ダンプする
 runner.diag_empty_ir=診断モード: 空IRのため通常出力（SVG/EMF/クリップボード）は行わないが、診断ログは書き出す
 runner.empty_ir_warning=警告: IR が空（プロット範囲に描画要素がない）。レイアウトのプロット領域を確認すること
 runner.svg_written=SVG出力: {0}
 runner.emf_written=EMF出力: {0}（{1:N0} bytes, {2}ms）
 runner.emf_opacity_flattened=透過図形検出。透過表現はSVGファイルを利用のこと
+runner.png_dpi_reduced=PNG は画像の大きさの上限のため {0} DPI で出力（設定は {1} DPI）。範囲を狭めるか解像度を下げること
+runner.png_failed=PNG を出力できない: {0}。範囲を狭めるか解像度を下げること
 runner.empty_selection_ir=[CadPeta] 絞り込み出力から描画要素を取得できなかったため出力とクリップボード更新を中止する（範囲に選択オブジェクトが含まれるか確認すること）
 runner.background_removed_all=[CadPeta] 背景除去が全要素を除去した可能性がある。PETADIAG で確認すること
 
@@ -71,8 +69,7 @@ outcome.reuse_hint=[CadPeta] この EMF は Office の「挿入」→「画像�
 # ---- 結果サマリ ----
 summary.clipboard_ok=クリップボード登録
 summary.clipboard_failed=クリップボード登録失敗
-summary.file_output_off=（ファイル出力オフ）
-summary.line={0}{1:N0} bytes / {2}図形 → {3}{4}
+summary.line={0:N0} bytes / {1}図形 → {2}
 summary.option.layer=レイヤ別グループ化
 summary.option.shx=SHX代替書体
 summary.option.outline=文字輪郭化
@@ -94,8 +91,6 @@ selplot.reason.viewport_controller=ペーパー空間の制御ビューポート
 selplot.reason.viewport_off=オフのビューポートは表示内容がないため選択出力の対象にできない
 selplot.reason.xref=外部参照は側DBで自己完結しない
 selplot.stb_mismatch=側DBの CTB/STB モードが元図面と一致しない
-selplot.media_fallback=用紙 {0} を復元できないため近似用紙を使う
-selplot.stylesheet_fallback=印刷スタイル {0} を適用できないため既定のまま印刷する
 selplot.session_summary=絞り込み: 選択{0}件中{1}件を出力対象にする
 selplot.view_copy_failed=モデルビューを側DBへ複製できないため平面ビューとして続行する: {0}
 selplot.force_clone={0}=1 のため Wblock を使わずオブジェクト複製で側DBを作る
@@ -108,7 +103,7 @@ prompt.unknown_keyword=CAD が未知のプロンプトキーワードを返し�
 
 # ---- プロット判断 ----
 plot.window_fit_switch=窓 {0:F1}×{1:F1}mm はページ設定の尺度で印刷可能領域 {2:F1}×{3:F1}mm に収まらないため、用紙合わせ（フィット）へ切り替える
-plot.window_verbose=窓プロット: 窓={0} 図面単位、尺度={1:F6}mm/単位、回転={2}度、用紙={3:F3}×{4:F3}mm、印刷可能={5:F3}×{6:F3}mm 中心=({7:F3},{8:F3})、クロップ矩形=({9:F3},{10:F3})-({11:F3},{12:F3})mm
+plot.window_verbose=窓プロット: 窓={0} 図面単位、尺度={1:F6}mm/単位、表示の回転（時計回り）={2}度、PDF のページ={3:F3}×{4:F3}mm、印刷可能={5:F3}×{6:F3}mm 中心=({7:F3},{8:F3})、クロップ矩形=({9:F3},{10:F3})-({11:F3},{12:F3})mm
 
 # ---- プロットポート（全体・窓のPDF印刷。4製品同文で {0} 等にデバイス名が入る） ----
 plotport.busy=別のプロットが進行中のため開始できない（ProcessPlotState={0}）
@@ -129,9 +124,6 @@ plotport.rotation_normalized=プロット回転 {0} はこの製品の PDF で�
 plotport.window_failed=プロット窓を設定できない（窓={0} 図面単位、ErrorStatus={1}）。指定した2点を確認すること
 plotport.validate_failed=プロット設定の検証に失敗した（レイアウト={0}、用紙={1}、ErrorStatus={2}）。レイアウトのページ設定を確認すること
 plotport.paper_units_fit=用紙単位 {0} は窓の尺度計算に使えないため用紙合わせで扱う
-plotport.media_bounds_null=用紙の実寸を取得できない（デバイス={0} を設定後も現在のプロッタ構成が取得できない）。PC3 構成を確認すること
-plotport.media_bounds_failed=用紙の実寸を取得できない（デバイス={0}、用紙={1}、ErrorStatus={2}）。PC3 構成を確認すること
-plotport.config_restore_failed=プロット現在構成の復元に失敗（{0} のまま）: {1}（ErrorStatus={2}）
 editor.paper_pick_switch=ビューポート内のため、窓指定の間ペーパー空間へ切り替える（窓はペーパー座標）
 editor.cvport_restore_mismatch=窓指定後にビューポートを復元できない（期待CVPORT={0} 実CVPORT={1}）
 editor.view_plane_degenerate=UCS 平面を真横から見ているため窓が線に潰れて範囲を決められない。UCS かビューの向きを変えてやり直すこと
@@ -143,15 +135,11 @@ engine.pdf_missing=プロットは完了したが PDF が生成されていな�
 engine.pdf_done=PDF印刷完了: {0}
 
 # ---- 出力先の決定 ----
-output.dwg_dir_unwritable=図面フォルダへ書き込めない: {0}
 output.unsaved=未保存図面のため図面フォルダが定まらない
 output.esc_suffix=、Esc で中止
 output.prompt=\n出力フォルダを入力（Enter で {0}{1}）:\s
 output.cancelled_fallback=入力が中断されたため退避先を使う
-output.chosen_unwritable=指定フォルダへ書き込めないため退避先を使う: {0}
-output.chosen_create_failed=指定フォルダを作成できないため退避先を使う: {0}（{1}）
-output.fallback_create_failed=退避先 {0} を作成できない。出力先を確保できないため中止する
-output.fallback_unwritable=退避先 {0} へ書き込めない。出力先を確保できないため中止する
+output.chosen_create_failed=指定フォルダを使えないため退避先を使う: {0}（{1}）
 
 # ---- 診断表示（{0} の診断カテゴリ名は言語不変。行の書式だけ翻訳する） ----
 diag.dump=診断ダンプ: {0}
@@ -167,12 +155,11 @@ data.aborted=PETADATAを中止した
 data.empty_ir=[CadPeta] 選択オブジェクトから描画要素を取得できなかったため SVG 書き出しを中止する
 data.svg_written=構造 SVG 書き出し: {0}（{1}要素、{2}ms）
 data.done=[CadPeta] PETADATA 完了: {0}（{1}要素）
-data.temp_delete_failed=一時 SVG を削除できない: {0}（{1}）
 data.gradient.zero=0件
 data.gradient.count={0}件
 data.gradient.count_dpi={0}件（実DPI {1:0.##}～{2:0.##}）
 data.gradient.summary=[CadPeta] PETADATA グラデーション: {0}をラスタ化、{1}件を代表色へ縮退
-data.db_acquired=DB直接取得: {0}オブジェクト（{1}ms）
+data.db_acquired=DB直接取得: {0}オブジェクト（{1}ms。図面から開いたオブジェクト {2}）
 data.other_space_excluded=[CadPeta] PETADATA は現在の空間直属のオブジェクトのみを対象とする: {0}件を除外した（対象={1}件）
 
 # ---- クリップボード（EMF登録・読み戻し。Win32エラー番号等の内挿は原文のまま） ----
@@ -203,7 +190,6 @@ acquire.pdf_clip_merged=クリップ集約: {0} → {1}
 
 # ---- 一時成果物（予約・後始末・回復） ----
 artifact.reserve_failed=出力名を {0:N0} 回予約できなかった: {1} / {2}
-artifact.temp_root_outside=一時作業ルートが CadPeta 一時フォルダ外にある: {0}
 artifact.lock_delete_failed=予約ファイルを削除できない: {0}
 artifact.unsafe_delete_refused=警告: 安全でない一時パスの削除を拒否した: {0}
 artifact.temp_delete_failed=一時成果物を削除できない: {0}
@@ -236,3 +222,95 @@ lang.file_missing=言語カタログ {0} が見つからないため組み込み
 lang.file_invalid=言語カタログ {0} を読めないため組み込みの文言を使う（{1}）
 lang.missing_keys=言語カタログ {0} に未定義のキー {1} 件を組み込みの文言で補う: {2}
 lang.format_fallback=言語カタログ {0} のキー {1} の値では表示を組み立てられない（{2}）。組み込みの文言で続ける
+filename.empty=ファイル名の形が空です
+filename.unknown_token=ファイル名の形に、使えない差し込みがあります: {0}（使えるのは {1}）
+filename.unbalanced=ファイル名の形の {{ と }} の対応が取れていません: {0}
+filename.invalid_chars=ファイル名の形に、ファイル名に使えない文字があります: {0}
+filename.comment_only=コメントが空のときにファイル名が空になります。{{drawing}} などの差し込みか文字を足してください
+settings.png_dpi_range=PNG の解像度は {0}～{1} DPI で指定してください
+settings.folder_empty=出力先が空です
+settings.folder_invalid_chars=出力先に、フォルダの名前に使えない文字があります: {0}
+settings.folder_partially_rooted=出力先は、相対パス（図面のフォルダが起点）か、ドライブ名か \\ で始まるパスで指定してください: {0}
+settings.unreadable=設定のファイルを読めません: {0}（{1}）。CAD を終了してから開き直すか、このファイルを削除すると既定の設定で作り直します
+settings.newer_version=新しい版の CADPeta が書いた設定です（版 {0}。この CADPeta は版 {1} まで）
+settings.newer_version_guide=設定のファイルは書き換えずに、既定の設定を使います: {0}
+settings.newer_version_not_saved=新しい版の CADPeta が書いた設定なので保存しない（版 {1}。この CADPeta は版 {2} まで）: {0}
+settings.version_missing=設定の版がないか、読めません（版 {0} として直します）
+settings.unknown_item=知らない項目です（削除します）
+settings.wrong_type=値の種類が違います: {0}
+settings.not_json=設定のファイルを JSON として読めません（{0}）
+settings.not_object=設定のファイルの最上位が {{ }} で囲んだ形ではありません
+settings.repair_failed=直した設定を保存できません: {0}（{1}）。今回は直した値を使います。CAD を終了してからこのファイルを削除すると、既定の設定で作り直します
+settings.recreate_failed=壊れた設定のファイルを残して作り直せません: {0}（{1}）。今回は既定の設定を使います。CAD を終了してからこのファイルを削除すると、既定の設定で作り直します
+settings.truncated=設定のファイルが途中で切れています（括弧が閉じていません）
+settings.duplicate_item=同じ項目が {0} 回あります（最初の値を使って直します）
+filename.seq_once={{seq}} は 1 つだけ使えます
+filename.trailing_dot_space=ファイル名の末尾に . や空白は使えません: {0}
+filename.reserved=Windows が予約している名前なので、ファイル名に使えません: {0}
+settings.unknown_format=知らない形式です: {0}（使えるのは {1}。この名前だけを除きます）
+settings.message=[CadPeta] {0}
+settings.problem=[CadPeta] 設定の {0}: {1}
+settings.backup=[CadPeta] 直す前の設定のファイルを残しました: {0}
+publish.copy_failed=[CadPeta] 出力できなかったファイル: {0}（{1}）
+publish.folder_failed=[CadPeta] 出力先に書き込めないため、ファイルを出力していない: {0}（{1}）
+summary.name_separator=、
+summary.no_files=ファイル出力なし。出力する形式は PETAOPT で設定
+summary.published=出力: {0}（{1}）
+comment.prompt=\nファイル名に入れるコメントを入力（Enter で無し）:\s
+comment.invalid=ファイル名に使えない文字があります: {0}。入力し直すこと
+comment.cancelled=コメントの入力をキャンセルしたためコマンドを中止する
+comment.dialog_title=ファイル名に入れるコメント
+comment.dialog_label=コメント
+output.dir_unwritable=出力先へ書き込めない: {0}（{1}）
+opt.keyword.formats=形式(F)
+opt.keyword.folder=出力先(O)
+opt.keyword.name=ファイル名(N)
+opt.keyword.dpi=PNG解像度(D)
+opt.keyword.exit=保存して終了(X)
+opt.prompt=\n変更する項目を選択 [{0}] <{1}>:\s
+opt.formats_prompt=\n出力する形式をカンマ区切りか値の合計で入力（{0}。出力しないときは {1}。Enter で {2} のまま）:\s
+opt.folder_prompt=\n出力先を入力（相対パスは図面のフォルダが起点。Enter で {0} のまま）:\s
+opt.name_prompt=\nファイル名の形を入力（差し込み: {0}。Enter で {1} のまま）:\s
+opt.dpi_prompt=\nPNG の解像度を入力（{0}～{1} DPI） <{2}>:\s
+opt.current.formats=出力する形式: {0}
+opt.current.folder=出力先: {0}
+opt.current.name=ファイル名の形: {0}
+opt.current.dpi=PNG の解像度: {0} DPI
+opt.current.file=設定のファイル: {0}
+opt.discarded=設定の変更を破棄した
+opt.unchanged=設定は変更していない
+opt.saved=設定を保存しました: {0}
+opt.save_failed=設定を保存できない: {0}（{1}）。設定は変更していない
+settings.example_comment=コメント
+dialog.title=CADPeta の設定
+dialog.formats=形式
+dialog.folder=出力先
+dialog.browse=フォルダを選ぶ
+dialog.name=ファイル名
+dialog.errors={0}（ほか {1} 件）
+dialog.ok=OK
+dialog.cancel=キャンセル
+opt.no_screen=この CAD は画面が無いのでダイアログを開けない。{0} を使うこと
+ribbon.peta_tip=範囲を指定し、印刷と同じ仕上がりの図を Office へ貼り付けられる形でクリップボードに登録します。設定した形式のファイルも出力します。
+ribbon.petaopt=設定
+ribbon.petaopt_tip=出力する形式、出力先、ファイル名、PNG の解像度を設定します。
+ribbon.tip_command=コマンド: {0}
+ribbon.fallback_tab=アドイン
+ribbon.no_addins_tab=[CadPeta] リボンに「アドイン」タブが無いため、代わりのタブを作った。今あるタブ: {0}
+ribbon.failed=[CadPeta] リボンの処理に失敗した: {0}
+settings.formats_invalid=知らない形式です: {0}（使えるのは {1} と {2}。{2} はほかの形式と並べられません）
+settings.formats_value_range=形式の値は 0～{0} の合計で指定してください: {1}
+dialog.formats_tip=出力するファイルの形式。クリップボードには、形式にかかわらず常に EMF を登録します。
+dialog.dpi_tip=PNG の解像度（{0}）。PNG を出力するときだけ使います。
+dialog.dpi_range={0}～{1} DPI
+dialog.folder_tip=ファイルを出力するフォルダ。相対パスは図面のフォルダが起点です（例: .\\CADPeta は図面のフォルダの下の CADPeta）。
+dialog.name_tip=拡張子を除いたファイル名の形。同じ名前があれば (1) を付けます。
+dialog.insert=差し込み ▾
+dialog.insert_tip=選んだ差し込みを、ファイル名の入力の位置に入れます。
+dialog.preview=プレビュー: {0}
+dialog.token.drawing=図面名
+dialog.token.tab=タブ名（モデルなら Model、レイアウトならその名前）
+dialog.token.datetime=日時（yyyyMMdd_HHmmss）
+dialog.token.seq=連番（出力先の既存の番号の次）
+dialog.token.comment=PETA のたびに入力するコメント
+output.fallback_unusable=退避先 {0} を使えない（{1}）。出力先を確保できないため中止する

@@ -16,7 +16,8 @@ public class ArchitectureTests
         name == "System" || name.StartsWith("System.") || name == "netstandard" || name == "mscorlib";
 
     /// <summary>
-    /// どの製品 CAD の SDK にも依存しない層（内核・ユースケース層・PDF印刷経路/EMF/PDF/PNG アダプタ・SHX解釈器・取得アダプタ共有計算層）。
+    /// どの製品 CAD の SDK にも依存しない層（内核・ユースケース層・PDF印刷経路/EMF/PDF/PNG アダプタ・SHX解釈器・取得アダプタ共有計算層・
+    /// 4 製品が共有する設定のダイアログ）。ダイアログの層は WPF の型を持つので、試験は型ではなく名前で読み込む
     /// </summary>
     static Assembly[] CadNeutralLayers() => new[]
     {
@@ -28,6 +29,7 @@ public class ArchitectureTests
         typeof(Out.Png.PngWriter).Assembly,
         typeof(Glyphs.Shx.ShxGlyphOutliner).Assembly,
         typeof(Acquire.Common.CurveApprox).Assembly,
+        Assembly.Load(new AssemblyName("CadPeta.Ui.Wpf")),
     };
 
     /// <summary>AutoCAD 版の取得アダプタ（構造SVG書き出し）。</summary>
@@ -278,7 +280,7 @@ public class ArchitectureTests
     {
         // プラグイン層の単一情報源（PetaRunner・RangePrompt・PlotOrchestrator・ports）は
         // 中立型だけで会話する。外部プロジェクト参照は内核2つ（Core・UseCases）と、
-        // CAD 非依存の取得共通既定値と診断カテゴリ定数（AcquireDiagCategories）を置く
+        // CAD 非依存の取得共通既定値・診断カテゴリ定数（AcquireDiagCategories）・後始末の共通処理（CleanupRunner）を置く
         // Acquire.Common だけを許し、
         // どの製品 CAD SDK の型も現れてはならない（CAD 固有処理は各殻の port 実装に封じ込める）。
         var refs = RefNames(typeof(Plugin.Shared.PetaRunner).Assembly);

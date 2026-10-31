@@ -126,6 +126,22 @@ public class GroupFlattenTests
     }
 
     [Fact]
+    public void 破線の位相もパターンと同じ倍率でスケールする()
+    {
+        var ir = new IrDocument { WidthMm = 100, HeightMm = 100 };
+        var g = new IrGroup { Transform = new IrMatrix(2, 0, 0, 2, 0, 0) };
+        var dashed = Line(0, 0, 10, 0, widthMm: 0.25);
+        dashed.StrokeDashMm = new[] { 1.2, 0.6 };
+        dashed.StrokeDashOffsetMm = 0.3;
+        g.Children.Add(dashed);
+        ir.Nodes.Add(g);
+
+        var flat = Flatten(ir);
+        var p = Assert.IsType<IrPath>(Assert.Single(flat.Nodes));
+        Assert.Equal(0.6, Math.Round(p.StrokeDashOffsetMm, 9));
+    }
+
+    [Fact]
     public void グループのクリップは子へ引き継ぐ()
     {
         var ir = new IrDocument { WidthMm = 100, HeightMm = 100 };

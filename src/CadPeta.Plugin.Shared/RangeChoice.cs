@@ -30,9 +30,6 @@ public sealed class RangeChoice
     /// <summary>全 text をアウトライン化するか（既定オフ=フォント保持）。</summary>
     public bool TextOutline;
 
-    /// <summary>成果物をファイルへ出力するか（オフ=クリップボード登録のみ）。</summary>
-    public bool FileOutput = true;
-
     public double GradientDpi = AcquireDefaults.GradientDefaultDpi;
     public IrRgb EmfBackground = PluginDefaults.DefaultEmfBackground;
 

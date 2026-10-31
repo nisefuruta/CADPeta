@@ -46,12 +46,14 @@
          （ExcludeAssets=runtime。実行時はホスト AutoCAD が同名アセンブリを提供）。
          版対応（nuspec と NuGet flatcontainer で実確認）: 24.3.0=AutoCAD 2024
          (net47資産→net48で参照可)／25.0.0=2025・25.1.0=2026(net8.0)／26.0.0=2027(net10.0)。
-         net8 系は 2025/2026 の両方で動かすため系内最古の 25.0.0 でコンパイルする -->
+         各系列の、依存の書き方が正しく警告の出ない最新の版を、3 つのパッケージで同じ版にそろえて使う（利用者の決定、2026-10-28）。
+         net8 系は 25.1.0（25.0.0 の AutoCAD.NET は依存を Core 25.0.0-V058 と書いていて NU1608 になり、25.1.1 は中身が net10 用）。
+         2026 で足された API を使うと 2025 では実行時に失敗するので、2025 の実機で確かめていない API の追加に注意する -->
     <AcadNetVersionNet48>24.3.0</AcadNetVersionNet48>
-    <AcadNetVersionNet8>25.0.0</AcadNetVersionNet8>
+    <AcadNetVersionNet8>25.1.0</AcadNetVersionNet8>
     <AcadNetVersionNet10>26.0.0</AcadNetVersionNet10>
     <!-- プラグインは System.Text.Json を使わない（JSON は .NET 標準の DataContractJsonSerializer。
-         Plugin.Shared の PluginJson）。net48 では System.Text.Json の依存（System.Memory など）が参照する版が
+         UseCases の JsonText）。net48 では System.Text.Json の依存（System.Memory など）が参照する版が
          PdfPig の依存と食い違い、bindingRedirect を持てないプラグインは読み込みに失敗した（2026-10-28） -->
 
     <!-- 版番号の原本は dist/bundle/CADPeta.bundle/PackageContents.xml の AppVersion の 1 か所。自作の DLL の版
@@ -93,6 +95,12 @@
     <AresNet48DllVer Condition="'$(AresSdkYearNet48)' == '2024'">23.1_16</AresNet48DllVer>
     <AresNet48DllVer Condition="'$(AresSdkYearNet48)' == '2023'">4.03_15</AresNet48DllVer>
     <AresNet48DllVer Condition="'$(AresSdkYearNet48)' == '2020'">4.03_14</AresNet48DllVer>
+    <!-- ARES の SDK を参照するプロジェクト。年式ごとに作り分けるのはこの 2 つだけで、参照される共通のプロジェクトは年式に依らず
+         同じ出力にする（年式ごとに別の中間フォルダで作ると、DLL に書き込まれるパスが変わって中身が別になり、署名の回数が増える）。
+         出力・中間フォルダより前に決める必要があるので、csproj ではなくここでプロジェクト名から決める -->
+    <CadPetaUsesAresSdk Condition="'$(MSBuildProjectName)' == 'CadPeta.Acquire.Ares' Or '$(MSBuildProjectName)' == 'CadPeta.Plugin.Ares'">true</CadPetaUsesAresSdk>
+    <!-- ARES 2020 の参照で組む net48 にだけ付ける定数（ARES 2020 はリボンを置かない。理由は CadCommon の PluginApp.cs） -->
+    <DefineConstants Condition="'$(CadPetaUsesAresSdk)' == 'true' And '$(TargetFramework)' == '$(CadPetaNet48Tfm)' And '$(AresSdkYearNet48)' == '2020'">$(DefineConstants);CADPETA_ARES2020</DefineConstants>
 
     <AresBinDirNet48 Condition="'$(AresBinDirNet48)' == '' And Exists('$(CadPetaVendorRefs)\ares\$(AresSdkYearNet48)\TD_Mgd_$(AresNet48DllVer).dll')">$(CadPetaVendorRefs)\ares\$(AresSdkYearNet48)</AresBinDirNet48>
     <AresBinDirNet48 Condition="'$(AresBinDirNet48)' == ''">C:\Program Files\Graebert GmbH\ARES Standard $(AresSdkYearNet48)\BIN</AresBinDirNet48>
@@ -101,10 +109,9 @@
     <AresBinDirNet8 Condition="'$(AresBinDirNet8)' == ''">C:\Program Files\Graebert GmbH\ARES Standard 2027\BIN</AresBinDirNet8>
   </PropertyGroup>
 
-  <!-- 既定以外の ARES 年式は出力・中間フォルダを年式別に分離し、既定ビルドの成果物・
-       インクリメンタルビルド状態と混線させない（BaseIntermediateOutputPath は
-       Directory.Build.props でのみ確実に効く） -->
-  <PropertyGroup Condition="'$(AresSdkYearNet48)' != '$(CadPetaAresDefaultSdkYear)'">
+  <!-- 既定以外の ARES 年式は、ARES の SDK を参照するプロジェクトの出力・中間フォルダを年式別に分離し、既定ビルドの成果物・
+       インクリメンタルビルド状態と混線させない（BaseIntermediateOutputPath は Directory.Build.props でのみ確実に効く） -->
+  <PropertyGroup Condition="'$(CadPetaUsesAresSdk)' == 'true' And '$(AresSdkYearNet48)' != '$(CadPetaAresDefaultSdkYear)'">
     <BaseOutputPath>bin\ares$(AresSdkYearNet48)\</BaseOutputPath>
     <BaseIntermediateOutputPath>obj\ares$(AresSdkYearNet48)\</BaseIntermediateOutputPath>
     <!-- 既定アイテム除外は $(Base*OutputPath) 配下しか対象にしないため、年式別パスへ移すと
@@ -114,7 +121,7 @@
   </PropertyGroup>
 
   <!-- 未対応の年式指定は参照解決の手前で明示的に失敗させる（黙って TD_Mgd_.dll を探しに
-       行かない）。CadPetaUsesAresSdk は ARES の SDK を参照する csproj だけが立てる -->
+       行かない） -->
   <Target Name="CadPetaVerifyAresSdkYear" BeforeTargets="ResolveAssemblyReferences"
           Condition="'$(CadPetaUsesAresSdk)' == 'true' And '$(TargetFramework)' == '$(CadPetaNet48Tfm)' And '$(AresNet48DllVer)' == ''">
     <Error Text="AresSdkYearNet48='$(AresSdkYearNet48)' は未対応のARES年式です。対応年式とDLL版サフィックスは src/Directory.Build.props の表へ追加してください。" />

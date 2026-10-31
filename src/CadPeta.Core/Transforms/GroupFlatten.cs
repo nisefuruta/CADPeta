@@ -98,6 +98,7 @@ public static class GroupFlatten
                     Stroke = p.Stroke,
                     StrokeWidthMm = p.StrokeWidthMm * m.ScaleFactor,
                     StrokeDashMm = p.StrokeDashMm?.Select(d => d * m.ScaleFactor).ToArray(),
+                    StrokeDashOffsetMm = p.StrokeDashOffsetMm * m.ScaleFactor,
                     StrokeOpacity = p.StrokeOpacity,
                     Fill = p.Fill,
                     FillEvenOdd = p.FillEvenOdd,

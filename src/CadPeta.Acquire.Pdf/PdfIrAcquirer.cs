@@ -83,12 +83,8 @@ public sealed class PdfIrAcquirer : IIrAcquirer
         }
     }
 
-    const double Pt2Mm = Units.MmPerInch / Units.PtPerInch; // PDF の 1pt を mm へ
     // PDF Tz（水平スケーリング）は % 値。100 が標準幅（PDF 32000-1 9.3.4）
     const double TzPercentBase = 100.0;
-    // SVG に PDF の「線幅0=デバイス最細線」の概念がないため、最細線は固定幅へ置換する
-    // （非可逆の正規化として診断ログに記録する。値はコンテンツ量子 0.03pt の約5倍）
-    const double HairlineMm = 0.05;
 
     readonly TextWriter? _log;
     readonly TextWriter? _verbose;
@@ -97,21 +93,37 @@ public sealed class PdfIrAcquirer : IIrAcquirer
     public PdfIrAcquirer(TextWriter? log = null, TextWriter? verbose = null)
     { _log = log; _verbose = verbose ?? log; }
 
-    public IrDocument Acquire(string sourcePath, IrDiagnostics diag)
+    /// <summary>PDF のページ数。</summary>
+    public static int CountPages(string sourcePath)
+    {
+        using var doc = PdfDocument.Open(sourcePath);
+        return doc.NumberOfPages;
+    }
+
+    /// <summary>1 ページ目を取り込む（CAD のプロットの PDF は 1 ページ）。</summary>
+    public IrDocument Acquire(string sourcePath, IrDiagnostics diag) => Acquire(sourcePath, diag, 1);
+
+    /// <param name="pageNumber">取り込むページ（1 始まり）。</param>
+    public IrDocument Acquire(string sourcePath, IrDiagnostics diag, int pageNumber)
     {
         var ir = new IrDocument();
 
         using (var doc = PdfDocument.Open(sourcePath))
         {
-            var page = doc.GetPage(1); // プロットPDFは1ページ前提（PDF印刷経路の入力形式。ページ番号は1始まり）
-            ir.WidthMm = page.Width * Pt2Mm;
-            ir.HeightMm = page.Height * Pt2Mm;
+            if (pageNumber < 1 || pageNumber > doc.NumberOfPages)
+                throw new ArgumentOutOfRangeException(nameof(pageNumber), pageNumber,
+                    $"ページ {pageNumber} は無い（PDF は {doc.NumberOfPages} ページ）");
+            // どのページを変換したかを詳細のログに残す（複数ページの PDF で、指定しなければ 1 ページ目になる）
+            _verbose?.WriteLine($"ページ: {pageNumber}/{doc.NumberOfPages}");
+            var page = doc.GetPage(pageNumber);
+            ir.WidthMm = page.Width * Units.MmPerPt;
+            ir.HeightMm = page.Height * Units.MmPerPt;
             _verbose?.WriteLine($"page: {page.Width} x {page.Height} pt = " +
                             $"{ir.WidthMm:F3} x {ir.HeightMm:F3} mm");
 
             // 座標変換: pt（PDF、Y上向き）→ mm（IR、Y下向き）
-            double Xmm(double xPt) => xPt * Pt2Mm;
-            double Ymm(double yPt) => ir.HeightMm - yPt * Pt2Mm;
+            double Xmm(double xPt) => xPt * Units.MmPerPt;
+            double Ymm(double yPt) => ir.HeightMm - yPt * Units.MmPerPt;
 
             // ---------- 間接参照の解決子とページリソース ----------
             IToken Resolve(IToken t) =>
@@ -496,12 +508,12 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                         if (p.StrokeColor == null)
                             diag.Add("既定色の補完（色未設定→黒）", $"path seq={pathIdx} stroke {GeoClip.BboxText(bbox)}");
                         node.Stroke = p.StrokeColor != null ? ToIr(p.StrokeColor) : new IrRgb(0, 0, 0);
-                        double lwMm = st.lwDevPt * Pt2Mm;
+                        double lwMm = st.lwDevPt * Units.MmPerPt;
                         if (lwMm <= 0)
                         {
-                            diag.Add($"最細線の固定幅置換（線幅0→{HairlineMm}mm）",
+                            diag.Add($"最細線の固定幅置換（線幅0→{AcquireDefaults.HairlineMm}mm）",
                                      $"path seq={pathIdx} {GeoClip.BboxText(bbox)}");
-                            lwMm = HairlineMm;
+                            lwMm = AcquireDefaults.HairlineMm;
                         }
                         node.StrokeWidthMm = lwMm;
                     }
@@ -574,7 +586,7 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                         glyphXs = letters.Select(l =>
                             Xmm(first.StartBaseLine.X)
                             + ((l.StartBaseLine.X - first.StartBaseLine.X) * ux
-                               + (l.StartBaseLine.Y - first.StartBaseLine.Y) * uy) * Pt2Mm).ToArray();
+                               + (l.StartBaseLine.Y - first.StartBaseLine.Y) * uy) * Units.MmPerPt).ToArray();
                     }
                 }
 
@@ -585,7 +597,7 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                     YMm = Ymm(first.StartBaseLine.Y),
                     GlyphXsMm = glyphXs,
                     FontFamily = MapFont(first.FontName ?? ""),
-                    FontSizeMm = first.PointSize * Pt2Mm,
+                    FontSizeMm = first.PointSize * Units.MmPerPt,
                     WidthFactor = ts.tz / TzPercentBase,
                     RotationDeg = rotDeg,
                     Fill = first.Color != null ? ToIr(first.Color) : new IrRgb(0, 0, 0),
@@ -632,8 +644,8 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                     bboxMm = new[] { Xmm(bounds.Left), Ymm(bounds.Top), Xmm(bounds.Right), Ymm(bounds.Bottom) };
                     xMm = Xmm(bounds.Left);
                     yMm = Ymm(bounds.Top);
-                    wMm = (bounds.Right - bounds.Left) * Pt2Mm;
-                    hMm = (bounds.Top - bounds.Bottom) * Pt2Mm;
+                    wMm = (bounds.Right - bounds.Left) * Units.MmPerPt;
+                    hMm = (bounds.Top - bounds.Bottom) * Units.MmPerPt;
                 }
                 else
                 {
@@ -644,8 +656,8 @@ public sealed class PdfIrAcquirer : IIrAcquirer
                     bboxMm = new[] { Xmm(minX), Ymm(maxY), Xmm(maxX), Ymm(minY) };
                     xMm = Xmm(minX);
                     yMm = Ymm(maxY);
-                    wMm = (maxX - minX) * Pt2Mm;
-                    hMm = (maxY - minY) * Pt2Mm;
+                    wMm = (maxX - minX) * Units.MmPerPt;
+                    hMm = (maxY - minY) * Units.MmPerPt;
                     if (isQuarter) rotatedImages++;
                     else diag.Add("プロファイル外: 非直角回転の画像（無回転で軸平行bboxへ近似配置）",
                                   $"image seq={imgIdx} rot={bounds.Rotation:F1}° {GeoClip.BboxText(bboxMm)}");

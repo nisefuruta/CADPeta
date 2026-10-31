@@ -7,6 +7,9 @@ internal static class IjcadPluginDefaults
     public const string PdfDeviceName = "DWG To PDF.pc3";
     public const int PlotCopyCount = 1;
 
+    /// <summary>PDF デバイスが 1pt の整数へ丸めて書く値。IJCAD の PDF デバイスでは測っていないので、丸めない前提のまま。</summary>
+    public const PdfPointSnapping PdfPointSnapping = Shared.PdfPointSnapping.None;
+
     /// <summary>
     /// CVPORT がこの値のとき真のペーパー空間がアクティブ（IJCAD 2026 実測 2026-07-17:
     /// レイアウトのペーパー空間で CVPORT=1、MSPACE でビューポートへ入ると 2、PSPACE で 1 へ戻る。

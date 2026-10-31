@@ -82,6 +82,8 @@ public sealed class ScriptConfirmTests
         { "tests/tools/regression/crop_regression.ps1", "pwsh", "-Ver 2026 -OutRoot {box}\\out" },
         { "tests/tools/regression/object_keyword_probe.ps1", "pwsh", "-OutRoot {box}\\out" },
         { "tests/tools/regression/office_doc_verify.ps1", "pwsh", "" },
+        { "tests/tools/regression/petadata_size_measure.ps1", "pwsh", "-Ver 2026 -OutRoot {box}\\out" },
+        { "tests/tools/regression/petaopt_gui_check.ps1", "pwsh", "-OutRoot {box}\\out" },
         { "tests/tools/regression/peta_option_g8_verify.ps1", "pwsh", "-CampaignDir {box}\\campaign -RoiConfig {box}\\roi.json -OutDir {box}\\out" },
         { "tests/tools/regression/peta_option_matrix.ps1", "pwsh", "-Set Smoke -OutRoot {box}\\out" },
         { "tests/tools/regression/peta_option_smoke_compat.ps1", "powershell", "-Product Ares2020 -OutRoot {box}\\out" },

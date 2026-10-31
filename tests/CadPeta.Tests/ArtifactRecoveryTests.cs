@@ -17,7 +17,7 @@ public sealed class ArtifactRecoveryTests
         string? preserved = null;
         try
         {
-            using (var scope = ArtifactScope.CreateTemp("drawing", "Model", DateTime.Now))
+            using (var scope = ArtifactScope.CreateTemp("drawing_Model"))
             {
                 work = scope.Dir;
                 string emf = Path.Combine(work, "drawing.emf");

@@ -11,7 +11,7 @@ param(
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\..\common\svg_compare.ps1"
 $repo = "C:\Users\wk\repo\CADPeta"
-$chrome = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+$chrome = $CadPetaChromeExe
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 
 $dpi = 150.0

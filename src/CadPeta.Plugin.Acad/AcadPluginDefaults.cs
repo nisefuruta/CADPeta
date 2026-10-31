@@ -21,6 +21,12 @@ internal static class AcadPluginDefaults
     /// <summary>プロット部数。本ツールはファイル発行が目的のため常に1部。</summary>
     public const int PlotCopyCount = 1;
 
+    /// <summary>
+    /// PDF デバイスが 1pt の整数へ丸めて書く値。AutoCAD PDF (High Quality Print).pc3 は、ページの大きさ（A3 は 1191×842pt）と
+    /// 印刷可能領域の原点（余白 5mm・17mm を 14・48pt）を丸める（AutoCAD 2026 の実測、2026-10-30。窓の位置が 0.01mm 以内で合う）。
+    /// </summary>
+    public const PdfPointSnapping PdfPointSnapping = Shared.PdfPointSnapping.PageSizeAndPrintableOrigin;
+
     /// <summary>CVPORT がこの値のときペーパー空間がアクティブ（AutoCAD の固定割当て）。</summary>
     public const short PaperSpaceViewportNumber = 1;
 }

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PETAOPT（16 px）。PETA の 16 px の絵に、歯を 6 本に減らした歯車を重ねる -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <rect x="2" y="2" width="12" height="13.5" rx="1.5" fill="#F28C28" />
+  <rect x="5" y="0.5" width="6" height="3" rx="1" fill="#8C96A8" />
+  <rect x="4" y="4.5" width="8" height="9.5" fill="#FFFFFF" />
+  <path d="M5.3 12.5 L7.4 7 L9.2 10.3 L10.9 8" fill="none" stroke="#2E7FD9" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
+  <circle cx="12" cy="12" r="4.2" fill="#FFFFFF" />
+  <g fill="#5B6475">
+    <rect x="11.1" y="8.2" width="1.8" height="1.8" />
+    <rect x="11.1" y="8.2" width="1.8" height="1.8" transform="rotate(60 12 12)" />
+    <rect x="11.1" y="8.2" width="1.8" height="1.8" transform="rotate(120 12 12)" />
+    <rect x="11.1" y="8.2" width="1.8" height="1.8" transform="rotate(180 12 12)" />
+    <rect x="11.1" y="8.2" width="1.8" height="1.8" transform="rotate(240 12 12)" />
+    <rect x="11.1" y="8.2" width="1.8" height="1.8" transform="rotate(300 12 12)" />
+  </g>
+  <circle cx="12" cy="12" r="1.9" fill="none" stroke="#5B6475" stroke-width="1.7" />
+</svg>

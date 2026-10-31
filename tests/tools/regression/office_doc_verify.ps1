@@ -67,14 +67,13 @@ $outputs = @("pdf", "svg", "emf") | ForEach-Object {
 
 $PtPerMm = 72.0 / 25.4
 function MM([double]$pt) { [math]::Round($pt / $PtPerMm, 2) }
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+Add-Type -AssemblyName System.Windows.Forms
+. "$PSScriptRoot\..\common\screen_capture.ps1"
+# 主モニターの全体を path に保存する（Office の描画が終わるのを少し待つ）
 function Screenshot([string]$path) {
     Start-Sleep -Milliseconds 800
     $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-    $g.Dispose(); $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
+    Save-ScreenImage $b.X $b.Y $b.Width $b.Height $path
 }
 
 $result = [ordered]@{}

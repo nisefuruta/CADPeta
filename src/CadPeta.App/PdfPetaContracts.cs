@@ -4,21 +4,21 @@ using System.IO;
 using CadPeta.Geometry;
 using CadPeta.Ir;
 using CadPeta.Transforms;
+using CadPeta.UseCases;
 
 namespace CadPeta.App;
 
-public enum PdfPetaOutputKind { Clipboard, Svg, Emf, Pdf, Png }
-
-public static class PdfPetaDefaults
-{
-    public const double PngDpi = CadPeta.Out.Png.PngWriter.DefaultDpi;
-}
-
-public sealed record PdfPetaOutput(PdfPetaOutputKind Kind, string Path, double? PngDpi = null);
+/// <summary>
+/// 1 つの出力。<paramref name="PngDpi"/> は PNG だけに指定でき、省略すると設定の既定値（<see cref="CadPetaSettings.DefaultPngDpi"/>）。
+/// <paramref name="ToClipboard"/> は EMF だけに指定でき、書いたファイルをクリップボードにも登録する。
+/// </summary>
+public sealed record PdfPetaOutput(ArtifactKind Format, string Path, double? PngDpi = null, bool ToClipboard = false);
 
 public sealed record PdfPetaRequest
 {
     public required string InputPdfPath { get; init; }
+    /// <summary>変換するページ（1 始まり）。</summary>
+    public int PageNumber { get; init; } = 1;
     public bool KeepBackground { get; init; }
     public RectMm? CropRectMm { get; init; }
     public double CropMarginMm { get; init; }

@@ -12,7 +12,9 @@
 // --margin:   クロップ範囲へ付ける余白（mm。--crop と併用）
 // --mono:     モノクロ化（純白は維持・他は黒。--gray と排他）
 // --gray:     グレースケール化（ISO 32000-1 §10.4.2 の輝度式）
+// --pages:    変換するページ（2、1-3,5。既定は 1 ページ目）。2 ページ以上はファイル名に -p番号 を付けて出力する
 // --replace-color <#RRGGBB> <#RRGGBB>: 色の一括置換（複数指定可、モードより先に適用）
+// --tolerance: 直前の --replace-color の許容差（R・G・B のそれぞれの差、0～255。既定 0 = 同じ色だけ）
 // --layer-groups: レイヤ別グループ化（z順が変わり見た目が崩れ得るため既定オフ）
 // --text-outline: 文字アウトライン化（全 text を輪郭の path へ展開。環境非依存の見た目を
 //              優先する場合。既定オフ=フォント保持。文字編集性を失う非可逆処理として
@@ -20,7 +22,7 @@
 // --emf:      クラシックGDIのEMFをファイル出力する
 // --pdf:      自前の最小PDFをファイル出力する（フォント埋め込みなし。文字は輪郭化して埋め込む）
 // --png:      GDI+ で直接ラスタライズしたPNGをファイル出力する
-// --png-dpi:  PNG出力のDPI（既定 PngWriter.DefaultDpi）。--png と併用
+// --png-dpi:  PNG出力のDPI（既定と範囲は CadPetaSettings。PETA の設定と同じ）。--png と併用
 // --clipboard: EMF をクリップボードへ CF_ENHMETAFILE 登録する（--emf 無指定なら
 //              一時フォルダの EMF を使う）
 // --diag:     診断モード。変換層の各段の前後で IR を SVG としてダンプする
@@ -30,6 +32,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Globalization;
 using System.Text.Json;
+using System.Linq;
+using CadPeta.Acquire.Pdf;
 using CadPeta.App;
 using CadPeta.Geometry;
 using CadPeta.Ir;
@@ -37,8 +41,8 @@ using CadPeta.Transforms;
 using CadPeta.UseCases;
 
 const string Usage =
-    "使い方: cadpeta <入力.pdf> [<出力.svg>] [--keep-bg] [--crop x0 y0 x1 y1] [--margin m]\n" +
-    "        [--mono | --gray] [--replace-color #RRGGBB #RRGGBB]... [--layer-groups]\n" +
+    "使い方: cadpeta <入力.pdf> [<出力.svg>] [--pages 1-3,5] [--keep-bg] [--crop x0 y0 x1 y1] [--margin m]\n" +
+    "        [--mono | --gray] [--replace-color #RRGGBB #RRGGBB [--tolerance N]]... [--layer-groups]\n" +
     "        [--text-outline] [--emf 出力.emf] [--emf-bg #RRGGBB] [--pdf 出力.pdf] [--png 出力.png] [--png-dpi N]\n" +
     "        [--clipboard] [--diag 診断ディレクトリ]\n" +
     "<出力.svg> 無指定はクリップボード登録が既定動作（EMF は一時フォルダへ出力しパスを表示）";
@@ -64,9 +68,10 @@ bool textOutline = false;
 bool emfBackgroundSpecified = false;
 IrRgb emfBackground = new(1, 1, 1);
 string? emfOut = null, diagDir = null, pdfOut = null, pngOut = null;
-double pngDpi = PdfPetaDefaults.PngDpi;
+double? pngDpi = null;
 RectMm? crop = null;
 double margin = 0;
+string pagesText = "1";
 var replacements = new List<ColorReplacement>();
 try
 {
@@ -88,9 +93,10 @@ try
             case "--pdf": pdfOut = NextValue(args, ref i, "--pdf には出力パスが必要"); break;
             case "--png": pngOut = NextValue(args, ref i, "--png には出力パスが必要"); break;
             case "--png-dpi":
-                pngDpi = ParseMm(NextValue(args, ref i, "--png-dpi には数値が必要"), "--png-dpi");
-                if (pngDpi <= 0)
-                    throw new ArgumentException($"--png-dpi は正の値が必要: {pngDpi}");
+                double dpi = ParseMm(NextValue(args, ref i, "--png-dpi には数値が必要"), "--png-dpi");
+                if (CadPetaSettings.ValidatePngDpi(dpi) is { } dpiError)
+                    throw new ArgumentException($"--png-dpi: {dpiError}");
+                pngDpi = dpi;
                 break;
             case "--diag": diagDir = NextValue(args, ref i, "--diag には出力ディレクトリが必要"); break;
             case "--margin":
@@ -111,7 +117,19 @@ try
                 replacements.Add(new ColorReplacement(from, to));
                 break;
             }
-            default:
+            case "--tolerance":
+            {
+                string token = NextValue(args, ref i, "--tolerance には 0～255 の整数が必要");
+                if (replacements.Count == 0)
+                    throw new ArgumentException("--tolerance は --replace-color の後に指定する");
+                if (ColorReplacement.ParseTolerance(token, out int tolerance) is { } toleranceError)
+                    throw new ArgumentException(toleranceError);
+                replacements[^1] = replacements[^1] with { Tolerance = tolerance };
+                break;
+            }            case "--pages":
+                // ページ数と比べるのは PDF を開いてから（下の ParsePageList）
+                pagesText = NextValue(args, ref i, "--pages にはページが必要（例: 2、1-3,5）");
+                break;            default:
                 Console.Error.WriteLine($"不明なオプション: {args[i]}\n{Usage}");
                 return 1;
         }
@@ -127,7 +145,7 @@ if (crop == null && margin != 0)
     Console.Error.WriteLine("--margin は --crop と併用する");
     return 1;
 }
-if (pngOut == null && pngDpi != PdfPetaDefaults.PngDpi)
+if (pngOut == null && pngDpi != null)
 {
     Console.Error.WriteLine("--png-dpi は --png と併用する");
     return 1;
@@ -151,14 +169,14 @@ if (clipboard && emfOut == null)
 {
     string tempDir = Path.Combine(Path.GetTempPath(), "cadpeta");
     Directory.CreateDirectory(tempDir);
-    emfOut = Path.Combine(tempDir, Path.GetFileNameWithoutExtension(inputPdf) + ".emf");
+    emfOut = Path.Combine(tempDir, Path.GetFileNameWithoutExtension(inputPdf) + ArtifactKinds.Extension(ArtifactKind.Emf));
 }
 
 var outputs = new List<PdfPetaOutput>();
-if (outputSvg != null) outputs.Add(new(PdfPetaOutputKind.Svg, outputSvg));
-if (emfOut != null) outputs.Add(new(clipboard ? PdfPetaOutputKind.Clipboard : PdfPetaOutputKind.Emf, emfOut));
-if (pdfOut != null) outputs.Add(new(PdfPetaOutputKind.Pdf, pdfOut));
-if (pngOut != null) outputs.Add(new(PdfPetaOutputKind.Png, pngOut, pngDpi));
+if (outputSvg != null) outputs.Add(new(ArtifactKind.Svg, outputSvg));
+if (emfOut != null) outputs.Add(new(ArtifactKind.Emf, emfOut, ToClipboard: clipboard));
+if (pdfOut != null) outputs.Add(new(ArtifactKind.Pdf, pdfOut));
+if (pngOut != null) outputs.Add(new(ArtifactKind.Png, pngOut, pngDpi));
 var request = new PdfPetaRequest
 {
     InputPdfPath = inputPdf, KeepBackground = keepBg, CropRectMm = crop, CropMarginMm = margin,
@@ -166,67 +184,101 @@ var request = new PdfPetaRequest
     ColorReplacements = replacements, TextOutline = textOutline, GroupByLayer = layerGroups,
     EmfBackground = emfBackground, Outputs = outputs,
 };
-PdfPetaRunOptions? runOptions = null;
-if (diagDir != null)
-{
-    string dumpBase = outputSvg != null ? Path.GetFileNameWithoutExtension(outputSvg) : Path.GetFileNameWithoutExtension(inputPdf);
-    var sink = MakeDiagSink(diagDir, dumpBase, Console.Out);
-    bool announced = false;
-    runOptions = new PdfPetaRunOptions
-    {
-        DiagnosticStageSink = (ordinal, stageName, ir) =>
-        {
-            if (!announced)
-            {
-                Console.WriteLine($"診断モード: 変換層の各段の前後を SVG ダンプする → {diagDir}");
-                announced = true;
-            }
-            sink(ordinal, stageName, ir);
-        }
-    };
-}
-PdfPetaResult result;
+IReadOnlyList<PdfPetaRequest> pageRequests;
 try
 {
-    result = PdfPetaPipeline.Run(request, Console.Out, runOptions);
-}
-catch (ArgumentException ex)
-{
-    Console.Error.WriteLine(ex.Message);
-    return 1;
+    var (pages, pagesError) = PdfPetaPages.ParsePageList(pagesText, PdfIrAcquirer.CountPages(inputPdf));
+    if (pagesError != null)
+    {
+        Console.Error.WriteLine(pagesError);
+        return 1;
+    }
+    var (expanded, pageErrors) = PdfPetaPages.ForPages(request, pages);
+    if (pageErrors.Count != 0)
+    {
+        Console.Error.WriteLine(string.Join(Environment.NewLine, pageErrors));
+        return 1;
+    }
+    pageRequests = expanded;
 }
 catch (Exception ex)
 {
-    // CLI のプロセス境界。未処理のまま落とすと利用者に原因が渡らないため、
-    // 内部例外連鎖とスタックの全文を報告して非0終了する（実測: 1bit PNG 非対応時の
-    // PDF 出力が未処理例外でクラッシュし、切り分け材料が exit コードしか残らなかった）
-    Console.Error.WriteLine($"変換に失敗した: {ex}");
+    Console.Error.WriteLine($"PDF のページ数を読めない: {ex}");
     return 1;
 }
-if (result.ClipboardError != null)
+foreach (var pageRequest in pageRequests)
 {
-    Console.Error.WriteLine($"クリップボード登録に失敗した。EMF ファイルは出力済み: {result.ClipboardEmfPath}\n" +
-        "Office の「挿入 > 図」で当該ファイルを貼り付けて代替できる。再実行すれば再登録を試みる。\n" +
-        $"詳細: {result.ClipboardError}");
-    return 1;
-}
-var diagOut = new List<object>();
-Console.WriteLine("---- 診断ログ（件数と対象） ----");
-foreach (var entry in result.Diagnostics)
-{
-    Console.WriteLine($"{entry.Type}: {entry.Count}件");
-    diagOut.Add(new { type = entry.Type, count = entry.Count, targets = entry.Targets });
-}
-if (result.Diagnostics.Count == 0) Console.WriteLine("（記録なし）");
-if (outputSvg != null)
-{
-    File.WriteAllText(outputSvg + ".diag.json", JsonSerializer.Serialize(diagOut,
-        new JsonSerializerOptions { WriteIndented = true,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }),
-        TextEncodings.Utf8NoBom);
-    Console.WriteLine($"診断ログ出力: {outputSvg}.diag.json");
+    if (pageRequests.Count > 1) Console.WriteLine($"==== ページ {pageRequest.PageNumber} ====");
+    string? pageSvg = pageRequest.Outputs.FirstOrDefault(o => o.Format == ArtifactKind.Svg)?.Path;
+    if (Convert(pageRequest, pageSvg) is { } failed) return failed;
 }
 return 0;
+
+// 1 ページを変換し、診断ログを出す。失敗したら終了コードを返す
+int? Convert(PdfPetaRequest pageRequest, string? pageSvg)
+{
+    PdfPetaRunOptions? runOptions = null;
+    if (diagDir != null)
+    {
+        string dumpBase = pageSvg != null ? Path.GetFileNameWithoutExtension(pageSvg) : Path.GetFileNameWithoutExtension(inputPdf);
+        var sink = MakeDiagSink(diagDir, dumpBase, Console.Out);
+        bool announced = false;
+        runOptions = new PdfPetaRunOptions
+        {
+            DiagnosticStageSink = (ordinal, stageName, ir) =>
+            {
+                if (!announced)
+                {
+                    Console.WriteLine($"診断モード: 変換層の各段の前後を SVG ダンプする → {diagDir}");
+                    announced = true;
+                }
+                sink(ordinal, stageName, ir);
+            }
+        };
+    }
+    PdfPetaResult result;
+    try
+    {
+        result = PdfPetaPipeline.Run(pageRequest, Console.Out, runOptions);
+    }
+    catch (ArgumentException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    catch (Exception ex)
+    {
+        // CLI のプロセス境界。未処理のまま落とすと利用者に原因が渡らないため、
+        // 内部例外連鎖とスタックの全文を報告して非0終了する（実測: 1bit PNG 非対応時の
+        // PDF 出力が未処理例外でクラッシュし、切り分け材料が exit コードしか残らなかった）
+        Console.Error.WriteLine($"変換に失敗した（ページ {pageRequest.PageNumber}）: {ex}");
+        return 1;
+    }
+    if (result.ClipboardError != null)
+    {
+        Console.Error.WriteLine($"クリップボード登録に失敗した。EMF ファイルは出力済み: {result.ClipboardEmfPath}\n" +
+            "Word・Excel などの「挿入 > 図」で当該ファイルを貼り付けて代替できる。再実行すれば再登録を試みる。\n" +
+            $"詳細: {result.ClipboardError}");
+        return 1;
+    }
+    var diagOut = new List<object>();
+    Console.WriteLine("---- 診断ログ（件数と対象） ----");
+    foreach (var entry in result.Diagnostics)
+    {
+        Console.WriteLine($"{entry.Type}: {entry.Count}件");
+        diagOut.Add(new { type = entry.Type, count = entry.Count, targets = entry.Targets });
+    }
+    if (result.Diagnostics.Count == 0) Console.WriteLine("（記録なし）");
+    if (pageSvg != null)
+    {
+        File.WriteAllText(pageSvg + ".diag.json", JsonSerializer.Serialize(diagOut,
+            new JsonSerializerOptions { WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }),
+            TextEncodings.Utf8NoBom);
+        Console.WriteLine($"診断ログ出力: {pageSvg}.diag.json");
+    }
+    return null;
+}
 
 // オプションの値トークンを1つ取り出す。欠けていれば理由付きで引数エラーにする
 static string NextValue(string[] args, ref int i, string missingMessage)

@@ -5,6 +5,8 @@ using System.IO;
 #if CADPETA_ACAD
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.ApplicationServices.Core;
+// acmgd（AutoCAD.NET）にも同じ名前の型があるので、accoreconsole にもある Core の Application を使う
+using Application = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using EditorPromptResult = Autodesk.AutoCAD.EditorInput.PromptResult;
@@ -39,6 +41,7 @@ namespace CadPeta.Plugin.Bricscad;
 #error CAD product symbol is required
 #endif
 using CadPeta.Plugin.Shared;
+using CadPeta.UseCases;
 
 // 対話ポートの CAD 実装（4 製品で共有）。範囲プロンプト（Shared.RangePrompt）と出力先問い合わせ
 // （Shared.OutputLocation）が必要とする対話プリミティブと図面属性を各製品の SDK で提供する。
@@ -97,6 +100,17 @@ internal sealed class CadEditorPort : IEditorPort
         return answer.Status == PromptStatus.OK ? answer.StringResult : null;
     }
 
+    public bool HasScreen => PetaCommand.HasScreen;
+
+    // 画面の試験は .Waiting の行を見てからダイアログを探し、結果の行（OK なら入力したコメント）で判定する
+    public bool ShowCommentDialog(CommentForm form)
+    {
+        PromptTrace.Write("ShowCommentDialog.Waiting", "Waiting", null, valueIsNull: true, count: null);
+        bool ok = GuiCommands.ShowCommentDialog(form);
+        PromptTrace.Write("ShowCommentDialog", ok ? "OK" : "Cancel", ok ? form.Comment : null, valueIsNull: !ok, count: null);
+        return ok;
+    }
+
     public PromptResult<double> PromptDouble(string message, IReadOnlyList<PromptKeyword> keywords,
                                              double defaultValue, bool useDefault,
                                              bool allowNone, bool allowZero, bool allowNegative)
@@ -121,17 +135,39 @@ internal sealed class CadEditorPort : IEditorPort
         };
     }
 
+    public PromptResult<string> PromptKeywords(string message, IReadOnlyList<PromptKeyword> keywords)
+    {
+        var options = new PromptKeywordOptions(message)
+        {
+            AllowNone = true, // Enter は呼び出し元の既定（-PETAOPT は保存して終了）
+            AppendKeywordsToMessage = false, // 文言にキーワードを自書きしているため
+        };
+        // キーワードだけの入力は、選んだキーワードを OK で返す（ほかの入力は Keyword で返す）
+        var result = PromptWithKeywords(options, keywords, () => _ed.GetKeywords(options), "PromptKeywords.GetKeywords", PromptStatus.OK);
+        return result.Status switch
+        {
+            PromptStatus.None => PromptResult<string>.OfNone(),
+            PromptStatus.OK => PromptResult<string>.OfKeyword(
+                PromptKeywordResolver.ResolveGlobal(result.StringResult, keywords)),
+            _ => PromptResult<string>.OfCancelled(),
+        };
+    }
+
     /// <summary>
-    /// キーワードを足した入力を行い、結果を試験の記録（PromptTrace）に書いて返す。キーワードのときはその文字列も書く。
+    /// キーワードを足した入力を行い、結果を試験の記録（PromptTrace）に書いて返す。キーワードを選んだとき（<paramref name="keywordStatus"/>）は
+    /// その文字列も書く。入力を待つ直前にも 1 行書く（画面の試験は、この行を見てからコマンド ラインへ答えを送る。
+    /// 待つ前に送った文字列は問い合わせの答えにならなかった。AutoCAD 2027 で、範囲の問い合わせが取り消しで終わり、後で PETA がもう一度始まった）。
     /// </summary>
     static TResult PromptWithKeywords<TResult>(PromptOptions options, IReadOnlyList<PromptKeyword> keywords,
-                                               Func<TResult> prompt, string traceName) where TResult : EditorPromptResult
+                                               Func<TResult> prompt, string traceName,
+                                               PromptStatus keywordStatus = PromptStatus.Keyword) where TResult : EditorPromptResult
     {
         foreach (var kw in keywords)
             options.Keywords.Add(kw.Global, kw.Local, kw.Display);
+        PromptTrace.Write(traceName + ".Waiting", "Waiting", null, valueIsNull: true, count: null);
         var result = prompt();
         PromptTrace.Write(traceName, result.Status.ToString(),
-            result.Status == PromptStatus.Keyword ? result.StringResult : null,
+            result.Status == keywordStatus ? result.StringResult : null,
             valueIsNull: false, count: null);
         return result;
     }

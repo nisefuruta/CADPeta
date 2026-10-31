@@ -24,6 +24,8 @@ for _stream in (sys.stdout, sys.stderr):
 import pypdfium2 as pdfium
 from PIL import Image, ImageChops
 
+from pixel_diff import changed_pixels
+
 
 def render(path: Path, dpi: int) -> list[Image.Image]:
     """PDF の全ページを固定 DPI で描画する。"""
@@ -53,8 +55,7 @@ def compare(a: Path, b: Path, dpi: int, diff_out: Path | None) -> int:
         extrema = diff.getextrema()  # ((minR,maxR),(minG,maxG),(minB,maxB))
         page_worst = max(hi for _, hi in extrema)
         worst = max(worst, page_worst)
-        gray = diff.convert("L")
-        diff_px = sum(1 for v in gray.getdata() if v != 0)
+        diff_px = changed_pixels(diff)
         total_diff_px += diff_px
         total_px += pa.size[0] * pa.size[1]
         print(

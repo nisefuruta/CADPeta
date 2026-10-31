@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\..\..\common\svg_compare.ps1"
 $out = "C:\Users\wk\AppData\Local\Temp\cadpeta_p3b_ltsym\data_print_compare"
 New-Item -ItemType Directory -Force $out | Out-Null
-$chrome = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+$chrome = $CadPetaChromeExe
 $dpi = 150.0
 $s = $dpi / 25.4
 # ビューポート: CAD 全域 (-11..485, -6..194) を 1:2 で包含 → 260×115mm、原点アンカー (10, 100)mm

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using CadPeta.Plugin.Shared;
+using CadPeta.Acquire.Common;
 using Xunit;
 
 namespace CadPeta.Tests;

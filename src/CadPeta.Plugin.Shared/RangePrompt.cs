@@ -43,7 +43,6 @@ public static class RangePrompt
             new PromptKeyword(PluginDefaults.KeywordMargin, "M", Msg.Text("keyword.margin")),
             new PromptKeyword(PluginDefaults.KeywordLayer, "L", Msg.Text("keyword.layer")),
             new PromptKeyword(PluginDefaults.KeywordTextOutline, "T", Msg.Text("keyword.text_outline")),
-            new PromptKeyword(PluginDefaults.KeywordFileOutput, "F", Msg.Text("keyword.file_output")),
             new PromptKeyword(PluginDefaults.KeywordEmfBackground, "B", Msg.Text("keyword.emf_background")),
         };
         // 提示するキーワード列と既定（全体）は keywords 配列だけを情報源にして組み立てる
@@ -103,11 +102,6 @@ public static class RangePrompt
                         if (!applied) return false;
                         continue;
                     }
-                    if (r.Keyword == PluginDefaults.KeywordFileOutput)
-                    {
-                        ReportToggle(ed, choice.FileOutput = !choice.FileOutput, "toggle.file_output.on", "toggle.file_output.off");
-                        continue;
-                    }
                     if (r.Keyword == PluginDefaults.KeywordEmfBackground)
                     {
                         if (!TryPromptEmfBackground(ed, log, choice)) return false;
@@ -148,7 +142,7 @@ public static class RangePrompt
         }
         else log.WriteLine(Msg.Text("range.pickfirst_data"));
 
-        var choice = new RangeChoice { SelectionHandle = handle, FileOutput = true };
+        var choice = new RangeChoice { SelectionHandle = handle };
         return TryPromptScale(ed, log, choice) ? choice : null;
     }
 

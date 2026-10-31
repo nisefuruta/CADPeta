@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 設定のダイアログ（PETAOPT）。CAD SDK を参照しない（4 製品のプラグインが共有する。ArchitectureTests が検査する）。
+       XAML は使わず、C# のコードで画面を組む。入力の検証と設定への変換は UseCases の SettingsForm が行い、ここは表示だけを持つ。
+       出力先の「参照」は Windows フォームのフォルダの選択の画面を使う（net48 の WPF にはフォルダの選択の画面が無い）。 -->
+
+  <PropertyGroup>
+    <TargetFrameworks>$(CadPetaHostTfms)</TargetFrameworks>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.UseCases\CadPeta.UseCases.csproj" />
+  </ItemGroup>
+
+</Project>

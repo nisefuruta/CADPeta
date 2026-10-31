@@ -49,7 +49,7 @@ function New-CompatE2ePlan([string]$Name, [string]$Product, [string]$Output, [st
 }
 
 # CADPeta のインストール先。AutoCAD 版の bundle（install.bat が途中で残す .old と .new を含む）と、互換 CAD 版の register.ps1 が
-# ARES の信頼するフォルダへ置く配置フォルダ。E2E は試験の前後でこの内容が変わらないことを確かめる（Get-InstallTreeSnapshot）。
+# ARES の信頼するフォルダへ置く配置フォルダ。E2E は試験の前後でこの内容が変わらないことを確かめる（Save-RecordBaseline と Compare-RecordBaseline）。
 function Get-CadPetaInstallRoots {
     @(
         (Join-Path $env:APPDATA 'Autodesk\ApplicationPlugins\CADPeta.bundle'),
@@ -60,6 +60,11 @@ function Get-CadPetaInstallRoots {
         $CadPetaTrustedDotnetFolder,
         $CadPetaTrustedLispFolder
     )
+}
+
+# インストール先のうち、acad.exe が起動時に自動で読み込む ApplicationPlugins の下にあるもの（あれば試験の DLL を NETLOAD できない）
+function Get-InstalledCadPetaBundles([string[]]$InstallRoots = (Get-CadPetaInstallRoots)) {
+    @($InstallRoots | Where-Object { $_ -like '*\Autodesk\ApplicationPlugins\*' -and (Test-Path -LiteralPath $_) })
 }
 
 # ---------------------------------------------------------------- フォルダの記録と照合(記録するどのフォルダも、この節の 1 系統で扱う)
@@ -238,6 +243,33 @@ function Restore-RecordBaseline([object[]]$Baseline) {
     }
     return , $actions.ToArray()
 }
+# 試験の設定（CADPeta の settings.json）を $DataDir に書き、そのフォルダを返す。CAD を起動するときは CADPETA_DATA_DIR にこのフォルダを
+# 渡し、利用者の %APPDATA%\CADPeta の設定を読まず、書かない。既定は今までの試験と同じく、図面のフォルダに PDF・SVG・EMF を
+# 今までの名前で出す。キーの名前は CadPetaSettingsStore と同じ（単体試験の CadPetaSettingsTests が名前を固定する）
+function Write-E2eSettings([string]$DataDir, [string[]]$Formats = @('pdf', 'svg', 'emf'), [string]$OutputFolder = '.',
+                           [string]$FileName = '{drawing}_{tab}_{datetime}', [double]$PngDpi = 300) {
+    New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
+    $json = [ordered]@{ schemaVersion = 1; outputFolder = $OutputFolder; fileName = $FileName; formats = @($Formats); pngDpi = $PngDpi } |
+        ConvertTo-Json -Compress
+    [IO.File]::WriteAllText((Join-Path $DataDir 'settings.json'), $json, [Text.UTF8Encoding]::new($false))
+    $DataDir
+}
+# 環境変数（名前 → 値）をこのプロセスに設定して $Action を実行し、どの経路でも元の値（無かったものは無い状態）へ戻す。
+# CAD を Start-Process で起動する処理を $Action に渡すと、起動した CAD だけが設定した値を引き継ぐ
+function Invoke-WithProcessEnvironment([hashtable]$Variables, [scriptblock]$Action) {
+    $saved = @{}
+    foreach ($name in $Variables.Keys) {
+        $saved[$name] = @{ Exists = (Test-Path -LiteralPath "Env:$name"); Value = [Environment]::GetEnvironmentVariable($name, 'Process') }
+        [Environment]::SetEnvironmentVariable($name, [string]$Variables[$name], 'Process')
+    }
+    try { & $Action }
+    finally {
+        foreach ($name in $saved.Keys) {
+            if ($saved[$name].Exists) { [Environment]::SetEnvironmentVariable($name, [string]$saved[$name].Value, 'Process') }
+            else { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
+        }
+    }
+}
 # 引数配列を Start-Process -ArgumentList 用の 1 本の文字列へ連結する（空白と " を含む要素だけ引用する）。
 function ConvertTo-NativeArgString([string[]]$ArgArray) {
     (@($ArgArray) | ForEach-Object {
@@ -310,12 +342,21 @@ function Resolve-OutRoot([string]$OutRoot) {
 # 普段のビルドの DLL を試験しないよう、DLL のフォルダの自作の DLL に開発機のパスか失敗の注入が残っていれば、CAD を起動する前に
 # 何も変えずに止める（dist/dll_path_check.ps1 の検査。build_dist.ps1 と同じ関数）。
 function Get-E2ePluginPath([ValidateSet('Acad', 'Ares', 'Ijcad', 'Bricscad')][string]$Product, [string]$Tfm, [string]$AresYear = '') {
-    . "$PSScriptRoot\..\..\..\dist\dist_build.ps1"
-    $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
-    $binBase = if ($AresYear -in @('2020', '2023')) { "bin\ares$AresYear" } else { 'bin' }
-    $path = Join-Path $repo "src\CadPeta.Plugin.$Product\$binBase\$DistBuildConfig\$Tfm\CadPeta.Plugin.$Product.dll"
+    $path = Get-E2ePluginBuildPath $Product $Tfm $AresYear
     Assert-E2ePluginBuild $path
     return $path
+}
+
+# ビルドしたプラグインの DLL の場所（確かめない）。ARES の net48 の 2020・2023 は SDK が年式別なので、出力も年式別（bin\ares<年>）。
+# $Config を省くと配布物と同じ構成（dist_build.ps1 の $DistBuildConfig）
+function Get-E2ePluginBuildPath([ValidateSet('Acad', 'Ares', 'Ijcad', 'Bricscad')][string]$Product, [string]$Tfm, [string]$AresYear = '', [string]$Config = '') {
+    if (-not $Config) {
+        . "$PSScriptRoot\..\..\..\dist\dist_build.ps1"
+        $Config = $DistBuildConfig
+    }
+    $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
+    $binBase = if ($AresYear -in @('2020', '2023')) { "bin\ares$AresYear" } else { 'bin' }
+    return (Join-Path $repo "src\CadPeta.Plugin.$Product\$binBase\$Config\$Tfm\CadPeta.Plugin.$Product.dll")
 }
 
 # 試験の DLL のビルドの入力（リポジトリの根からのパス）。この内容が変わったら、build_e2e.ps1 で DLL を作り直すまで試験しない

@@ -54,6 +54,12 @@ public static class ArtifactFile
         }
     }
 
+    /// <summary>
+    /// 成果物のファイルを作る・写す処理の失敗（場所が使えない、権限が無い、中身の検査（<see cref="Validate"/>）に通らない）か。
+    /// これ以外の例外は呼び出し元へ通す。
+    /// </summary>
+    public static bool IsWriteFailure(Exception ex) => FileFailures.IsPathFailure(ex) || ex is InvalidDataException;
+
     public static void Validate(string path, ArtifactKind kind)
     {
         if (path == null) throw new ArgumentNullException(nameof(path));

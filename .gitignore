@@ -84,6 +84,7 @@ CLAUDE.md
 AGENTS.md
 tasks/
 .claude/
+docs/code-health-reviews/
 dist/publish_public.ps1
 tests/tools/distribution/check_publish_public.ps1
 tests/CadPeta.Tests/Distribution/PublishPublicTests.cs

@@ -27,7 +27,7 @@ public static class ArtifactRecovery
             for (int attempt = 1; attempt <= MaxCollisionAttempts; attempt++)
             {
                 string suffix = attempt == 1 ? "" : "_" + attempt.ToString(CultureInfo.InvariantCulture);
-                string destination = Path.Combine(root, stem + suffix + ".emf");
+                string destination = Path.Combine(root, stem + suffix + ArtifactKinds.Extension(ArtifactKind.Emf));
                 string reservation = destination + ".lock";
                 try
                 {
@@ -55,7 +55,7 @@ public static class ArtifactRecovery
                 finally
                 {
                     try { File.Delete(reservation); }
-                    catch (Exception ex) when (IsIoFailure(ex))
+                    catch (Exception ex) when (ArtifactFile.IsWriteFailure(ex))
                     {
                         SafeWarn(warn, MessageCatalogs.Current.Format(
                             "artifact.recovery_lock_delete_failed", reservation, ex.Message));
@@ -65,7 +65,7 @@ public static class ArtifactRecovery
             throw new IOException(MessageCatalogs.Current.Format(
                 "artifact.recovery_reserve_failed", MaxCollisionAttempts, root));
         }
-        catch (Exception ex) when (IsIoFailure(ex))
+        catch (Exception ex) when (ArtifactFile.IsWriteFailure(ex))
         {
             SafeWarn(warn, MessageCatalogs.Current.Format(
                 "artifact.recovery_preserve_failed", emfPath, ex.Message));
@@ -78,8 +78,4 @@ public static class ArtifactRecovery
         try { warn?.Invoke(message); }
         catch { }
     }
-
-    static bool IsIoFailure(Exception ex) =>
-        ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException or
-        NotSupportedException or ArgumentException;
 }

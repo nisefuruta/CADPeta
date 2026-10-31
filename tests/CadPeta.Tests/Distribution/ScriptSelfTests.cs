@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using Xunit;
 
 namespace CadPeta.Tests.Distribution;
@@ -20,6 +22,7 @@ public sealed class ScriptSelfTests
     [InlineData("pwsh", "tests/tools/distribution/dll_path_check_selftest.ps1")]
     [InlineData("pwsh", "tests/tools/distribution/sign_record_selftest.ps1")]
     [InlineData("pwsh", "tests/tools/distribution/sign_dist_resume_check.ps1")]
+    [InlineData("pwsh", "tests/tools/distribution/package_verify_selftest.ps1")]
     [InlineData("pwsh", "tests/tools/lint/trusted_paths_lint.ps1")]
     [InlineData("pwsh", "tests/tools/lint/reg_restore_report_lint.ps1")]
     [InlineData("pwsh", "tests/tools/common/json_lines_selftest.ps1")]
@@ -27,8 +30,23 @@ public sealed class ScriptSelfTests
     [InlineData("pwsh", "tests/tools/common/e2e_build_record_selftest.ps1")]
     [InlineData("powershell", "tests/tools/common/e2e_build_record_selftest.ps1")]
     [InlineData("powershell", "tests/tools/common/compat_autoload_selftest.ps1")]
+    [InlineData("powershell", "tests/tools/common/compat_process_exit_selftest.ps1")]
+    [InlineData("powershell", "tests/tools/common/compat_launch_selftest.ps1")]
     [InlineData("powershell", "tests/tools/distribution/compat_register_selftest.ps1")]
     public void 自己試験が合格する(string shell, string script) => AssertSelfTestPasses(shell, script);
+
+    // 試験の補助の Python の自己試験。uv のプロジェクト(依存の Pillow など)の中で実行する(Python は uv で動かす決まり)
+    [Theory]
+    [InlineData("tests/tools/pdf-emf", "tests/tools/common/render_compare_selftest.py")]
+    [InlineData("tests/tools/regression/window_contract", "tests/tools/regression/window_contract/pixel_diff_selftest.py")]
+    [InlineData("tests/tools/regression/window_contract", "tests/tools/regression/window_contract/measure_shift_selftest.py")]
+    public void Pythonの自己試験が合格する(string project, string script)
+    {
+        string root = RepositoryPaths.Root();
+        var result = ProcessRunner.Run("uv", new[] { "run", "--project", Path.Combine(root, project), "python", Path.Combine(root, script) },
+            Timeout, new UTF8Encoding(false), new Dictionary<string, string> { ["PYTHONIOENCODING"] = "utf-8" }, workingDirectory: root);
+        Assert.True(result.ExitCode == 0, script + " の終了コード " + result.ExitCode + "\n" + result.Output + result.Error);
+    }
 
     /// <summary>自己試験のスクリプトを実行し、終了コードが 0 でなければ、その出力(失敗の理由)を付けて不合格にする。</summary>
     internal static void AssertSelfTestPasses(string shell, string script)

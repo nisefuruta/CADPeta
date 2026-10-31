@@ -89,6 +89,17 @@ public static class FakeAccore {
     Assert-NoneRunning '3'
     $checked.Add('全ケースの後の終了が止まって強制終了したときは、完了したケースも失敗として返し、起動したプロセスは残らない')
 
+    # 4. ケースの後の処理には、起動した accoreconsole のプロセスを渡す（ほかの accoreconsole と取り違えずにメモリなどを読める）
+    Remove-Item -LiteralPath $pidFile -ErrorAction SilentlyContinue
+    $runs = Invoke-AccoreBatch -Acc $fake -DwgSrc $dwg -Cases $cases -WorkRoot (Join-Path $work 'process') -LaunchName 'process' -TimeoutSeconds 30 `
+        -OnCaseEnd { param($case, $process) @{ Id = $process.Id; Exited = $process.HasExited } }
+    $launched = @(Get-StartedPids)
+    foreach ($id in 'one', 'two') {
+        if ($runs[$id].After.Id -ne $launched[0]) { throw "4: $id のケースの後の処理に、起動したプロセス $($launched[0]) が渡らなかった: $($runs[$id].After.Id)" }
+        if ($runs[$id].After.Exited -ne $false) { throw "4: $id のケースの後の処理の時点で、渡したプロセスが動いていない" }
+    }
+    $checked.Add('ケースの後の処理には、起動した accoreconsole の動いているプロセスを渡す')
+
     "accore_batch_selftest OK（確かめた約束 $($checked.Count) 件）"
     $checked | ForEach-Object { "  - $_" }
 }

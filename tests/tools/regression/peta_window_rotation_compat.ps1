@@ -13,6 +13,11 @@
 # 3. ペーパー空間判定の CVPORT 値（棚卸しの実測）
 #    真のペーパー空間で CVPORT=1、ビューポート内（MSPACE）で CVPORT≠1 が
 #    AutoCAD 以外でも成り立つかを読み取って記録する。
+# 4. モデル空間 × 窓 × 用紙合わせ（Fit）× プロット回転の実効尺度（-SkipModelFit で省く）
+#    window_fit_scale_matrix.ps1（AutoCAD）と同じ観点。互換 CAD は「有効な印刷領域」を表示しないので、
+#    窓と同じ矩形と対角線を描いて出力し、最終 SVG の内容が四辺まで届くことで、CADPeta が自分で計算した
+#    フィット尺度のクロップと、CAD が実際に印字した範囲を照合する。尺度が食い違うと、矩形の辺が切れるか、
+#    辺と縁の間に余白が残る。あわせて SVG の寸法が窓の縦横比のままであることを確かめる。
 #
 # CAD の起動・接続・後始末の作法は gradient_compat_e2e.ps1 と同じ（対話デスクトップ、
 # Windows PowerShell 5.1 Desktop／STA、プロセス所有の照合、Close(false)→Quit、残留の報告）。
@@ -25,9 +30,14 @@ param(
   [ValidateSet("Acad2026", "Acad2027", "Ares2020", "Ares2023", "Ares2024", "Ares2027", "Ijcad2026", "BricscadV26")]
   [string]$Product,
   [string]$LayoutName = "PETA_A3",
+  [string]$LayoutMedia = "",           # 指定するとレイアウトの用紙を PDF デバイスのこの用紙（正式名）に替える
+                                       # （PETA_A3 は余白の無い A3 なので、余白が非対称な用紙での回転は、これで確かめる）
   [int[]]$Rotations = @(0, 1, 2, 3),   # PlotRotation 列挙値（0=0度, 1=90度, 2=180度, 3=270度）
   [string]$Dwg,
   [string]$OutRoot = "$env:TEMP\CadPeta_peta_rotation_compat",
+  [switch]$SkipModelFit,
+  [string[]]$FitPapers = @("ISO_A4_(210.00_x_297.00_MM)", "ISO_full_bleed_A4_(210.00_x_297.00_MM)"),
+  [switch]$LogMediaMargins,
   [switch]$AllowForceStop
 )
 $ErrorActionPreference = "Stop"
@@ -56,105 +66,48 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 # powershell -File 経由では配列引数がカンマ入り単一文字列で届き得るため、分割を受け付ける
 $Rotations = @($Rotations | ForEach-Object { "$_" -split ',' } | ForEach-Object { [int]$_ })
 
+. "$PSScriptRoot\..\common\compat_cad_com.ps1"
+# 製品の固定の情報（実行ファイル、ProgID、DLL の場所など）は compat_cad_com.ps1 の $CompatProducts にあり、Get-CompatProduct で合わせる
 $products = @{
   # AutoCAD も回転 90 度の1ケースしか実測が無かったため、同じ観点（依頼3）で測る。
   # GUI COM 駆動の作法は gradient_interactive_plot.ps1 で実測済みの形に合わせる
   Acad2026 = @{
-    Exe = "C:\Program Files\Autodesk\AutoCAD 2026\acad.exe"
-    StartArguments = @("/nologo")
-    ProgId = "AutoCAD.Application.25.1"
-    ProcessName = "acad"
-    Plugin = "src\CadPeta.Plugin.Acad\bin\Release\net8.0-windows\CadPeta.Plugin.Acad.dll"
-    LoadKind = "DirectNetload"
     CommandStartKind = "SingleBatch"
     SetFileDia = $true
-    DiscoverProgId = $false
   }
   Acad2027 = @{
-    Exe = "C:\Program Files\Autodesk\AutoCAD 2027\acad.exe"
-    StartArguments = @("/nologo")
-    ProgId = "AutoCAD.Application.26"
-    ProcessName = "acad"
-    Plugin = "src\CadPeta.Plugin.Acad\bin\Release\net10.0-windows\CadPeta.Plugin.Acad.dll"
-    LoadKind = "DirectNetload"
     CommandStartKind = "SingleBatch"
     SetFileDia = $true
-    DiscoverProgId = $false
   }
-  # ARES の net48 世代（2020/2023/2024）は SDK が年式別のため、プラグインも年式別の
-  # 出力（既定=bin、既定以外=bin\ares<年>）を読み込む。ProgID の版番号は製品表示年ではなく
-  # COM API 版（2020=4.4／2023=4.6／2024=23.1／2027=26.8。本機 HKCR 実測）
   Ares2020 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2020\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.4.4"
-    ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\ares2020\Release\net48\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
     SetFileDia = $true
-    DiscoverProgId = $true
   }
   Ares2023 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2023\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.4.6"
-    ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\ares2023\Release\net48\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
     SetFileDia = $true
-    DiscoverProgId = $true
   }
   Ares2024 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2024\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.23.1"
-    ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\Release\net48\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
     SetFileDia = $true
-    DiscoverProgId = $true
   }
   Ares2027 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2027\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.26.8"
-    ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\Release\net8.0-windows\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
     SetFileDia = $true
-    DiscoverProgId = $true
   }
   Ijcad2026 = @{
-    Exe = "C:\Program Files\ITJP\IJCAD 2026 PRO\gcad.exe"
-    StartArguments = @()
-    ProgId = "Gcad.Application"
-    ProcessName = "gcad"
-    Plugin = "src\CadPeta.Plugin.Ijcad\bin\Release\net8.0-windows\CadPeta.Plugin.Ijcad.dll"
-    LoadKind = "DirectNetload"
     CommandStartKind = "SingleBatch"
     SetFileDia = $true
-    DiscoverProgId = $false
   }
   BricscadV26 = @{
-    Exe = "C:\Program Files\Bricsys\BricsCAD V26 ja_JP\bricscad.exe"
-    StartArguments = @("/Automation")
-    ProgId = "BricscadApp.AcadApplication.26.0"
-    ProcessName = "bricscad"
-    Plugin = "src\CadPeta.Plugin.Bricscad\bin\Release\net8.0-windows\CadPeta.Plugin.Bricscad.dll"
-    LoadKind = "DirectNetload"
     CommandStartKind = "SingleBatch"
     SetFileDia = $true
-    DiscoverProgId = $false
   }
 }
 
-$config = $products[$Product]
+$config = Get-CompatProduct $Product $products
 $exe = [IO.Path]::GetFullPath($config.Exe)
-$plugin = [IO.Path]::GetFullPath((Join-Path $repo $config.Plugin))
+$plugin = $config.Plugin
 . "$PSScriptRoot\..\common\test_helpers.ps1"
 # 配布物と同じビルド（tests/tools/build_e2e.ps1）の DLL であることを、CAD を起動する前に確かめる
 Assert-E2ePluginBuild $plugin
@@ -166,6 +119,25 @@ $windowP1 = "50,40"
 $windowP2 = "150,110"
 $expectedWidthMm = "100"
 $expectedHeightMm = "70"
+# モデル空間の窓のケース（窓の大きさは window_fit_scale_matrix.ps1 と同じ。横長の窓と縦長の窓、回転は 0・90・270 度）。
+# 用紙は -FitPapers の正式名で指定する。既定は PDF デバイスの縦の A4 の、余白のある用紙と余白の無い用紙（フルブリード）
+# （ARES 2027 の PDF デバイスで実在を確認。ほかに横向きと「拡張 A4」がある）。-LogMediaMargins で全部の用紙の余白を証跡へ書く
+$FitPapers = @($FitPapers | ForEach-Object { "$_" -split ',' } | Where-Object { $_ })
+$fitWindows = @(
+  @{ id = "wide"; w = 92.028; h = 62.445 },
+  @{ id = "tall"; w = 30.0; h = 100.0 })
+$fitRotations = @(0, 1, 3)
+# モデル空間の窓を描く位置（TESTCHART2 の図形から離した空き領域。ケースごとに X をずらす）
+$FitOriginX = 100000.0
+$FitOriginY = 100000.0
+$FitCaseStepX = 500.0
+# 寸法の許容: SVG の座標は小数 4 桁、内容は線幅（0.254mm）とクリップの丸めを含む（window_fit_scale_matrix.ps1 と同じ値）
+$FitAspectTolMm = 0.02
+$FitContentEdgeTolMm = 1.0
+# AutoCAD の PDF は窓のクリップ（clip0）が印字した窓そのものなので、クロップの中心との差をこの値まで許す（mm）。
+# PDF ドライバの 1pt の丸めを扱わなかったときは 0.07〜0.29mm ずれた（2026-10-30）。ARES のクリップは窓より約 0.4mm 広く、
+# 中心も窓と一致しないので、差を記録するだけにする
+$AcadWindowClipCenterTolMm = 0.05
 
 foreach ($required in @($exe, $plugin, $source)) {
   if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "必須ファイルが見つかりません: $required" }
@@ -176,7 +148,7 @@ $dwgCopy = Join-Path $productRoot "target.dwg"
 Copy-Item -LiteralPath $source -Destination $dwgCopy -Force
 $dwgHash = (Get-FileHash -LiteralPath $dwgCopy -Algorithm SHA256).Hash
 
-. "$PSScriptRoot\..\common\compat_cad_com.ps1"
+. "$PSScriptRoot\..\common\svg_compare.ps1"
 
 if (-not ("CadPeta.CompatNativeWindow" -as [type])) {
   Add-Type -TypeDefinition @'
@@ -261,6 +233,37 @@ function Wait-PetaDiagArtifacts([string]$dir, $document, [datetime]$startedAt, [
   throw "PETADIAG 成果物が $CommandCompletionTimeoutSeconds 秒以内に完成しませんでした（$dir）"
 }
 
+# 成果物と補助ダンプをケースのフォルダへ移し、次のケースで取り違えないようにする。移した SVG と EMF のパスを返す
+function Move-PetaDiagArtifacts([string]$dir, [datetime]$startedAt, [string]$caseDir, [string[]]$artifacts) {
+  Get-ChildItem -LiteralPath $dir -File | Where-Object {
+    $_.LastWriteTime -ge $startedAt -and $_.Extension -in @(".svg", ".emf", ".json", ".pdf", ".png")
+  } | Move-Item -Destination $caseDir -Force
+  return @((Join-Path $caseDir ([IO.Path]::GetFileName($artifacts[0]))), (Join-Path $caseDir ([IO.Path]::GetFileName($artifacts[1]))))
+}
+
+# CAD が PDF に書いた窓のクリップ（クロップ前のページの clip0）の中心と、CADPeta のクロップ（最終 SVG の viewBox）の中心の差を
+# 証跡へ書き、AutoCAD では $AcadWindowClipCenterTolMm を超えたら判定の失敗にする。差（mm、X・Y）を返す（クリップが無ければ $null）
+function Measure-WindowClipOffset([string]$caseDir, [string]$finalSvg, [string]$label) {
+  $stage = Get-ChildItem -LiteralPath $caseDir -Filter '*.stage00.acquired.svg' | Select-Object -First 1
+  $clip = if ($null -ne $stage) { [regex]::Match([IO.File]::ReadAllText($stage.FullName), '<clipPath id="clip0"><path d="([^"]+)"') }
+  if ($null -eq $clip -or -not $clip.Success) {
+    # ARES 2020 のレイアウトの PDF には窓のクリップが無い（2026-10-31）。AutoCAD は必ず書くので、無ければ判定の失敗にする
+    Write-Evidence "WINDOW_CLIP ${label}: 窓のクリップ（クロップ前のページの clip0）が無い: $caseDir" | Out-Host
+    if ($Product -like 'Acad*') { $script:verificationFailures += "${label}: AutoCAD の PDF に窓のクリップが無い（$caseDir）" }
+    return $null
+  }
+  $clipBounds = Get-SvgPathBounds @($clip.Groups[1].Value)
+  $vb = Get-SvgViewBox $finalSvg
+  $dx = ($clipBounds.MinX + $clipBounds.MaxX) / 2 - ($vb.MinX + $vb.Width / 2)
+  $dy = ($clipBounds.MinY + $clipBounds.MaxY) / 2 - ($vb.MinY + $vb.Height / 2)
+  # Write-Evidence は出力にも書くので、戻り値（差）に混ぜないように画面へ流す
+  Write-Evidence ("WINDOW_CLIP {0}: クリップの中心 − クロップの中心 = ({1:F3}, {2:F3})mm" -f $label, $dx, $dy) | Out-Host
+  if ($Product -like 'Acad*' -and ([Math]::Abs($dx) -gt $AcadWindowClipCenterTolMm -or [Math]::Abs($dy) -gt $AcadWindowClipCenterTolMm)) {
+    $script:verificationFailures += ("{0}: AutoCAD が印字した窓の中心とクロップの中心が ({1:F3}, {2:F3})mm ずれる（許容 {3}mm）" -f $label, $dx, $dy, $AcadWindowClipCenterTolMm)
+  }
+  return @($dx, $dy)
+}
+
 # EMF を GDI で固定寸法のビットマップへ描画する（画素比較の入力）。
 function Render-EmfToPng([string]$emfPath, [string]$pngPath, [int]$width, [int]$height) {
   Add-Type -AssemblyName System.Drawing
@@ -314,6 +317,7 @@ $autoloadState = $null
 $connectedProgId = $null
 $progIds = $null
 $ownedPid = 0
+$ownedProcess = $null
 $messageFilterRegistered = $false
 $oldFileDia = $null
 $oldOsMode = $null
@@ -322,6 +326,7 @@ $cleanupFailures = @()
 $primaryFailure = $null
 $verificationFailures = @()
 $results = @()
+$fitResults = @()
 try {
   Write-Evidence "START Product=$Product Exe=$exe Plugin=$plugin Source=$source Layout=$LayoutName Rotations=$($Rotations -join ',')"
   $windowStation = [CadPeta.CompatNativeWindow]::WindowStationName()
@@ -330,7 +335,7 @@ try {
   if ($windowStation -ne $ExpectedWindowStation -or $desktop -ne $ExpectedDesktop) {
     throw "対話デスクトップが必要です。期待=$ExpectedWindowStation\$ExpectedDesktop、実際=$windowStation\$desktop"
   }
-  Assert-WindowsPowerShellSta
+  Assert-CompatLaunchReady $Product
   $uiShell = New-Object -ComObject WScript.Shell
   [CadPeta.CompatMessageFilter]::RetryWindowMilliseconds = $ComRetryWindowMilliseconds
   [CadPeta.CompatMessageFilter]::RetryDelayMilliseconds = $ComRetryDelayMilliseconds
@@ -342,12 +347,15 @@ try {
     throw "既存の $($config.ProcessName) プロセスがあり、起動プロセスを一意に所有できません: PID=$($existingProcesses.Id -join ',')"
   }
   # インストール済みの CADPeta が自動で読み込まれると、ビルドした DLL を試験できない。試験の間だけ登録を外す
+  # （AutoCAD はプロファイルを記録して試験の後に戻す。Suspend-CompatProductAutoload）
   Suspend-CompatProductAutoload $Product ([ref]$autoloadState)
 
+  # CADPeta の設定（今までの試験と同じく図面のフォルダに PDF・SVG・EMF）は、起動する CAD にだけ渡す。利用者の %APPDATA%\CADPeta を使わない
+  $dataEnvironment = @{ CADPETA_DATA_DIR = (Write-E2eSettings (Join-Path $productRoot 'cadpeta-data')) }
   if ($config.DiscoverProgId) {
-    Start-CadVisibleAndConnect $exe $SecondaryLaunchDelaySeconds $GuiStartupTimeoutSeconds ([ref]$startedProcess) ([ref]$candidateApplication) ([ref]$connectedProgId) ([ref]$secondaryProcess) ([ref]$progIds)
+    Start-CadVisibleAndConnect $exe $SecondaryLaunchDelaySeconds $GuiStartupTimeoutSeconds ([ref]$startedProcess) ([ref]$candidateApplication) ([ref]$connectedProgId) ([ref]$secondaryProcess) ([ref]$progIds) $dataEnvironment
   } else {
-    $startedProcess = Start-CadProcessHidden $exe $config.StartArguments
+    $startedProcess = Start-CadProcessHidden $exe $config.StartArguments $dataEnvironment
     Write-Evidence "PROCESS started PID=$($startedProcess.Id)"
     $candidateApplication = Wait-ActiveObject $config.ProgId $GuiStartupTimeoutSeconds
     if ($null -eq $candidateApplication) {
@@ -363,7 +371,7 @@ try {
   if ($null -ne $startedProcess -and $candidatePid -notin $ownedStartIds) {
     throw "今回開始していないプロセスへ COM 接続しました。開始 PID=$($ownedStartIds -join ',')、接続 PID=$candidatePid"
   }
-  Assert-ConnectedExecutable $candidatePid $exe
+  $ownedProcess = Assert-ConnectedExecutable $candidatePid $exe
   $application = $candidateApplication
   $candidateApplication = $null
   $ownedPid = $candidatePid
@@ -411,8 +419,15 @@ try {
   Get-Content -LiteralPath $cvportFile -Encoding Default | ForEach-Object { Write-Evidence "CVPORT_PROBE $_" }
 
   $layoutObject = $application.ActiveDocument.Layouts.Item($LayoutName)
+  if ($LayoutMedia) {
+    # 図面はコピーで、終了時に保存せずに閉じるので、用紙は戻さない
+    $layoutObject.ConfigName = $config.PdfDevice
+    $layoutObject.RefreshPlotDeviceInfo()
+    $layoutObject.CanonicalMediaName = $LayoutMedia
+    Write-Evidence "LAYOUT_MEDIA set=$LayoutMedia readback=$($layoutObject.CanonicalMediaName)"
+  }
   $originalRotation = [int]$layoutObject.PlotRotation
-  Write-Evidence "LAYOUT $LayoutName PlotRotation(original)=$originalRotation"
+  Write-Evidence "LAYOUT $LayoutName PlotRotation(original)=$originalRotation Device=$($layoutObject.ConfigName) Media=$($layoutObject.CanonicalMediaName)"
 
   foreach ($rot in $Rotations) {
     $rotDir = Join-Path $productRoot "rot$rot"
@@ -435,14 +450,7 @@ try {
     }
     $artifacts = Wait-PetaDiagArtifacts $productRoot $document $artifactStart $config.CommandStartKind
     Write-Evidence "ARTIFACTS rot=$rot svg=$($artifacts[0]) emf=$($artifacts[1])"
-
-    # 成果物と補助ダンプを回転別フォルダへ退避し、次の回で取り違えないようにする
-    Get-ChildItem -LiteralPath $productRoot -File | Where-Object {
-      $_.LastWriteTime -ge $artifactStart -and $_.Extension -in @(".svg", ".emf", ".json", ".pdf", ".png")
-    } | Move-Item -Destination $rotDir -Force
-
-    $svgMoved = Join-Path $rotDir ([IO.Path]::GetFileName($artifacts[0]))
-    $emfMoved = Join-Path $rotDir ([IO.Path]::GetFileName($artifacts[1]))
+    $svgMoved, $emfMoved = Move-PetaDiagArtifacts $productRoot $artifactStart $rotDir $artifacts
     $head = (Get-Content -LiteralPath $svgMoved -TotalCount 1 -Encoding UTF8)
     $entry = [ordered]@{ Rotation = $rot; Svg = $svgMoved; Emf = $emfMoved }
     if ($head -match 'width="([^"]+)mm" height="([^"]+)mm" viewBox="([^"]+)"') {
@@ -451,12 +459,96 @@ try {
       $entry.WidthMm = "<読取不可>"; $entry.HeightMm = "<読取不可>"; $entry.ViewBox = "<読取不可>: $head"
     }
     $entry.EmfSha256 = (Get-FileHash -LiteralPath $emfMoved -Algorithm SHA256).Hash
+    $entry.ClipOffset = Measure-WindowClipOffset $rotDir $svgMoved "rot$rot"
     $results += [pscustomobject]$entry
     Write-Evidence "RESULT rot=$rot width=$($entry.WidthMm) height=$($entry.HeightMm) viewBox=$($entry.ViewBox) emfSha=$($entry.EmfSha256.Substring(0,12))"
   }
 
   $layoutObject.PlotRotation = $originalRotation
   Write-Evidence "ROTATION restored=$originalRotation"
+
+  if (-not $SkipModelFit) {
+    # モデルタブのページ設定を PDF デバイスの A4 にする。図面はコピーで、終了時に保存せずに閉じるので、ページ設定は戻さない
+    $document.SendCommand("(setvar `"CTAB`" `"Model`")`r")
+    $modelLayout = $application.ActiveDocument.ModelSpace.Layout
+    $modelLayout.ConfigName = $config.PdfDevice
+    $modelLayout.RefreshPlotDeviceInfo()
+    $mediaNames = @($modelLayout.GetCanonicalMediaNames())
+    $a4Media = @($mediaNames | Where-Object { $_ -match 'A4' })
+    Write-Evidence "FIT_MEDIA device=$($config.PdfDevice) A4=$(($a4Media | ForEach-Object { "$_ ($($modelLayout.GetLocaleMediaName($_)))" }) -join '; ')"
+    if ($LogMediaMargins) {
+      # 用紙ごとの余白（mm、縦向きの用紙座標で 左下=(左,下)・右上=(右,上)）。回転の向きは上下か左右の余白が非対称な用紙でだけ結果に出る
+      foreach ($name in $mediaNames) {
+        try {
+          $modelLayout.CanonicalMediaName = $name
+          $lowerLeft = $null; $upperRight = $null
+          $modelLayout.GetPaperMargins([ref]$lowerLeft, [ref]$upperRight)
+          Write-Evidence ("MEDIA_MARGIN {0} 左={1} 下={2} 右={3} 上={4}" -f $name, $lowerLeft[0], $lowerLeft[1], $upperRight[0], $upperRight[1])
+        } catch {
+          Write-Evidence "MEDIA_MARGIN $name 取得失敗: $($_.Exception.Message)"
+        }
+      }
+    }
+    $missingPapers = @($FitPapers | Where-Object { $_ -notin $mediaNames })
+    if ($missingPapers.Count -gt 0) {
+      throw "PDF デバイス $($config.PdfDevice) に用紙 $($missingPapers -join ', ') が無い（A4 の用紙: $($a4Media -join ', ')）。モデル空間のケースを省くときは -SkipModelFit"
+    }
+
+    $fitIndex = 0
+    foreach ($paper in $FitPapers) {
+      $modelLayout.CanonicalMediaName = $paper
+      Write-Evidence "FIT_PAPER set=$paper readback=$($modelLayout.CanonicalMediaName)"
+      foreach ($win in $fitWindows) {
+        foreach ($rot in $fitRotations) {
+          $fitId = "fit{0}_{1}_rot{2}" -f $fitIndex, $win.id, $rot
+          $x1 = $FitOriginX + $fitIndex * $FitCaseStepX; $y1 = $FitOriginY
+          $x2 = $x1 + $win.w; $y2 = $y1 + $win.h
+          $fitIndex++
+          $caseDir = Join-Path $productRoot $fitId
+          if (Test-Path -LiteralPath $caseDir) { Remove-Item -LiteralPath $caseDir -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $caseDir | Out-Null
+
+          # 窓と同じ矩形と対角線を描き、描き終えたことをマーカーのファイルで確かめてから出力する
+          $drawMarker = Join-Path $caseDir "draw.marker"
+          $drawMarkerForLisp = $drawMarker -replace '\\', '/'
+          $p = { param($x, $y) '(list {0} {1} 0.0)' -f $x, $y }
+          $drawFormat = "(progn (command `"_.PLINE`" {0} {1} {2} {3} `"_C`") (command `"_.LINE`" {0} {2} `"`") (command `"_.LINE`" {3} {1} `"`") " +
+            "(setq cpdm (open `"$drawMarkerForLisp`" `"w`")) (write-line `"drawn`" cpdm) (close cpdm))`r"
+          $document.SendCommand(($drawFormat -f (& $p $x1 $y1), (& $p $x2 $y1), (& $p $x2 $y2), (& $p $x1 $y2)))
+          Wait-FileExists $drawMarker "fit case drawing" $LoadQueueTimeoutSeconds
+
+          $modelLayout.PlotRotation = $rot
+          Write-Evidence "FIT_CASE $fitId window=($x1,$y1)-($x2,$y2) rotation set=$rot readback=$([int]$modelLayout.PlotRotation)"
+          $artifactStart = Get-Date
+          if ($config.CommandStartKind -eq "AresUi") {
+            $document.SendCommand(("(command `"_.PETADIAG`" {0} {1})`r" -f (& $p $x1 $y1), (& $p $x2 $y2)))
+          } else {
+            $document.SendCommand("_.PETADIAG`r$x1,$y1`r$x2,$y2`r")
+          }
+          $artifacts = Wait-PetaDiagArtifacts $productRoot $document $artifactStart $config.CommandStartKind
+          $svgMoved, $emfMoved = Move-PetaDiagArtifacts $productRoot $artifactStart $caseDir $artifacts
+
+          # SVG の寸法が窓の縦横比のまま（尺度 = 幅 ÷ 窓の幅 で、高さも窓の高さ × 尺度）で、
+          # 内容（窓の縁の矩形）が四辺まで届くこと
+          $gaps = Get-SvgContentEdgeGaps $svgMoved
+          $scale = $gaps.ViewBox.Width / $win.w
+          $fitLine = "{0}: 用紙={1} 回転={2} 尺度={3:F6} viewBox={4}x{5} 縁との差 左={6:F3} 上={7:F3} 右={8:F3} 下={9:F3}" -f
+            $fitId, $paper, ($rot * 90), $scale, $gaps.ViewBox.Width, $gaps.ViewBox.Height, $gaps.Left, $gaps.Top, $gaps.Right, $gaps.Bottom
+          [void](Measure-WindowClipOffset $caseDir $svgMoved $fitId)
+          Write-Evidence "FIT_RESULT $fitLine"
+          $fitResults += $fitLine
+          if ([Math]::Abs($gaps.ViewBox.Height - $win.h * $scale) -gt $FitAspectTolMm) {
+            $verificationFailures += "${fitId}: viewBox の高さ $($gaps.ViewBox.Height) が 窓の高さ×尺度 $([Math]::Round($win.h * $scale, 3)) と不一致"
+          }
+          foreach ($edge in @(@{ n = "左"; d = $gaps.Left }, @{ n = "上"; d = $gaps.Top }, @{ n = "右"; d = $gaps.Right }, @{ n = "下"; d = $gaps.Bottom })) {
+            if ([Math]::Abs($edge.d) -gt $FitContentEdgeTolMm) {
+              $verificationFailures += "${fitId}: 窓の縁の矩形が SVG の$($edge.n)辺と $([Math]::Round($edge.d, 3))mm ずれる（CADPeta のフィット尺度と CAD の印字が食い違う）"
+            }
+          }
+        }
+      }
+    }
+  }
   $completed = $true
 } catch {
   Write-Evidence "ERROR $($_.Exception.Message)"
@@ -474,8 +566,8 @@ try {
   Release-CadComResources $messageFilterRegistered @($uiShell, $document, $application, $candidateApplication)
   # 起動したが ROT 接続先にならなかったプロセス（1つ目・2つ目のうち捨てになった方）の後始末。
   # 自分が起動し exe で起動した所有プロセスのみが対象
-  Stop-CadSessionProcesses $ownedPid $ProcessExitTimeoutSeconds @($startedProcess, $secondaryProcess) $dwgCopy $dwgHash ([ref]$cleanupFailures) `
-    -AllowForceStop:$AllowForceStop -VerifyForceStop -RecordDwgFailures
+  Stop-CadSessionProcesses $ownedProcess $ProcessExitTimeoutSeconds @($startedProcess, $secondaryProcess) $dwgCopy $dwgHash ([ref]$cleanupFailures) `
+    -AllowForceStop:$AllowForceStop -VerifyForceStop -RecordDwgFailures -QuitExitCode $config.QuitExitCode
   Remove-CompatPluginStage $pluginStage ([ref]$cleanupFailures)
   Resume-CompatProductAutoload $autoloadState $exe ([ref]$cleanupFailures)
   Write-Evidence "END completed=$completed"
@@ -511,6 +603,11 @@ try {
     } else {
       Write-Output "全回転で寸法 ${expectedWidthMm}×${expectedHeightMm}mm・EMF 一致（用紙対応付けと回転対応が成立）"
     }
+  }
+  if ($fitResults.Count -gt 0) {
+    Write-Output ""
+    Write-Output "=== モデル空間の窓 × 用紙合わせ（$Product） ==="
+    $fitResults | ForEach-Object { Write-Output $_ }
   }
   $allFailures = @()
   if ($null -ne $primaryFailure) { $allFailures += "主処理: $($primaryFailure.Exception.Message)" }

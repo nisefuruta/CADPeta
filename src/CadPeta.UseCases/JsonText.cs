@@ -1,8 +1,7 @@
-﻿using System.IO;
+using System.IO;
 using System.Runtime.Serialization.Json;
-using CadPeta.UseCases;
 
-namespace CadPeta.Plugin.Shared;
+namespace CadPeta.UseCases;
 
 /// <summary>
 /// プラグインが書く JSON（診断の diag.json、試験の記録、側 DB の記録）を、.NET の標準の DataContractJsonSerializer で直列化する。
@@ -11,7 +10,7 @@ namespace CadPeta.Plugin.Shared;
 /// 型は [DataContract] と [DataMember(Name, Order)] で、プロパティの名前と順番を決める。辞書はオブジェクトの形で書く
 /// （キーと値の組の配列にしない）。宣言した型と同じ型の値だけを渡し、型情報（"__type"）を書かせない。
 /// </summary>
-internal static class PluginJson
+public static class JsonText
 {
     public static string Serialize<T>(T value, bool indented)
     {

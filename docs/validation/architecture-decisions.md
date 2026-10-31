@@ -216,8 +216,89 @@ A4 × 回転 0/90 × 窓縦横比の5ケースと実物図面の全6点が上式
   流しておらず、判定の誤りを検出できなかった）。
 
 是正は `PaperMetrics.DisplayPrintableWidthMm/HeightMm`（Shared の単一箇所）に置き、
-`PlotOrchestrator` の収まり判定とフィット尺度の両方がこれを使う。互換CAD（ARES／IJCAD／
-BricsCAD）の窓フィットの実効尺度は未測であり、同じ契約かは実機で確認する。
+`PlotOrchestrator` の収まり判定とフィット尺度の両方がこれを使う。互換CADのうち ARES の実測は
+次の節にある。IJCAD と BricsCAD の窓フィットの実効尺度は測っていない（2026-10-30 の時点で、
+この PC では実機を使えない）。
+
+## ARES の窓フィットの尺度は AutoCAD と同じで、回転 90 度は用紙を反時計回りに回す（2026-10-30）
+
+再現手順は `tests/tools/regression/peta_window_rotation_compat.ps1`（モデル空間の窓のケースと `-LayoutMedia`）。
+ARES 2020・2023・2024・2027 で、モデル空間に窓と同じ矩形と対角線を描いて PETADIAG で出力し、
+最終 SVG の内容が四辺まで届くかで、CADPeta が計算したクロップと ARES が実際に印字した範囲を照合した。
+ARES は AutoCAD の「有効な印刷領域」にあたる値を表示しないので、図面の内容を正解にした。
+ケースは PDF デバイスの縦の A4（余白のある用紙と、余白の無い用紙）× 横長・縦長の窓 × 回転 0・90・270 度の 12 件である。
+
+尺度はどの版も AutoCAD と同じ契約（回転が奇数四半なら印刷可能領域の縦横を入れ替えたフィット）で、
+余白の無い A4・横長の窓・回転 90 度は 3.227279 になり、AutoCAD の 3.2273 と一致した。
+
+食い違ったのはクロップの位置である。ARES 2020・2023・2024 の余白のある A4・回転 90/270 度で、
+クロップが図より約 24mm 横へずれ、窓の片側が欠けた。クロップ前のページの SVG で図の位置を読むと、
+縦の用紙の上端が表示ページの左へ来ていた。ARES の PDF ドライバは、回転 90 度のとき用紙を反時計回りに回して描く。
+CADPeta は AutoCAD と同じ時計回りを前提に印刷可能領域の中心を写していたので、上下の余白の差（29.8 - 5.8 = 24mm）だけずれた。
+同じずれはペーパー空間の窓でも起き、PETA_A3 の用紙を余白のある A3 に替えると回転 90/270 度の図が回転 0 度と一致しなかった。
+
+ARES の PDF デバイスの用紙の余白（`-LogMediaMargins` で全用紙を読んだ）は次のとおりである。
+
+- ARES 2023: 余白のある用紙は、左右と下が 5.8mm（または 5.842mm）で、上だけが 15.8mm か 29.8mm（または 15.748mm か 29.718mm）。
+  ARES 2020 と 2024 は全用紙の余白を読んでいないが、余白のある A4 の印刷可能領域（198.4×261.4mm）とずれの量が 2023 と同じだった。
+- ARES 2027: 101 種類の用紙のすべてで、上下と左右の余白がそれぞれ対称（A4 は左右 5mm・上下 17mm）。
+  回転の向きは出力に現れず、修正の前も合格していた。
+
+どの年式の用紙も左右の余白は対称なので、「反時計回りに回す」と「上下の余白を入れ替えて時計回りに回す」は
+区別できず、出力も同じになる。上端が左へ来たという観察に合う反時計回りを採った（次の節で、AutoCAD も同じ向きであることを
+PDF の丸めの差から確かめた）。
+是正は `CadPlotPort.QuarterTurnsCw` で、ARES の回転 90 度を時計回り 3 回として返す
+（ARES の 180/270 度は `NormalizePlotRotation` が 0/90 度へ写す）。修正の後、4 つの版でモデル空間の 12 件と、
+余白のある A3 のレイアウトの回転 0〜270 度がすべて合格した。
+
+試験が食い違いを見つけることは、縦横の入れ替え（`DisplayPrintableWidthMm/HeightMm`）を一時的に外したビルドで
+確かめた。ARES 2027 で、回転 90/270 度の 8 件が 9〜43mm のずれで不合格になり、回転 0 度の 4 件は合格のままだった。
+
+AutoCAD の PDF デバイス（AutoCAD PDF (High Quality Print).pc3）の 93 種類の用紙は、余白がすべて上下・左右で対称だった
+（余白なし、左右 5mm・上下 10mm、左右 5mm・上下 17mm の 3 通り）。AutoCAD 2026 でモデル空間の 12 件も合格した。
+
+## 窓のクロップは、PDF ドライバの 1pt の丸めと回転の向きを映して計算する（2026-10-31）
+
+`peta_window_rotation_compat.ps1 -Product Acad2026 -LayoutMedia 'ISO_A3_(420.00_x_297.00_MM)'` で、余白のある A3 の
+回転 180 度の図が、回転 0 度より右へ 0.293mm、上へ 0.187mm ずれた（クロップ前のページの SVG の同じパスの座標の差。
+2,527 点のうち 2,444 点がこの値）。クロップの位置は回転 0 度と同じで、ずれたのは AutoCAD が印字した図の位置である。
+
+発行された PDF は、ページの大きさを 1191×842pt（A3 の 1190.55×841.89pt をポイントの整数へ切り上げ）、
+印刷可能領域の原点を `cm` の平行移動 (14, 48)pt（余白 5mm・17mm の 14.17・48.19pt を切り捨て）で書き、回転 180 度を
+ページの `/Rotate 180` で表していた。ページは丸めた大きさの中心で回るので、回転 0 度では左下にある丸めの差が右上へ移り、
+差どうしが足し合わされる。この仕組みで計算したずれは右へ 0.280mm・上へ 0.172mm で、実測との差は 0.015mm 程度である。
+余白の無い A3（PETA_A3 の既定）は原点の丸めが無く、ページの切り上げの分（0.16・0.04mm）だけになり、回転の回帰の許容に収まる。
+CADPeta はクロップを用紙の公称の大きさと余白から計算していたので、AutoCAD の丸めの分だけ食い違っていた。
+
+丸めの差があると、回す向きも出力に現れる。AutoCAD の回転 90 度の窓は用紙を反時計回りに回した位置にあり、270 度は時計回りの
+位置にあった（余白のある A3 の 4 方向の窓のクリップの中心が、丸めと反時計回りの仕組みで計算した位置と 0.007mm 以内で一致した）。
+AutoCAD のプロット回転は反時計回りの角度で、時計回りとして扱っていた CADPeta は、回転 90/270 度でも 0.1〜0.23mm ずれていた。
+
+ARES は丸めのしかたが違い、ページの大きさだけを丸め、印刷可能領域の原点は丸めない。手元の実測（モデル空間の窓 12 件×5 版）で、
+CADPeta のクロップと印字した図の中心の差を、規則ごとに比べた。
+
+| 版 | 今までの計算 | ページだけを丸める | ページと原点を丸める |
+|---|---|---|---|
+| AutoCAD 2026 | 0.113mm | 0.074mm | 0.013mm |
+| ARES 2027 | 0.126mm | 0.033mm | 0.100mm |
+| ARES 2024 | 0.126mm | 0.053mm | 0.209mm |
+| ARES 2020・2023 | 0.211mm | 0.223mm | 0.378mm |
+
+ARES 2020・2023 は、余白の無い用紙の回転 0 度でも 0.11mm ずれ、丸めと別の誤差を持つ。この 2 つの版では、ページだけを丸めても
+良くならないが、悪くなる量は 0.012mm なので、ARES は全部の版でページだけを丸める。
+
+是正: 丸めのしかたを各製品の `*PluginDefaults.PdfPointSnapping` に置き（AutoCAD はページと原点、ARES はページだけ、
+IJCAD・BricsCAD は測っていないので丸めない）、`PdfPageGeometry.Place` が発行される PDF のページの大きさと印刷可能領域の中心を
+返して、`CadPlotPort.GetPaperMetrics` がそれを使う。回転は `CadPlotPort.QuarterTurnsCw` で、AutoCAD と ARES の 90 度を時計回り
+3 回、270 度を 1 回とする（IJCAD・BricsCAD は測っていないので、今までの対応のまま）。単体試験 `PdfPageGeometryTests` は、
+実測した窓の中心を期待値にし、丸めを外すと不合格になる。
+
+`peta_window_rotation_compat.ps1` は、AutoCAD では PDF の窓のクリップ（印字した窓そのもの）とクロップの中心の差を 0.05mm まで
+許す判定を持つ（ARES のクリップは窓より約 0.4mm 広いので、差を記録するだけ）。AutoCAD 2026 で、修正を戻したビルドは
+余白のある用紙のケースが最大 0.226mm で不合格になり、修正したビルドは 16 件すべてが 0.008mm 以内だった。
+
+IJCAD・BricsCAD は体験版の期間が切れ、実機で測れないので、窓のフィットとクロップの位置を測らないまま v1.1.0 を出す（利用者の決定、2026-10-31）。
+丸めと回転の対応は今までのままで、`peta_a3_window_expect.ps1` の `PageHeight297mm` の期待値も実機で確かめていない。
 
 ## PDF の BaseFont 名からファミリ名を解決する（2026-07-16）
 
@@ -329,3 +410,60 @@ ARES 2024 は起動していない。
 どの実行でも、レジストリと .aws、ARES の登録と profile.xml は元に戻り、照合で一致した。
 ARES 2020 では、用紙の一覧が空のときにページ設定の用紙名を寸法を確かめずに使ったことを示す診断（`plotport.media_size_unverified`）が出ることも確かめた。
 全solutionは警告0・エラー0、xUnitはnet48=612、net8=616、net10=769件が成功した。
+
+## 図面のトランザクションで開いたオブジェクトを、トランザクションを閉じる前に Dispose する（2026-10-31）
+
+ARES 2020・2023・2024（net48）が、試験の後の終了の処理の中で異常終了していた（Windows のイベントログの 1026 と 1000。2026-10-30 22:55 に 2020、23:04 に 2023、2026-10-31 00:49 に 2024）。
+例外は `System.AccessViolationException` で、場所はファイナライザから呼ばれた `Teigha.DatabaseServices.DBObject.DeleteUnmanagedObject` だった。
+ARES が保存したミニダンプのネイティブのスタックは `OdDbObject::release` → `OdDbObjectImpl::fire_goodbye` → `OdDbDatabaseImpl::getXREFOVERRIDE` → `OdDbObjectId::isValid` で、閉じたデータベースを読んでいた。
+同じ試験で異常終了しない回もあり、試験の補助は `Quit` の成功だけを見ていたので、どの回も合格になっていた。
+
+ARES 2020 で回転の試験と選択の試験を実行し、最後のケースの間に `cdb -pv` で完全なダンプを取って SOS で調べた。
+ファイナライズを待つ Teigha のラッパーのうち、ネイティブのポインタ（`m_imp`）が残るものは、回転の試験では `Layout` 4 件（すべて同じネイティブのオブジェクト）、選択の試験では `Layout`・`BlockTable`・`BlockTableRecord`・`Polyline`・`LayerTable`・`LayerTableRecord`・`ViewportTable`・`ViewportTableRecord`・`PlotSettings` の 32 件だった。
+`CadPlotPort` は `_tr.GetObject` で開いた `Layout` をフィールドに持ち、トランザクションを Commit と Dispose で閉じていたが、ラッパーはポインタを持ったままだった。
+したがって ARES の `Transaction` は、`GetObject` が返したラッパーを閉じるときに解放しない。解放されなかったラッパーは、あとで .NET のファイナライザが解放し、その図面がすでに閉じていると異常終了する。
+ファイナライザがいつ動くかで決まるので、毎回は起きない。.NET 8 の ARES 2027 は終了のときにファイナライザを実行しないので、起きないことは比べる材料にならない。
+
+4 製品の共有コードのトランザクションを `CadTransaction`（`src/CadPeta.Acquire.CadCommon/CadTransaction.cs`）だけで始めるようにした。
+`CadTransaction` は `GetObject` と `AddNewlyCreatedDBObject` のオブジェクトを記録し、`Dispose` でトランザクションより先に、開いた順の逆に Dispose する。`Abort` も、破棄で削除される新しいオブジェクトのラッパーを削除の後に Dispose しないように、先にオブジェクトを Dispose する。
+返したオブジェクトは `Dispose` まで使えるので、呼び出し側の書き方は AutoCAD のトランザクションと同じにした。後始末の失敗をまとめて返す `CleanupRunner` は、取得の共通部からも使うために `CadPeta.Acquire.Common` へ移した。
+単体試験 `CadTransactionUsageTests` は、CAD の SDK を使うプロジェクトで、`CadTransaction` のほかにトランザクションを始める呼び出しと、トランザクションの外でオブジェクトを開く呼び出し（`ObjectId` の `GetObject`・`Open`）が無いことを確かめる（コメントの行は除く）。
+互換 CAD の COM の試験は、`Quit` の後に CAD が製品の正常な終了の終了コードと違う値で終了したら失敗にする（`tests/tools/common/compat_cad_com.ps1` の `$CompatProducts` の `QuitExitCode` と `Stop-OwnedCadProcess`、自己試験 `compat_process_exit_selftest.ps1`）。
+ARES 2020・2023・2024 は正常に終了すると 0 を返した。AutoCAD は 2026 で 0xBEBEBABE・0x0426BABE・0x042BBABE、2027 で 0xD2E2BABE を返し（変更の前のプラグインでも 0xBEBEBABE）、値が決まらないので終了コードでは判定しない。ARES 2027・IJCAD・BricsCAD は測っていないので判定しない。
+毎回は起きない異常終了なので、この判定の合格は、その回に起きなかったことしか示さない。
+
+変更の後に同じ位置で完全なダンプを取り、ポインタが残る DBObject のラッパーが回転の試験と選択の試験の両方で 0 件になったことを確かめた（`Database` のラッパーは自動の削除が無効で、前後とも残る）。
+ARES 2020・2023・2024 の `peta_window_rotation_compat.ps1`（全ケース）と、`peta_option_smoke_compat.ps1` の選択の 6 ケース・ケース a・ケース b が合格し、どの回も終了コードは 0 だった。
+ARES 2023 の選択の試験では、起動から 3 秒後（COM の接続とプラグインの読み込みの前）に ARESS.exe の中のアクセス違反がイベントログに残ったが、ARES は動き続けて終了コード 0 で終了した。プラグインを読み込む前なので CADPeta の処理ではない。
+`peta_option_smoke_compat.ps1` の画面を操作するケース（PETAOPT とコメントのダイアログ）は、画面がロックされていて画面を撮れなかったので、この変更の後に実行していない。
+構造 SVG 書き出し（PETADATA、`CadIrAcquirer`）を ARES で動かす試験は無く、ARES では確かめていない。IJCAD と BricsCAD は、この PC で使えず確かめていない。
+
+この調査で、`peta_option_smoke_compat.ps1` のケース b の期待値が 63f3e13 の後の ARES の値と違うことも見つかった。
+ARES はページの大きさだけを 1pt に丸めるので、A3 の高さ 297mm は 842pt = 297.0389mm になり、窓の viewBox の Y は 108.5 から 108.5389 になる（AutoCAD は印刷可能領域の原点も丸めるので 108.5 のまま）。
+期待値を製品ごとの表に置き、ARES 2020・2023・2024 のケース b が合格した。63f3e13 は回転の試験と窓のフィットの試験で確かめ、このオプションの試験は実行していなかった。
+AutoCAD の accoreconsole の試験（`peta_option_matrix.ps1` の Smoke と `crop_regression.ps1`）のレイアウトの窓の期待値も 63f3e13 より前の値のままで、AutoCAD 2027 の Smoke の窓の 3 ケースが不合格になった。
+accoreconsole の PDF のページの高さも 842pt に丸められ、窓の Y は 0.0389mm 下がる（AutoCAD の画面の回転の試験は 113.5 のまま）。
+AutoCAD 2027 の M5 の PDF で、AutoCAD が書いた窓のクリップの中心とクロップの中心の差は X −0.011mm・Y 0.011mm で、旧い期待値の Y 108.5 なら Y 0.049mm だったので、出力が正しく期待値が古いと判断した。
+期待値を `160 113.5389 100 70`・`155 108.5389 110 80` に直し（今は `tests/tools/regression/peta_a3_window_expect.ps1` の表にページの高さごとに置き、3 つの試験がそこから読む）、AutoCAD 2026・2027 の Smoke（各 14/14、クロスチェック 12/12）と `crop_regression.ps1`（各 3 ケース）が合格した。
+
+AutoCAD では、変更の後に `peta_window_rotation_compat.ps1` の 2026・2027（全回転で寸法と EMF が一致）、`selection_plot_matrix.ps1 -Ver 2026 -Standard`（12 シナリオ）、`peta_option_matrix.ps1 -Set PetaData -Ver 2026`（35/35、クロスチェック 26/26。構造 SVG 書き出しの `CadIrAcquirer` を通る）が合格した。
+回転の試験は、AutoCAD のプロファイルに残る、アンインストール済みの CADPeta.bundle の `Loaded` のキーが試験の中で消えることを後始末で失敗にしている。これはこの変更の前からの環境の状態で、試験の後に記録から戻した。
+2026-10-31 に、利用者の了承を得て、アンインストール済みの CADPeta.bundle の `Loaded` のキー（R24.3・R25.1・R26.0 の 3 つ）を削除し、その後の AutoCAD 2026 の回転の試験は後始末を含めて合格した。
+
+`CadTransaction` が開いたオブジェクトをすべて `Dispose` まで持つと、図形の多い図面で PETADATA のメモリと時間が増えた。
+`tests/tools/regression/petadata_size_measure.ps1`（AutoCAD 2026 の accoreconsole、TESTCHART2.dwg に 20 の画層に分けた線分を加えた図面、Release ビルド）で、同じ起動で PETADATA を 2 回実行して比べた。DB直接取得は 1 回目、ピークのワーキングセットは 2 回目の後の値である。
+
+| プラグイン | 図形 | DB直接取得 | ピークのワーキングセット |
+|---|---|---|---|
+| 変更の前（d0174d5） | 3 万 | 315 ms | 266 MB |
+| すべてを記録（95a4445） | 3 万 | 502 ms | 412 MB |
+| 変更の前（d0174d5） | 10 万 | 714 ms | 455 MB |
+| すべてを記録（95a4445） | 10 万 | 1167 ms | 919 MB |
+| 読み取りのラッパーを使い回す | 10 万 | 689 ms、717 ms（別の起動の 2 回の計測） | 476 MB |
+
+`CadIrAcquirer` は図形ごとに画層・線種・所有者のブロックを開くので、記録するラッパーが図形の数の数倍になっていた。
+`CadTransaction` は、同じ `ObjectId` をもう一度読み取りで開くと、前に返した同じラッパーを返すようにした（Dispose 済みか削除済みのときはトランザクションに開かせる）。書き込みで開くときと、引数の 4 つある `GetObject` は、今までどおり毎回トランザクションに開かせる。
+この変更の後に、AutoCAD 2026 の `peta_option_matrix.ps1 -Set PetaData`（35/35）・回転の試験、AutoCAD 2026・2027 の `crop_regression.ps1`、AutoCAD 2027 の Smoke（14/14）が合格した。
+
+同じ悪化を試験で見つけるため、PETADATA の診断に図面から開いたオブジェクトの数（`CadTransaction.OpenedCount`）を出し、`petadata_size_measure.ps1` はその数が選択の数の 2 倍を超えたら失敗にする。
+AutoCAD 2026 の 10 万図形で、修正したビルドは選択 100,174 に対して 100,237 で合格し、使い回しを外したビルドは 1,213,544 で不合格になった（2026-10-31）。時間とメモリは版や PC で変わるので判定しない。

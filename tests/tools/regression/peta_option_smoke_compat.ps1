@@ -32,6 +32,11 @@
 # （peta_window_rotation_compat.ps1 の Wait-PetaDiagArtifacts と同型）。
 # ARES は .NET コマンド実行中 CMDNAMES を読めないため、ファイル安定のみで判定する。
 #
+# ダイアログのケース（最後の 4 つ）は、AutoCAD の画面の確認（petaopt_gui_check.ps1）と同じ手順と判定（common\cad_dialog_ui.ps1）で、
+# PETAOPT のダイアログでファイル名に {comment} を設定し、続く PETA のコメントのダイアログを Enter で確定・[キャンセル]・Esc で閉じる。
+# ダイアログは CAD のコマンドの中で開くモーダルの画面で、製品によっては SendCommand が閉じるまで戻らないので、
+# UI オートメーションの操作はコマンドを送る前に別のプロセス（Start-Job）で始め、コマンドの後に結果を受け取る。
+#
 # 使い方（Windows PowerShell 5.1 で実行する）:
 #   powershell -Sta -File peta_option_smoke_compat.ps1 -Product BricscadV26
 #   powershell -Sta -File peta_option_smoke_compat.ps1 -Product Ares2027 -AllowForceStop
@@ -43,7 +48,8 @@ param(
   [string]$Product,
   [string]$OutRoot = "$env:TEMP\CadPeta_option_smoke_compat",
   [string]$Config = "Release",   # 配布物と同じビルド（tests/tools/build_e2e.ps1）の構成
-  [ValidateSet("a", "b", "o", "object-global", "pickfirst", "postselect", "empty-enter", "current-layer")]
+  [ValidateSet("a", "b", "o", "object-global", "pickfirst", "postselect", "empty-enter", "current-layer",
+               "settings-dialog", "comment-dialog", "comment-cancel", "comment-escape")]
   [string]$CaseName,
   [switch]$ObjectCasesOnly,
   [switch]$ProbeOnly,
@@ -73,99 +79,62 @@ $ExpectedWindowStation = "WinSta0"
 $ExpectedDesktop = "Default"
 
 $LayoutName = "PETA_A3"
-# crop_regression.ps1／peta_option_matrix.ps1 の $PaperWin・$ExpectPaperWinM5 と同じ窓・同じ図面。
-# PETA のオプション処理は製品非依存の共通実装のため、期待値も AutoCAD 実測とそろえられる。
-$WindowP1 = "50,40"
-$WindowP2 = "150,110"
-$MarginMm = "5"
-$ExpectedWindowSvgHeader = 'width="110mm" height="80mm" viewBox="155 108.5 110 80"'
+# 窓と期待の viewBox は crop_regression.ps1・peta_option_matrix.ps1 と同じ表（peta_a3_window_expect.ps1）から読む。
+# viewBox の Y は製品の PDF のページの高さで変わるので、製品ごとの表の WindowExpect に、どのページの高さの値を使うかを置く
+. "$PSScriptRoot\peta_a3_window_expect.ps1"
+$WindowP1 = $PetaA3Window.P1
+$WindowP2 = $PetaA3Window.P2
+$MarginMm = $PetaA3Window.MarginMm
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 # ConvertTo-LispPoint（"x,y"→LISP点リスト文字列）を借用する。ARES の窓2点は文字列座標でなく
 # 点リストで渡す必要がある（GetCorner の基点相対解釈を避ける。window_contract_compat.ps1 と同じ理由）
 . (Join-Path $repo "tests\tools\regression\window_contract\window_contract_cases.ps1")
 
+. "$PSScriptRoot\..\common\compat_cad_com.ps1"
+# 製品の固定の情報（実行ファイル、ProgID、DLL の場所など）は compat_cad_com.ps1 の $CompatProducts にあり、Get-CompatProduct で合わせる
 $products = @{
-  # ARES の net48 世代（2020/2023/2024）は SDK が年式別のため、プラグインも年式別の出力
-  # （既定=bin、既定以外=bin\ares<年>）を読み込む。ProgID の版番号は COM API 版
-  # （2020=4.4／2023=4.6／2024=23.1／2027=26.8。本機 HKCR 実測）
   Ares2020 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2020\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.4.4"
-    ProcessName = "ARESS"
-    PluginRelative = "src\CadPeta.Plugin.Ares\bin\ares2020\{0}\net48\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresCommand"
+    WindowExpect = "PageHeight842pt"
     SetFileDia = $true
-    DiscoverProgId = $true
   }
   Ares2023 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2023\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.4.6"
-    ProcessName = "ARESS"
-    PluginRelative = "src\CadPeta.Plugin.Ares\bin\ares2023\{0}\net48\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresCommand"
+    WindowExpect = "PageHeight842pt"
     SetFileDia = $true
-    DiscoverProgId = $true
   }
   Ares2024 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2024\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.23.1"
-    ProcessName = "ARESS"
-    PluginRelative = "src\CadPeta.Plugin.Ares\bin\{0}\net48\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresCommand"
+    WindowExpect = "PageHeight842pt"
     SetFileDia = $true
-    DiscoverProgId = $true
   }
   Ares2027 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2027\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.26.8"
-    ProcessName = "ARESS"
-    PluginRelative = "src\CadPeta.Plugin.Ares\bin\{0}\net8.0-windows\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresCommand"
+    WindowExpect = "PageHeight842pt"
     SetFileDia = $true
-    DiscoverProgId = $true
   }
   Ijcad2026 = @{
-    Exe = "C:\Program Files\ITJP\IJCAD 2026 PRO\gcad.exe"
-    StartArguments = @()
-    ProgId = "Gcad.Application"
-    ProcessName = "gcad"
-    PluginRelative = "src\CadPeta.Plugin.Ijcad\bin\{0}\net8.0-windows\CadPeta.Plugin.Ijcad.dll"
-    LoadKind = "DirectNetload"
     CommandStartKind = "SingleBatch"
+    WindowExpect = "PageHeight297mm"
     SetFileDia = $true
-    DiscoverProgId = $false
   }
   BricscadV26 = @{
-    Exe = "C:\Program Files\Bricsys\BricsCAD V26 ja_JP\bricscad.exe"
-    StartArguments = @("/Automation")
-    ProgId = "BricscadApp.AcadApplication.26.0"
-    ProcessName = "bricscad"
-    PluginRelative = "src\CadPeta.Plugin.Bricscad\bin\{0}\net8.0-windows\CadPeta.Plugin.Bricscad.dll"
-    LoadKind = "DirectNetload"
     CommandStartKind = "SingleBatch"
+    WindowExpect = "PageHeight297mm"
     SetFileDia = $true
-    DiscoverProgId = $false
   }
 }
 
 # 局所変数は $config でなく $productConfig と名付ける。PowerShell の変数は大文字小文字を
 # 区別せず、パラメータ [string]$Config の型制約が変数に残るため、$config へハッシュ表を
 # 代入すると文字列 "System.Collections.Hashtable" へ強制変換される（実測でExeが空になった）
-$productConfig = $products[$Product]
+$productConfig = Get-CompatProduct $Product $products $Config
 if ($ObjectCasesOnly -and -not [string]::IsNullOrWhiteSpace($CaseName)) {
   throw "-ObjectCasesOnly と -CaseName は同時に指定できません"
 }
 $exe = [IO.Path]::GetFullPath($productConfig.Exe)
-$plugin = [IO.Path]::GetFullPath((Join-Path $repo ($productConfig.PluginRelative -f $Config)))
+$plugin = $productConfig.Plugin
 $modelCaseNames = @("o", "object-global", "pickfirst", "postselect", "empty-enter", "current-layer")
 $modelOnlyRun = $ObjectCasesOnly -or
   (-not [string]::IsNullOrWhiteSpace($CaseName) -and $CaseName -in $modelCaseNames)
@@ -192,7 +161,6 @@ $dwgCopy = Join-Path $productRoot "target.dwg"
 Copy-Item -LiteralPath $source -Destination $dwgCopy -Force
 $dwgHash = (Get-FileHash -LiteralPath $dwgCopy -Algorithm SHA256).Hash
 
-. "$PSScriptRoot\..\common\compat_cad_com.ps1"
 . "$PSScriptRoot\..\common\test_helpers.ps1"
 # Get-JsonLines が不正行で投げる例外の文言の先頭（共通既定の「trace JSONL が不正」とは語尾が異なる）
 $JsonLinesInvalidLabel = "trace JSONL が不正です"
@@ -436,10 +404,85 @@ function Test-CaseB([hashtable]$artifacts, [string]$caseDir) {
   $failures = New-Object System.Collections.ArrayList
   Add-ArtifactCountFailures $failures $caseDir
   $head = Get-Content -LiteralPath $artifacts.Svg -TotalCount 1 -Encoding UTF8
-  if ($head -notmatch [regex]::Escape($ExpectedWindowSvgHeader)) {
-    [void]$failures.Add("SVG ヘッダが期待値と不一致（期待: $ExpectedWindowSvgHeader / 実際: $head）")
+  $expect = $PetaA3WindowExpect[$productConfig.WindowExpect].M5
+  $expectHeader = 'width="{0}mm" height="{1}mm" viewBox="{2}"' -f $expect.W, $expect.H, $expect.VB
+  if ($head -notmatch [regex]::Escape($expectHeader)) {
+    [void]$failures.Add("SVG ヘッダが期待値と不一致（期待: $expectHeader / 実際: $head）")
   }
   return @($failures)
+}
+
+# ダイアログのケースの判定（common\cad_dialog_ui.ps1 の値を使う。読み込みは下の Start-DialogJob と同じファイル）
+. "$PSScriptRoot\..\common\cad_dialog_ui.ps1"
+$DialogJobTimeoutSeconds = 120
+# ダイアログの画像のフォルダ（成果物を探す製品のフォルダの直下と、ケースのフォルダの外）
+$dialogImageDir = Join-Path $productRoot "dialog-images"
+
+# PETAOPT のダイアログで設定した値が設定のファイルに保存された
+function Test-SettingsDialogCase($artifacts, [string]$caseDir) {
+  $failures = New-Object System.Collections.ArrayList
+  $settingsPath = Join-Path $traceEnvironment.CADPETA_DATA_DIR 'settings.json'
+  $settings = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($settings.fileName -cne $CadPetaCommentFileName -or (@($settings.formats) -join ',') -ne 'pdf,svg,emf,png' -or $settings.pngDpi -ne 150) {
+    [void]$failures.Add("設定のファイルの内容が違う: $($settings | ConvertTo-Json -Compress)")
+  }
+  return @($failures)
+}
+
+# コメントのダイアログで確定したコメントが、4 形式のファイルの名前の最後に入る
+function Test-CommentDialogCase([hashtable]$artifacts, [string]$caseDir) {
+  $failures = New-Object System.Collections.ArrayList
+  foreach ($extension in @(".svg", ".emf", ".pdf", ".png")) {
+    $files = @(Get-ChildItem -LiteralPath $caseDir -File | Where-Object { $_.Extension -eq $extension -and $_.Name -notlike "*.stage*" })
+    if ($files.Count -ne 1) { [void]$failures.Add("$extension 成果物が1件でない（$($files.Count) 件）") }
+    elseif ($files[0].BaseName -notlike "*_$CadPetaComment") { [void]$failures.Add("名前の最後がコメントでない: $($files[0].Name)") }
+  }
+  return @($failures)
+}
+
+# コメントのダイアログを閉じた PETA は、何も出力しない
+function Test-NoArtifactCase($artifacts, [string]$caseDir) {
+  $files = @(Get-ChildItem -LiteralPath $caseDir -File | Where-Object { $_.Extension -in @(".svg", ".emf", ".pdf", ".png") })
+  if ($files.Count) { return @("中止したのに出力がある: $(($files | ForEach-Object Name) -join ', ')") }
+  return @()
+}
+
+# ダイアログの UI オートメーションの操作を別のプロセスで始める。kind は Settings・Comment（確かめて Enter）・Cancel・Escape。
+# ダイアログの画像はケースの名前を付けて imageDir に置く（成果物の判定が数える PNG と混ぜない）
+function Start-DialogJob([string]$kind, [int]$processId, [string]$caseName, [string]$imageDir) {
+  $caseImageDir = Join-Path $imageDir $caseName
+  New-Item -ItemType Directory -Force -Path $caseImageDir | Out-Null
+  Start-Job -ArgumentList @("$PSScriptRoot\..\common\cad_dialog_ui.ps1", $kind, $processId,
+      (Join-Path $traceEnvironment.CADPETA_DATA_DIR 'settings.json'), $caseImageDir, $DialogJobTimeoutSeconds) -ScriptBlock {
+    param($library, $kind, $processId, $settingsPath, $imageDir, $timeoutSeconds)
+    $ErrorActionPreference = 'Stop'
+    . $library
+    $deadline = (Get-Date).AddSeconds($timeoutSeconds)
+    switch ($kind) {
+      'Settings' { Invoke-SettingsDialogChecks $processId $settingsPath $imageDir $deadline }
+      'Comment' { Invoke-CommentDialogChecks $processId 'target' (Join-Path $imageDir 'comment-dialog.png') $deadline }
+      default {
+        $reason = Close-CommentDialog $processId $kind $deadline
+        @{ Name = "commentClosedBy$kind"; Ok = ($reason -eq ''); Detail = $reason }
+      }
+    }
+  }
+}
+
+# ダイアログの操作の結果を受け取り、不合格の判定と操作の例外を失敗の一覧に加える
+function Receive-DialogJob($job, $failures) {
+  try {
+    $checks = @(Receive-Job -Job $job -Wait -ErrorAction Stop)
+    foreach ($check in $checks) {
+      [void](Write-Evidence "DIALOG_CHECK name=$($check.Name) ok=$($check.Ok) detail=$($check.Detail)")
+      if (-not $check.Ok) { [void]$failures.Add("$($check.Name): $($check.Detail)") }
+    }
+    if ($checks.Count -eq 0) { [void]$failures.Add("ダイアログの操作が判定を返さなかった") }
+  } catch {
+    [void]$failures.Add("ダイアログの操作の失敗: $($_.Exception.Message)")
+  } finally {
+    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function Test-ObjectCase([hashtable]$artifacts, [string]$caseDir) {
@@ -461,39 +504,21 @@ $autoloadState = $null
 $connectedProgId = $null
 $progIds = $null
 $ownedPid = 0
+$ownedProcess = $null
 $messageFilterRegistered = $false
 $oldFileDia = $null
 $oldOsMode = $null
 $completed = $false
 $cleanupFailures = @()
 $caseResults = @()
+# 起動する CAD にだけ渡す環境変数（Start-CadVisibleAndConnect・Start-CadProcessHidden。この PowerShell には設定しない）
 $traceEnvironment = @{
   CADPETA_PROMPT_TRACE = $promptTrace
   CADPETA_PROMPT_TRACE_RUN_ID = $promptTraceRunId
   CADPETA_PROMPT_TRACE_CASE_ID = $Product
+  # CADPeta の設定（今までの試験と同じく図面のフォルダに PDF・SVG・EMF）。利用者の %APPDATA%\CADPeta を使わない
+  CADPETA_DATA_DIR = (Write-E2eSettings (Join-Path $productRoot 'cadpeta-data'))
 }
-$savedTraceEnvironment = @{}
-$traceEnvironmentActive = $false
-# 保存しておいたプロセス環境変数の値（Exists／Value）へ戻し、読み戻して一致すれば $true を返す。
-function Restore-ProcessEnvironmentVariable([string]$name, $saved) {
-  if ($saved.Exists) {
-    [Environment]::SetEnvironmentVariable($name, [string]$saved.Value, "Process")
-  } else {
-    Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
-  }
-  $actualExists = Test-Path -LiteralPath "Env:$name"
-  $actualValue = [Environment]::GetEnvironmentVariable($name, "Process")
-  return -not (($saved.Exists -and (-not $actualExists -or $actualValue -cne $saved.Value)) -or
-               (-not $saved.Exists -and $actualExists))
-}
-foreach ($name in $traceEnvironment.Keys) {
-  $savedTraceEnvironment[$name] = @{
-    Exists = Test-Path -LiteralPath "Env:$name"
-    Value = [Environment]::GetEnvironmentVariable($name, "Process")
-  }
-  [Environment]::SetEnvironmentVariable($name, [string]$traceEnvironment[$name], "Process")
-}
-$traceEnvironmentActive = $true
 try {
   Write-Evidence "START Product=$Product Exe=$exe Plugin=$plugin Source=$source Layout=$LayoutName"
   $windowStation = [CadPeta.CompatNativeWindow]::WindowStationName()
@@ -502,7 +527,7 @@ try {
   if ($windowStation -ne $ExpectedWindowStation -or $desktop -ne $ExpectedDesktop) {
     throw "対話デスクトップが必要です。期待=$ExpectedWindowStation\$ExpectedDesktop、実際=$windowStation\$desktop"
   }
-  Assert-WindowsPowerShellSta
+  Assert-CompatLaunchReady $Product
   [CadPeta.CompatMessageFilter]::RetryWindowMilliseconds = $ComRetryWindowMilliseconds
   [CadPeta.CompatMessageFilter]::RetryDelayMilliseconds = $ComRetryDelayMilliseconds
   [CadPeta.CompatMessageFilter]::Register()
@@ -518,9 +543,9 @@ try {
   Suspend-CompatProductAutoload $Product ([ref]$autoloadState) -KeepAutoload:$SkipPluginLoad
 
   if ($productConfig.DiscoverProgId) {
-    Start-CadVisibleAndConnect $exe $SecondaryLaunchDelaySeconds $GuiStartupTimeoutSeconds ([ref]$startedProcess) ([ref]$candidateApplication) ([ref]$connectedProgId) ([ref]$secondaryProcess) ([ref]$progIds)
+    Start-CadVisibleAndConnect $exe $SecondaryLaunchDelaySeconds $GuiStartupTimeoutSeconds ([ref]$startedProcess) ([ref]$candidateApplication) ([ref]$connectedProgId) ([ref]$secondaryProcess) ([ref]$progIds) $traceEnvironment
   } else {
-    $startedProcess = Start-CadProcessHidden $exe $productConfig.StartArguments
+    $startedProcess = Start-CadProcessHidden $exe $productConfig.StartArguments $traceEnvironment
     Write-Evidence "PROCESS started PID=$($startedProcess.Id)"
     $candidateApplication = Wait-ActiveObject $productConfig.ProgId $GuiStartupTimeoutSeconds
     if ($null -eq $candidateApplication) {
@@ -536,20 +561,12 @@ try {
   if ($null -ne $startedProcess -and $candidatePid -notin $ownedStartIds) {
     throw "今回開始していないプロセスへ COM 接続しました。開始 PID=$($ownedStartIds -join ',')、接続 PID=$candidatePid"
   }
-  Assert-ConnectedExecutable $candidatePid $exe
+  $ownedProcess = Assert-ConnectedExecutable $candidatePid $exe
   $application = $candidateApplication
   $candidateApplication = $null
   $ownedPid = $candidatePid
   if (-not $connectedProgId) { $connectedProgId = $productConfig.ProgId }
   Write-Evidence "COM attached ProgId=$connectedProgId HWND=$hwnd PID=$ownedPid Version=$($application.Version)"
-
-  # 起動済み CAD は環境変数を継承済みなので、親 PowerShell の環境を直ちに元へ戻す。
-  foreach ($name in $traceEnvironment.Keys) {
-    if (-not (Restore-ProcessEnvironmentVariable $name $savedTraceEnvironment[$name])) {
-      throw "親 PowerShell の環境変数を復元できませんでした: $name"
-    }
-  }
-  $traceEnvironmentActive = $false
 
   if ($ProbeOnly) {
     Write-Evidence "PROBE_ONLY completed Product=$Product"
@@ -667,9 +684,29 @@ try {
        AresLisp = '(command "_.PETA" "O" cadpeta:cur "" "")'
        ExpectKeyword = $true; Token = "O"; ExpectSelection = "postselect"; ExpectSelectionCount = 2; ExpectClayer = "CADPETA_CUR"
        Judge = ${function:Test-ObjectCase} }
+    # ダイアログのケース。PETAOPT がファイル名に {comment} を設定するので、ほかのケースの後に置く。
+    # PETA は範囲を Enter（全体）で答え、コメントのダイアログを開く
+    @{ Name = "settings-dialog"; Description = "PETAOPT のダイアログで設定"; Dialog = "Settings"
+       SingleBatchCmd = "_.PETAOPT`r"
+       AresLisp = '(command "_.PETAOPT")'
+       Judge = ${function:Test-SettingsDialogCase} }
+    @{ Name = "comment-dialog"; Description = "コメントのダイアログで入力して Enter"; Dialog = "Comment"; ExpectArtifacts = $true; Requires = "settings-dialog"
+       SingleBatchCmd = "_.PETA`r`r"
+       AresLisp = '(command "_.PETA" "")'
+       Judge = ${function:Test-CommentDialogCase} }
+    @{ Name = "comment-cancel"; Description = "コメントのダイアログを [キャンセル]"; Dialog = "Cancel"; Requires = "settings-dialog"
+       SingleBatchCmd = "_.PETA`r`r"
+       AresLisp = '(command "_.PETA" "")'
+       Judge = ${function:Test-NoArtifactCase} }
+    @{ Name = "comment-escape"; Description = "コメントのダイアログを Esc"; Dialog = "Escape"; Requires = "settings-dialog"
+       SingleBatchCmd = "_.PETA`r`r"
+       AresLisp = '(command "_.PETA" "")'
+       Judge = ${function:Test-NoArtifactCase} }
   )
   if (-not [string]::IsNullOrWhiteSpace($CaseName)) {
-    $cases = @($cases | Where-Object { $_.Name -eq $CaseName })
+    # 前のケースの設定を使うケース（Requires）は、そのケースも先に実行する
+    $names = @(@($cases | Where-Object { $_.Name -eq $CaseName })[0].Requires, $CaseName)
+    $cases = @($cases | Where-Object { $_.Name -in $names })
   }
   elseif ($ObjectCasesOnly) {
     $cases = @($cases | Where-Object { $_.Name -in $modelCaseNames })
@@ -686,6 +723,9 @@ try {
     $rawPrompt = @()
     $traceBefore = @(Get-JsonLines $promptTrace -InvalidLabel $JsonLinesInvalidLabel).Count
     $abortRemainingCases = $false
+    # ダイアログを閉じて終わるケース（設定・キャンセル・Esc）は成果物を作らないので、コマンドの終わりを試験の記録で待つ
+    $expectArtifacts = (-not $case.Dialog) -or $case.ExpectArtifacts
+    $dialogJob = $null
     try {
       if ($case.Space -eq "Model" -and [int]$document.GetVariable("TILEMODE") -ne 1) {
         $document.SetVariable("TILEMODE", [int16]1)
@@ -705,26 +745,48 @@ try {
           Wait-FileExists $prepareMarker "case $($case.Name) preparation" $LoadQueueTimeoutSeconds
           Write-Evidence "PREPARE_READY case=$($case.Name)"
         }
+        if ($case.Dialog) { $dialogJob = Start-DialogJob $case.Dialog $ownedPid $case.Name $dialogImageDir }
         $document.SendCommand($case.AresLisp + "`r")
       } else {
         $singleBatchParts = @()
         if ($case.Prepare) { $singleBatchParts += $case.Prepare + "`r" }
         if ($case.BeforeCommand) { $singleBatchParts += $case.BeforeCommand + "`r" }
         $singleBatchParts += $case.SingleBatchCmd
+        if ($case.Dialog) { $dialogJob = Start-DialogJob $case.Dialog $ownedPid $case.Name $dialogImageDir }
         $document.SendCommand(($singleBatchParts -join ""))
       }
-      $artifacts = Wait-PetaArtifacts $productRoot $document $caseStart $productConfig.CommandStartKind `
-        $promptTrace $traceBefore
-      $caseTrace = @(Wait-PromptTraceEnd $traceBefore $case.Name $LoadQueueTimeoutSeconds)
-      Write-Evidence "ARTIFACTS case=$($case.Name) svg=$($artifacts.Svg) emf=$($artifacts.Emf) pdf=$($artifacts.Pdf)"
+      $artifacts = $null
+      if ($expectArtifacts) {
+        $artifacts = Wait-PetaArtifacts $productRoot $document $caseStart $productConfig.CommandStartKind `
+          $promptTrace $traceBefore
+        $caseTrace = @(Wait-PromptTraceEnd $traceBefore $case.Name $LoadQueueTimeoutSeconds)
+        Write-Evidence "ARTIFACTS case=$($case.Name) svg=$($artifacts.Svg) emf=$($artifacts.Emf) pdf=$($artifacts.Pdf)"
+      } else {
+        $caseTrace = @(Wait-PromptTraceEnd $traceBefore $case.Name $CommandCompletionTimeoutSeconds)
+      }
+      if ($dialogJob) {
+        Receive-DialogJob $dialogJob $caseFailures
+        $dialogJob = $null
+      }
+      # コメントのダイアログの結果（Enter は入力したコメントで OK、[キャンセル] と Esc は Cancel）
+      if ($case.Dialog -and $case.Dialog -ne "Settings") {
+        $shown = @($caseTrace | Where-Object { $_.operation -eq "ShowCommentDialog" })
+        $expectedStatus = if ($case.Dialog -eq "Comment") { "OK" } else { "Cancel" }
+        $expectedComment = if ($case.Dialog -eq "Comment") { $CadPetaComment } else { $null }
+        if ($shown.Count -ne 1 -or [string]$shown[0].status -cne $expectedStatus -or [string]$shown[0].stringResult -cne [string]$expectedComment) {
+          [void]$caseFailures.Add("コメントのダイアログの結果が $expectedStatus でない: $(($shown | ConvertTo-Json -Compress))")
+        }
+      }
 
-      # 成果物をケース別フォルダへ退避し、次のケースと取り違えないようにする
+      # 成果物をケース別フォルダへ退避し、次のケースと取り違えないようにする（成果物を作らないケースも、作られたものを判定するため移す）
       Get-ChildItem -LiteralPath $productRoot -File | Where-Object {
-        $_.LastWriteTime -ge $caseStart -and $_.Extension -in @(".svg", ".emf", ".pdf", ".json")
+        $_.LastWriteTime -ge $caseStart -and $_.Extension -in @(".svg", ".emf", ".pdf", ".png", ".json")
       } | Move-Item -Destination $caseDir -Force
-      $artifacts.Svg = Join-Path $caseDir ([IO.Path]::GetFileName($artifacts.Svg))
-      $artifacts.Emf = Join-Path $caseDir ([IO.Path]::GetFileName($artifacts.Emf))
-      $artifacts.Pdf = Join-Path $caseDir ([IO.Path]::GetFileName($artifacts.Pdf))
+      if ($artifacts) {
+        $artifacts.Svg = Join-Path $caseDir ([IO.Path]::GetFileName($artifacts.Svg))
+        $artifacts.Emf = Join-Path $caseDir ([IO.Path]::GetFileName($artifacts.Emf))
+        $artifacts.Pdf = Join-Path $caseDir ([IO.Path]::GetFileName($artifacts.Pdf))
+      }
 
       $judgeFailures = @(& $case.Judge $artifacts $caseDir)
       # 試験の前提（準備で現在の画層を切り替えた）が成り立っていたことを確かめる
@@ -746,6 +808,11 @@ try {
       $abortRemainingCases = $true
       [void]$caseFailures.Add("実行時エラー: $($_.Exception.Message)")
       Write-Evidence "CASE_ERROR case=$($case.Name) error=$($_.Exception.Message)"
+      # ダイアログの操作がまだ動いていれば、その結果（どこまで進んだか）を残して止める
+      if ($dialogJob) {
+        Stop-Job -Job $dialogJob -ErrorAction SilentlyContinue
+        Receive-DialogJob $dialogJob $caseFailures
+      }
       try {
         $allTrace = @(Get-JsonLines $promptTrace -InvalidLabel $JsonLinesInvalidLabel)
         if ($allTrace.Count -gt $traceBefore) {
@@ -816,14 +883,6 @@ try {
   Write-Evidence "ERROR $($_.Exception.Message)"
   throw
 } finally {
-  if ($traceEnvironmentActive) {
-    foreach ($name in $traceEnvironment.Keys) {
-      if (-not (Restore-ProcessEnvironmentVariable $name $savedTraceEnvironment[$name])) {
-        $cleanupFailures += "親 PowerShell の環境変数を復元できませんでした: $name"
-      }
-    }
-    $traceEnvironmentActive = $false
-  }
   if ($null -ne $document) {
     # sysvar 復元は読み戻しで確認し、失敗は $cleanupFailures 経由で最終 throw へ集約する
     Restore-CadSystemVariables $document @(
@@ -834,7 +893,7 @@ try {
   Release-CadComResources $messageFilterRegistered @($document, $application, $candidateApplication)
   # 起動したが ROT 接続先にならなかったプロセス（1つ目・2つ目のうち捨てになった方）の後始末。
   # 自分が起動し exe で起動した所有プロセスのみが対象
-  Stop-CadSessionProcesses $ownedPid $ProcessExitTimeoutSeconds @($startedProcess, $secondaryProcess) $dwgCopy $dwgHash ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop
+  Stop-CadSessionProcesses $ownedProcess $ProcessExitTimeoutSeconds @($startedProcess, $secondaryProcess) $dwgCopy $dwgHash ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop -QuitExitCode $productConfig.QuitExitCode
   Remove-CompatPluginStage $pluginStage ([ref]$cleanupFailures)
   Resume-CompatProductAutoload $autoloadState $exe ([ref]$cleanupFailures)
   Write-Evidence "END completed=$completed"

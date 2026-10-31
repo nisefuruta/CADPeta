@@ -17,23 +17,19 @@
 """
 import json
 import pathlib
-import subprocess
 import sys
 import re
 
 import numpy as np
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image
+# 描画・見当枠・ぼかした差の指標は、ほかの比較の試験と共有する（tests/tools/common/render_compare.py）
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "common"))
+from render_compare import DARK_THRESHOLD, render_svg_via_chrome, detect_frame_bbox, blurred_diff_metrics  # noqa: E402
 
-BLUR = 1.5        # AAずれ許容の前処理ぼかし半径(px)
-DIFF_TH = 40      # 「異なる画素」とみなす階調差（ぼかし後）
 FRAC_FLAG = 0.01  # 行の異画素率がこれを超えたら要目視（文字は線が疎なため glyph 検証と同値）
 MEAN_FLAG = 3.0   # 行の平均差がこれを超えたら要目視
 SHIFT_FLAG_MM = 0.4  # ink bbox 端のずれ判定閾値（phase2 構造SVG書き出し検証の実寸精度 ±0.4mm と同値）
 
-DARK_THRESHOLD = 128
-FRAME_RUN_RATIO = 0.5
-
-CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 # 見当枠の CAD 座標（build_justify_chart.lsp と共有する定数）
 FRAME_X0, FRAME_Y0, FRAME_X1, FRAME_Y1 = 10.0, 10.0, 410.0, 287.0
@@ -65,75 +61,6 @@ XRANGE_BY_TYPE = {
     "JP-Center(TT)": (110.0, 220.0),
     "Center-rot30": XRANGE_ROT, "TR-rot30": XRANGE_ROT, "Align-diag": XRANGE_ROT,
 }
-
-
-def render_svg_via_chrome(svg_path: str, dpi: float, out_png: str) -> Image.Image:
-    text = pathlib.Path(svg_path).read_text(encoding="utf-8")
-    m = re.search(r'width="([\d.]+)mm"\s+height="([\d.]+)mm"', text)
-    if not m:
-        raise ValueError(f"SVG の width/height(mm) が読み取れない: {svg_path}")
-    w_mm, h_mm = float(m.group(1)), float(m.group(2))
-    css_px_per_mm = 96.0 / 25.4
-    scale_factor = dpi / 96.0
-    css_w = round(w_mm * css_px_per_mm)
-    css_h = round(h_mm * css_px_per_mm)
-    svg_uri = pathlib.Path(svg_path).resolve().as_uri()
-    subprocess.run([
-        CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
-        "--default-background-color=FFFFFFFF",
-        f"--force-device-scale-factor={scale_factor}",
-        f"--window-size={css_w},{css_h}",
-        f"--screenshot={out_png}",
-        svg_uri,
-    ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return Image.open(out_png).convert("RGB")
-
-
-def max_run_lengths(dark: np.ndarray, axis: int) -> np.ndarray:
-    if axis == 1:
-        h, w = dark.shape
-        run = np.zeros(h, dtype=np.int32)
-        best = np.zeros(h, dtype=np.int32)
-        for j in range(w):
-            col = dark[:, j]
-            run = np.where(col, run + 1, 0)
-            np.maximum(best, run, out=best)
-        return best
-    else:
-        h, w = dark.shape
-        run = np.zeros(w, dtype=np.int32)
-        best = np.zeros(w, dtype=np.int32)
-        for i in range(h):
-            row = dark[i, :]
-            run = np.where(row, run + 1, 0)
-            np.maximum(best, run, out=best)
-        return best
-
-
-def detect_frame_bbox(img: Image.Image) -> tuple[float, float, float, float]:
-    gray = np.asarray(img.convert("L"))
-    dark = gray < DARK_THRESHOLD
-    h, w = dark.shape
-    row_runs = max_run_lengths(dark, axis=1)
-    col_runs = max_run_lengths(dark, axis=0)
-    horiz_rows = np.where(row_runs > FRAME_RUN_RATIO * w)[0]
-    vert_cols = np.where(col_runs > FRAME_RUN_RATIO * h)[0]
-    if len(horiz_rows) == 0 or len(vert_cols) == 0:
-        raise ValueError("見当枠が検出できない")
-    return float(vert_cols.min()), float(horiz_rows.min()), float(vert_cols.max()), float(horiz_rows.max())
-
-
-def metrics(a: Image.Image, b: Image.Image):
-    ab = a.filter(ImageFilter.GaussianBlur(BLUR))
-    bb = b.filter(ImageFilter.GaussianBlur(BLUR))
-    d = ImageChops.difference(ab, bb).convert("L")
-    hist = d.histogram()
-    n = sum(hist)
-    if n == 0:
-        return 0.0, 0.0, d
-    bad = sum(hist[DIFF_TH:])
-    mean = sum(i * v for i, v in enumerate(hist)) / n
-    return bad / n, mean, d
 
 
 def ink_bbox_mm(img: Image.Image, box_px, px_to_mm) -> dict | None:
@@ -206,7 +133,7 @@ def main():
             mat = crop_matrix(build_matrix(dx, dy), search_box[0], search_box[1])
             a_search = img_a_raw.transform(search_size, Image.AFFINE, mat,
                                            resample=Image.BILINEAR, fillcolor=(255, 255, 255))
-            frac, _, _ = metrics(b_search, a_search)
+            frac, _, _ = blurred_diff_metrics(b_search, a_search)
             if best_frac is None or frac < best_frac:
                 best_frac, best_dx, best_dy = frac, dx, dy
     print(f"  サブピクセル微調整: dx={best_dx:.2f} dy={best_dy:.2f} px（探索領域frac_bad={best_frac:.5f}）")
@@ -215,7 +142,7 @@ def main():
                                 resample=Image.BICUBIC, fillcolor=(255, 255, 255))
     img_a.save(out / "a_aligned.png")
 
-    frac_all, mean_all, diff_all = metrics(img_b, img_a)
+    frac_all, mean_all, diff_all = blurred_diff_metrics(img_b, img_a)
     print(f"\n全ページ: frac_bad={frac_all:.5f} mean={mean_all:.3f}")
 
     W, H = img_b.size
@@ -253,7 +180,7 @@ def main():
 
         b_c = img_b.crop(box)
         a_c = img_a.crop(box)
-        frac, mean, d = metrics(b_c, a_c)
+        frac, mean, d = blurred_diff_metrics(b_c, a_c)
 
         bb = ink_bbox_mm(img_b, box, px_to_mm)
         ba = ink_bbox_mm(img_a, box, px_to_mm)

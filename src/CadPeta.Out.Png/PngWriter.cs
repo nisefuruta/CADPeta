@@ -3,7 +3,7 @@
 // 確定事項を実装する:
 // - System.Drawing（GDI+）で IR を直接描画する。フォント描画は EmfWriter の文字写像の
 //   意味論（グリフごとのX位置列 GlyphXsMm・幅係数・回転）を踏襲する
-// - アンチエイリアス有効・白背景。既定 DPI は Chrome ヘッダレス比較検証の実績値（下記定数）
+// - アンチエイリアス有効（スポイトの色番号の画像だけ無効）・白背景。解像度の既定値と範囲は CadPetaSettings が決める
 // - 座標系: Graphics.Transform に「mm→px の一括変換」を1回だけ設定し、以降のあらゆる描画
 //   呼び出し（パス座標・グループ変換行列・フォントサイズ・線幅・破線長）へ IR の mm 値を
 //   そのまま渡す（EMF の LX/LY 一括変換・PDF のページ先頭 cm と同じ考え方）。
@@ -23,26 +23,23 @@ namespace CadPeta.Out.Png;
 
 public sealed class PngWriter : IIrOutput
 {
-    /// <summary>既定DPI。Chromeヘッダレスレンダとの画素比較検証で実績のある値。</summary>
-    public const double DefaultDpi = 150.0;
-
-    // 幅係数を掛けない（等倍とみなす）帯。GDI+ の Font/Pen は幅係数の専用パラメータを
-    // 持たないため ScaleTransform で表現するが、丸め誤差程度の差で余計な変換を足さない
-    const double WidthFactorTol = 0.001;
     // ダッシュ長→ペン幅倍数の変換でゼロ割を避けるための最小ペン幅（mm）。
     // IR 側で最細線は正の固定幅へ正規化済みのため通常は働かない安全網
     const double MinPenWidthMm = 0.001;
 
     readonly double _dpi;
     readonly TextWriter? _log;
+    readonly bool _antialias;
 
-    /// <param name="dpi">出力解像度（既定 <see cref="DefaultDpi"/>）。</param>
+    /// <param name="dpi">出力解像度（範囲は <see cref="CadPetaSettings.ValidatePngDpi"/>）。</param>
     /// <param name="log">情報メッセージの出力先（null で沈黙）。診断ログとは別の進行報告。</param>
-    public PngWriter(double dpi = DefaultDpi, TextWriter? log = null)
+    /// <param name="antialias">false は、図形と文字の縁を背景と混ぜずに描く（画素の色が図形の色そのものになる。スポイトの色番号の画像に使う）。</param>
+    public PngWriter(double dpi, TextWriter? log = null, bool antialias = true)
     {
-        if (dpi <= 0) throw new ArgumentOutOfRangeException(nameof(dpi), dpi, "DPIは正の値である必要がある");
+        if (CadPetaSettings.ValidatePngDpi(dpi) is { } error) throw new ArgumentOutOfRangeException(nameof(dpi), dpi, error);
         _dpi = dpi;
         _log = log;
+        _antialias = antialias;
     }
 
     public void Write(IrDocument ir, string outputPath, IrDiagnostics diag)
@@ -51,20 +48,25 @@ public sealed class PngWriter : IIrOutput
         if (Path.GetDirectoryName(path) is { Length: > 0 } dir)
             Directory.CreateDirectory(dir);
 
-        double pxPerMm = _dpi / Units.MmPerInch;
-        int widthPx = Math.Max(1, (int)Math.Round(ir.WidthMm * pxPerMm));
-        int heightPx = Math.Max(1, (int)Math.Round(ir.HeightMm * pxPerMm));
+        // 画像の大きさが上限を超えるなら解像度を下げる（確保できない大きさで失敗させない）
+        double dpi = PngSize.DpiFor(ir.WidthMm, ir.HeightMm, _dpi);
+        if (dpi != _dpi)
+            diag.Add(PngSize.DpiReducedDiag, $"{_dpi:F0}dpi → {dpi:F0}dpi ({ir.WidthMm:F0}x{ir.HeightMm:F0}mm)", dpi);
+        double pxPerMm = dpi / Units.MmPerInch;
+        int widthPx = PngSize.Pixels(ir.WidthMm, dpi);
+        int heightPx = PngSize.Pixels(ir.HeightMm, dpi);
 
         var clipDefs = ir.ClipDefs.ToDictionary(c => c.Id);
         var fontCache = new Dictionary<string, FontFamily>();
         int nPaths = 0, nTexts = 0, nTextsSkipped = 0, nImages = 0, nFontSubstituted = 0;
 
         using var bmp = new Bitmap(widthPx, heightPx, PixelFormat.Format32bppArgb);
-        bmp.SetResolution((float)_dpi, (float)_dpi);
+        bmp.SetResolution((float)dpi, (float)dpi);
         using (var g = Graphics.FromImage(bmp))
         {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+            g.SmoothingMode = _antialias ? SmoothingMode.AntiAlias : SmoothingMode.None;
+            g.TextRenderingHint = _antialias ? System.Drawing.Text.TextRenderingHint.AntiAlias
+                                             : System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             g.CompositingQuality = CompositingQuality.HighQuality;
             g.Clear(Color.White);
@@ -105,16 +107,9 @@ public sealed class PngWriter : IIrOutput
                 if (saved is { } s) g.Restore(s);
             }
 
-            static Color ToColor(IrRgb c, double opacity)
-            {
-                // 255 = 8bit色成分の最大値（0..1 の各成分・不透明度を 8bit へ量子化）
-                const int Max8Bit = 255;
-                int a = Math.Min(Max8Bit, Math.Max(0, (int)Math.Round(opacity * Max8Bit)));
-                int r = Math.Min(Max8Bit, Math.Max(0, (int)Math.Round(c.R * Max8Bit)));
-                int gg = Math.Min(Max8Bit, Math.Max(0, (int)Math.Round(c.G * Max8Bit)));
-                int b = Math.Min(Max8Bit, Math.Max(0, (int)Math.Round(c.B * Max8Bit)));
-                return Color.FromArgb(a, r, gg, b);
-            }
+            // 各成分と不透明度の 8bit への量子化は IR の規則（IrRgb.ToByte）を使い、SVG・EMF と同じ色にする
+            static Color ToColor(IrRgb c, double opacity) =>
+                Color.FromArgb(IrRgb.ToByte(opacity), IrRgb.ToByte(c.R), IrRgb.ToByte(c.G), IrRgb.ToByte(c.B));
 
             void WriteNode(IrNode node)
             {
@@ -179,7 +174,7 @@ public sealed class PngWriter : IIrOutput
                         if (devicePx < MinVisibleDevicePx)
                         {
                             diag.Add("PNG出力: 文字サイズが微小のため描画を省略",
-                                     $"'{t.Value}' size={t.FontSizeMm:F6}mm ({devicePx:F3}px@{_dpi:F0}dpi)");
+                                     $"'{t.Value}' size={t.FontSizeMm:F6}mm ({devicePx:F3}px@{dpi:F0}dpi)");
                             nTextsSkipped++;
                             break;
                         }
@@ -199,7 +194,7 @@ public sealed class PngWriter : IIrOutput
                             g.TranslateTransform((float)t.XMm, (float)t.YMm);
                             if (t.RotationDeg != 0.0)
                                 g.RotateTransform((float)t.RotationDeg); // IRは時計回り正、GDI+も同じ向き（Y下向き空間）
-                            if (Math.Abs(t.WidthFactor - 1.0) > WidthFactorTol)
+                            if (!t.HasStandardWidth)
                                 g.ScaleTransform((float)t.WidthFactor, 1f);
 
                             int n = t.Value.Length;
@@ -247,7 +242,7 @@ public sealed class PngWriter : IIrOutput
         bmp.Save(path, ImageFormat.Png);
 
         _log?.WriteLine($"PNG: paths={nPaths} texts={nTexts} 省略={nTextsSkipped} images={nImages} " +
-                        $"font代替={nFontSubstituted} {widthPx}x{heightPx}px @{_dpi:F0}dpi " +
+                        $"font代替={nFontSubstituted} {widthPx}x{heightPx}px @{dpi:F0}dpi " +
                         $"({new FileInfo(path).Length:N0} bytes)");
     }
 

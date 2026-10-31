@@ -61,7 +61,7 @@ public static class DiagnosticsReport
             diagOut.Add(new DiagJsonEntry { Type = type, Count = count, Targets = new List<string>(targets) });
         }
         if (diagnostics.Entries.Count == 0) log.WriteLine(Msg.Text("diag.none"));
-        File.WriteAllText(svgPath + ".diag.json", PluginJson.Serialize(diagOut, indented: true), TextEncodings.Utf8NoBom);
+        File.WriteAllText(svgPath + ".diag.json", JsonText.Serialize(diagOut, indented: true), TextEncodings.Utf8NoBom);
         log.WriteLine(Msg.Format("diag.json_written", svgPath));
     }
 

@@ -27,9 +27,9 @@
 
   <ItemGroup>
     <!-- ExcludeAssets=runtime: コンパイル専用参照（実行時はホスト AutoCAD が同名アセンブリを提供）。
-         25.0.0 = AutoCAD 2025/2026 系の最古版でコンパイルし両版で動かす -->
-    <PackageReference Include="AutoCAD.NET.Core" Version="25.0.0" ExcludeAssets="runtime" />
-    <PackageReference Include="AutoCAD.NET.Model" Version="25.0.0" ExcludeAssets="runtime" />
+         25.1.0 = AutoCAD 2025/2026 系の、依存の書き方が正しい最新の版（src/Directory.Build.props と同じ方針） -->
+    <PackageReference Include="AutoCAD.NET.Core" Version="25.1.0" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Model" Version="25.1.0" ExcludeAssets="runtime" />
   </ItemGroup>
 
 </Project>

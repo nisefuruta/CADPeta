@@ -6,24 +6,28 @@ using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Runtime;
 using CadIrAcquirer = CadPeta.Acquire.Acad.CadIrAcquirer;
+using CadTransaction = CadPeta.Acquire.Acad.CadTransaction;
 namespace CadPeta.Plugin.Acad;
 #elif CADPETA_ARES
 using Teigha.ApplicationServices;
 using Teigha.DatabaseServices;
 using Teigha.Runtime;
 using CadIrAcquirer = CadPeta.Acquire.Ares.CadIrAcquirer;
+using CadTransaction = CadPeta.Acquire.Ares.CadTransaction;
 namespace CadPeta.Plugin.Ares;
 #elif CADPETA_IJCAD
 using Itjp.Ijcad.ApplicationServices;
 using Itjp.Ijcad.DatabaseServices;
 using Itjp.Ijcad.Runtime;
 using CadIrAcquirer = CadPeta.Acquire.Ijcad.CadIrAcquirer;
+using CadTransaction = CadPeta.Acquire.Ijcad.CadTransaction;
 namespace CadPeta.Plugin.Ijcad;
 #elif CADPETA_BRICSCAD
 using Bricscad.ApplicationServices;
 using Teigha.DatabaseServices;
 using Teigha.Runtime;
 using CadIrAcquirer = CadPeta.Acquire.Bricscad.CadIrAcquirer;
+using CadTransaction = CadPeta.Acquire.Bricscad.CadTransaction;
 namespace CadPeta.Plugin.Bricscad;
 #else
 #error CAD product symbol is required
@@ -71,7 +75,8 @@ public static partial class PetaCommand
                 var ids = (ObjectId[])handle;
                 var sw = Stopwatch.StartNew();
                 IrDocument ir;
-                using (var tr = db.TransactionManager.StartTransaction())
+                int opened;
+                using (var tr = new CadTransaction(db))
                 {
                     var spaceIds = FilterCurrentSpaceIds(tr, db, ids, diag, log);
                     if (spaceIds.Count == 0)
@@ -84,9 +89,10 @@ public static partial class PetaCommand
                     ir = new CadIrAcquirer(log, verbose).Acquire(tr, db, spaceIds,
                                                  choice.ScaleDenominator, choice.MarginMm, diag,
                                                  choice.ShxSubstitute, choice.GradientDpi);
+                    opened = tr.OpenedCount;
                     tr.Commit(); // 読み取り専用トランザクションの正常終了
                 }
-                verbose.WriteLine(Msg.Format("data.db_acquired", ids.Length, sw.ElapsedMilliseconds));
+                verbose.WriteLine(Msg.Format("data.db_acquired", ids.Length, sw.ElapsedMilliseconds, opened));
                 return ir;
             },
         };
@@ -99,7 +105,7 @@ public static partial class PetaCommand
     /// 除外した各件は診断へ記録し、1件以上あれば行動可能なログを1行出す。
     /// 全件除外時は呼び出し側が空の IrDocument を返す。
     /// </summary>
-    static List<ObjectId> FilterCurrentSpaceIds(Transaction tr, Database db, ObjectId[] ids,
+    static List<ObjectId> FilterCurrentSpaceIds(CadTransaction tr, Database db, ObjectId[] ids,
         IrDiagnostics diag, TextWriter log)
     {
         var currentSpaceId = db.CurrentSpaceId;

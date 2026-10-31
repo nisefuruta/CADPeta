@@ -10,14 +10,7 @@ namespace CadPeta.Tests;
 
 public sealed class ArtifactScopeTests
 {
-    static readonly DateTime Now = new(2026, 7, 12, 14, 35, 2);
-
-    [Fact]
-    public void BuildBaseName_SanitizesAndUsesInvariantTimestamp()
-    {
-        string actual = ArtifactScope.BuildBaseName("drawing", "Layout/1", Now);
-        Assert.Equal("drawing_Layout_1_20260712_143502", actual);
-    }
+    const string Name = "d_l_20260712_143502";
 
     [Fact]
     public void ReserveInDir_UsesSuffixAndReleasesLocks()
@@ -25,10 +18,10 @@ public sealed class ArtifactScopeTests
         string dir = NewTestDir();
         try
         {
-            using var first = ArtifactScope.ReserveInDir(dir, "d", "l", Now);
-            using var second = ArtifactScope.ReserveInDir(dir, "d", "l", Now);
+            using var first = ArtifactScope.ReserveInDir(dir, Name);
+            using var second = ArtifactScope.ReserveInDir(dir, Name);
             Assert.Equal("d_l_20260712_143502", first.BaseName);
-            Assert.Equal("d_l_20260712_143502_2", second.BaseName);
+            Assert.Equal("d_l_20260712_143502(1)", second.BaseName);
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -40,7 +33,7 @@ public sealed class ArtifactScopeTests
         try
         {
             ArtifactScope[] scopes = await Task.WhenAll(Enumerable.Range(0, 24).Select(_ =>
-                Task.Run(() => ArtifactScope.ReserveInDir(dir, "d", "l", Now))));
+                Task.Run(() => ArtifactScope.ReserveInDir(dir, Name))));
             try { Assert.Equal(scopes.Length, scopes.Select(x => x.BaseName).Distinct().Count()); }
             finally { foreach (var scope in scopes) scope.Dispose(); }
         }
@@ -53,7 +46,7 @@ public sealed class ArtifactScopeTests
         string dir = NewTestDir();
         try
         {
-            using (var scope = ArtifactScope.ReserveInDir(dir, "d", "l", Now))
+            using (var scope = ArtifactScope.ReserveInDir(dir, Name))
             {
                 // 予約ロックは一時領域に置く。利用者の出力フォルダには .lock を残さない
                 Assert.Empty(Directory.GetFiles(dir, "*.lock"));
@@ -71,13 +64,13 @@ public sealed class ArtifactScopeTests
         try
         {
             string firstName;
-            using (var first = ArtifactScope.ReserveInDir(dir, "d", "l", Now))
+            using (var first = ArtifactScope.ReserveInDir(dir, Name))
             {
                 firstName = first.BaseName;
                 File.WriteAllText(Path.Combine(dir, first.BaseName + ".svg"), "既存成果物");
             }
-            using var second = ArtifactScope.ReserveInDir(dir, "d", "l", Now);
-            Assert.Equal(firstName + "_2", second.BaseName);
+            using var second = ArtifactScope.ReserveInDir(dir, Name);
+            Assert.Equal(firstName + "(1)", second.BaseName);
             Assert.Equal("既存成果物", File.ReadAllText(Path.Combine(dir, firstName + ".svg")));
         }
         finally { Directory.Delete(dir, true); }
@@ -95,46 +88,35 @@ public sealed class ArtifactScopeTests
     [Fact]
     public void CreateTemp_DisposeDeletesDirectory()
     {
-        string root = NewTestDir();
-        try
+        string dir;
+        using (var scope = ArtifactScope.CreateTemp(Name))
         {
-            string dir;
-            using (var scope = ArtifactScope.CreateTemp("d", "l", Now, tempRoot: root))
-            {
-                dir = scope.Dir;
-                File.WriteAllText(Path.Combine(dir, "x.emf"), "x");
-            }
-            Assert.False(Directory.Exists(dir));
+            dir = scope.Dir;
+            File.WriteAllText(Path.Combine(dir, "x.emf"), "x");
         }
-        finally { Directory.Delete(root, true); }
+        Assert.False(Directory.Exists(dir));
     }
 
     [Fact]
     public void PreserveOnDispose_LeavesDirectory()
     {
-        string root = NewTestDir();
-        try
+        string dir;
+        using (var scope = ArtifactScope.CreateTemp(Name))
         {
-            string dir;
-            using (var scope = ArtifactScope.CreateTemp("d", "l", Now, tempRoot: root))
-            {
-                dir = scope.Dir;
-                scope.PreserveOnDispose();
-            }
-            Assert.True(Directory.Exists(dir));
+            dir = scope.Dir;
+            scope.PreserveOnDispose();
         }
-        finally { Directory.Delete(root, true); }
+        try { Assert.True(Directory.Exists(dir)); }
+        finally { Directory.Delete(dir, true); }
     }
-
     [Fact]
     public void Dispose_DeleteFailureWarnsWithoutThrowing()
     {
-        string root = NewTestDir();
         string? dir = null;
         var warnings = new List<string>();
         try
         {
-            var scope = ArtifactScope.CreateTemp("d", "l", Now, warnings.Add, root);
+            var scope = ArtifactScope.CreateTemp(Name, warnings.Add);
             dir = scope.Dir;
             string path = Path.Combine(dir, "locked.emf");
             File.WriteAllText(path, "x");
@@ -146,18 +128,16 @@ public sealed class ArtifactScopeTests
         finally
         {
             if (dir != null && Directory.Exists(dir)) Directory.Delete(dir, true);
-            if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
 
     [Fact]
     public void Dispose_WarningCallbackFailureDoesNotEscape()
     {
-        string root = NewTestDir();
         string? dir = null;
         try
         {
-            var scope = ArtifactScope.CreateTemp("d", "l", Now, _ => throw new Exception("コールバック失敗"), root);
+            var scope = ArtifactScope.CreateTemp(Name, _ => throw new Exception("コールバック失敗"));
             dir = scope.Dir;
             string path = Path.Combine(dir, "locked.emf");
             File.WriteAllText(path, "x");
@@ -167,7 +147,6 @@ public sealed class ArtifactScopeTests
         finally
         {
             if (dir != null && Directory.Exists(dir)) Directory.Delete(dir, true);
-            if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
 

@@ -17,7 +17,7 @@
     SchemaVersion="1.0"
     ProductType="Application"
     Name="CADPeta"
-    AppVersion="1.0.1"
+    AppVersion="1.1.0"
     Description="CAD図面をOfficeへベクタ形式で貼り付ける（PETA / PETADIAG）"
     Author="WATANABE Kazufumi"
     ProductCode="{F79DD514-154F-4F75-AB3A-1EF016F21D67}">
@@ -34,6 +34,8 @@
       <Commands GroupName="CADPeta">
         <Command Local="PETA" Global="PETA" />
         <Command Local="PETADIAG" Global="PETADIAG" />
+        <Command Local="PETAOPT" Global="PETAOPT" />
+        <Command Local="-PETAOPT" Global="-PETAOPT" />
       </Commands>
     </ComponentEntry>
   </Components>
@@ -48,6 +50,8 @@
       <Commands GroupName="CADPeta">
         <Command Local="PETA" Global="PETA" />
         <Command Local="PETADIAG" Global="PETADIAG" />
+        <Command Local="PETAOPT" Global="PETAOPT" />
+        <Command Local="-PETAOPT" Global="-PETAOPT" />
       </Commands>
     </ComponentEntry>
   </Components>
@@ -62,6 +66,8 @@
       <Commands GroupName="CADPeta">
         <Command Local="PETA" Global="PETA" />
         <Command Local="PETADIAG" Global="PETADIAG" />
+        <Command Local="PETAOPT" Global="PETAOPT" />
+        <Command Local="-PETAOPT" Global="-PETAOPT" />
       </Commands>
     </ComponentEntry>
   </Components>

@@ -4,8 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Drawing;
+using CadPeta.Geometry;
 using CadPeta.Ir;
 using CadPeta.Out.Png;
+using CadPeta.UseCases;
 using Xunit;
 
 namespace CadPeta.Tests;
@@ -44,10 +46,47 @@ public class PngWriterTests : IDisposable
         Assert.Equal(150, img.VerticalResolution, 1);
     }
 
-    [Fact]
-    public void 既定DPIは150である()
+    // 解像度の範囲は設定・CLI・GUI と同じ CadPetaSettings の範囲。範囲の外は画像を作らずに止める
+    [Theory]
+    [InlineData(RasterLimits.MinDpi - 1)]
+    [InlineData(CadPetaSettings.MaxPngDpi + 1)]
+    public void 範囲の外の解像度は受け付けない(double dpi)
     {
-        Assert.Equal(150.0, PngWriter.DefaultDpi);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PngWriter(dpi));
+    }
+
+    // 長い用紙を高い解像度にすると、画像の 1 辺が上限を超える。解像度を下げて書き、下げたことを診断に残す
+    [Fact]
+    public void 画像の1辺が上限を超えるなら解像度を下げて書き診断に残す()
+    {
+        var ir = new IrDocument { WidthMm = 2000, HeightMm = 10 };
+        string path = TempPath();
+        var diag = new IrDiagnostics();
+
+        new PngWriter(CadPetaSettings.MaxPngDpi).Write(ir, path, diag);
+
+        using var img = Image.FromFile(path);
+        Assert.True(img.Width <= RasterLimits.MaxDimensionPx);
+        var entry = Assert.Single(diag.Entries, e => e.Type == PngSize.DpiReducedDiag);
+        Assert.Equal(entry.Value!.Value, img.HorizontalResolution, 0);
+    }
+
+    // 色の 8 ビットへの丸めは IR（IrRgb.ToByte）と同じ: 範囲の外の成分は端（0 か 255）へ寄せる。SVG・EMF と同じ色になる
+    [Fact]
+    public void 範囲の外の色の成分は端へ寄せて塗る()
+    {
+        var ir = new IrDocument { WidthMm = 10, HeightMm = 10 };
+        ir.Nodes.Add(new IrPath
+        {
+            Segments = new List<IrSegment> { new IrMove(0, 0), new IrLine(10, 0), new IrLine(10, 10), new IrLine(0, 10), new IrClose() },
+            Fill = new IrRgb(1e10, -1e10, 0),
+        });
+        string path = TempPath();
+        new PngWriter(96).Write(ir, path, new IrDiagnostics());
+
+        using var bmp = new Bitmap(path);
+        var c = bmp.GetPixel(bmp.Width / 2, bmp.Height / 2);
+        Assert.Equal((255, 0, 0), (c.R, c.G, c.B));
     }
 
     [Fact]

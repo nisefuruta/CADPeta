@@ -14,10 +14,11 @@ import json
 import pathlib
 import sys
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image
+# 描画・見当枠・ぼかした差の指標は、ほかの比較の試験と共有する（tests/tools/common/render_compare.py）
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "common"))
+from render_compare import blurred_diff_metrics  # noqa: E402
 
-BLUR = 1.5          # AAずれ許容のための前処理ぼかし半径(px)
-DIFF_TH = 40        # 「異なる画素」とみなす階調差（ぼかし後）
 FRAC_FLAG = 0.002   # 異画素率がこれを超えたら要目視
 MEAN_FLAG = 2.0     # 平均差がこれを超えたら要目視
 
@@ -37,23 +38,12 @@ W, H = ref.size
 print(f"render: {W}x{H}px, タイル {nx}x{ny}")
 
 
-def metrics(a, b):
-    ab = a.filter(ImageFilter.GaussianBlur(BLUR))
-    bb = b.filter(ImageFilter.GaussianBlur(BLUR))
-    d = ImageChops.difference(ab, bb).convert("L")
-    hist = d.histogram()
-    n = sum(hist)
-    bad = sum(hist[DIFF_TH:])
-    mean = sum(i * v for i, v in enumerate(hist)) / n
-    return bad / n, mean, d
-
-
 results = []
 for ty in range(ny):
     for tx in range(nx):
         box = (W * tx // nx, H * ty // ny, W * (tx + 1) // nx, H * (ty + 1) // ny)
         ca, cb = ref.crop(box), svg.crop(box)
-        frac, mean, d = metrics(ca, cb)
+        frac, mean, d = blurred_diff_metrics(ca, cb)
         flag = frac > FRAC_FLAG or mean > MEAN_FLAG
         results.append({"tx": tx, "ty": ty, "box": box,
                         "frac_bad": round(frac, 5), "mean": round(mean, 3),
@@ -68,7 +58,7 @@ for ty in range(ny):
             strip.save(out / f"tile_x{tx}y{ty}.png")
 
 # 全ページの粗い指標
-frac_all, mean_all, _ = metrics(ref, svg)
+frac_all, mean_all, _ = blurred_diff_metrics(ref, svg)
 
 flagged = [x for x in results if x["flag"]]
 print(f"\n全ページ: frac_bad={frac_all:.5f} mean={mean_all:.3f}")

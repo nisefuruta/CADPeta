@@ -16,10 +16,12 @@ tests/tools/data-export/compare_data_print.ps1・linetype_symbol_check/compare_d
 import argparse
 import re
 import subprocess
-import sys
 import pathlib
+import sys
 
-CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+# Chrome の場所は、ほかの比較の試験と共有する（tests/tools/common/chrome_path.py）
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "common"))
+from chrome_path import CHROME  # noqa: E402
 
 
 def read_viewbox(svg_path):

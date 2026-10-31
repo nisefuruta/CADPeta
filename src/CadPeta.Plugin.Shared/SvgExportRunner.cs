@@ -30,8 +30,8 @@ public static class SvgExportRunner
         if (outputDir == null) { log.WriteLine(Msg.Text("data.aborted")); return; }
         Action<string> warn = message => log.WriteLine(message);
         using var scope = ArtifactScope.ReserveInDir(outputDir,
-            OutputLocation.Stem(env.Editor), env.Editor.CurrentLayoutName + "_data", DateTime.Now, warn);
-        string svgPath = Path.Combine(scope.Dir, scope.BaseName + ".svg");
+            FileNameTemplate.DefaultName(env.Editor.DrawingStem, env.Editor.CurrentLayoutName + "_data", DateTime.Now), warn);
+        string svgPath = scope.PathOf(ArtifactKind.Svg);
         var diag = new IrDiagnostics();
         var sw = Stopwatch.StartNew();
             var ir = env.AcquireSelection(choice.SelectionHandle!, choice, diag);

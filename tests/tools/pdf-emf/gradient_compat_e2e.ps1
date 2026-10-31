@@ -24,6 +24,8 @@ Write-ChangePlan $changePlan
 Exit-UnlessConfirmed $PSCmdlet.ShouldProcess($changePlan.Target, $changePlan.Action)
 
 $GuiStartupTimeoutSeconds = 120
+# ARES 2027 が ROT に登録しないとき、2 つ目を起動して登録を促すまでの秒数（Start-CadVisibleAndConnect）
+$SecondaryLaunchDelaySeconds = 30
 $CommandCompletionTimeoutSeconds = 300
 $ComRetryWindowMilliseconds = 60000
 $ComRetryDelayMilliseconds = 100
@@ -37,17 +39,10 @@ $RangePromptKeywordOrderPattern = "(?s)<u>A</u>.*<u>O</u>.*<u>M</u>.*<u>F</u>.*<
 $ExpectedWindowStation = "WinSta0"
 $ExpectedDesktop = "Default"
 
+. "$PSScriptRoot\..\common\compat_cad_com.ps1"
+# 製品の固定の情報（実行ファイル、ProgID、DLL の場所など）は compat_cad_com.ps1 の $CompatProducts にあり、Get-CompatProduct で合わせる
 $products = @{
-  # ARES の net48 世代（2020/2023/2024）は SDK が年式別のため、プラグインも年式別の出力
-  # （既定=bin、既定以外=bin\ares<年>）を読み込む。ProgID の版番号は COM API 版
-  # （2020=4.4／2023=4.6／2024=23.1／2027=26.8。本機 HKCR 実測）
   Ares2020 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2020\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.4.4"
-    ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\ares2020\Release\net48\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
     # ARES 2020 の PDF の印刷は、9 形状のグラデーションを 9 枚の画像で出す（2026-10-25 実測。画像 9 件・パス 1 件）。
     # 前の期待（パス 3000 件以上）は 2024 の実測を写したもので、2020 では確かめていなかった
@@ -56,16 +51,8 @@ $products = @{
     # 送り、そのためファイル名プロンプトをコマンド行へ出す FILEDIA=0（保存→0→復元）にする
     RawTextLoad = $true
     SetFileDia = $true
-    DiscoverProgId = $true
-    ComActivate = $false
   }
   Ares2023 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2023\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.4.6"
-    ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\ares2023\Release\net48\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
     # ARES 2023 の PDF の印刷は、9 形状のグラデーションを 9 枚の画像で出す（2026-10-25 実測。画像 9 件・パス 1 件）。
     # 前の期待（パス 3000 件以上）は 2024 の実測を写したもので、2023 では確かめていなかった
@@ -73,75 +60,43 @@ $products = @{
     # 2020 と同じく (command) 引数渡しが止まるため生テキスト＋CR＋FILEDIA=0 で読み込む
     RawTextLoad = $true
     SetFileDia = $true
-    DiscoverProgId = $true
-    ComActivate = $false
   }
   Ares2024 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2024\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.23.1"
-    ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\Release\net48\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
     GradientRepresentation = "VectorPaths"
     MinGradientPathCount = 3000
     SetFileDia = $false
-    DiscoverProgId = $true
-    ComActivate = $false
   }
   Ares2027 = @{
-    Exe = "C:\Program Files\Graebert GmbH\ARES Standard 2027\BIN\ARESS.exe"
-    StartArguments = @()
-    ProgId = "PCAD_AC_X.AcadApplication.26.8"
-    ProcessName = "ARESS"
-    Plugin = "src\CadPeta.Plugin.Ares\bin\Release\net8.0-windows\CadPeta.Plugin.Ares.dll"
-    LoadKind = "LoadDotNetApplication"
     CommandStartKind = "AresUi"
     # ARES 2027（27.1.1.2150、ODA PDF Export 26.8）の PDF の印刷は、9 形状のグラデーションを 9 枚の画像で出す
     # （2026-10-25 実測。2026-07-15 には、作り直す前の ARES 2027 でパス 3050 件だった。2026-07-15 のコミット 3d894b7 の
     # プラグインでも今の ARES 2027 では画像になり、ARES の側の変化と確かめた）。PETA は印刷と同じ仕上がりなので、画像 9 件を期待する
     GradientRepresentation = "Images"
     SetFileDia = $false
-    DiscoverProgId = $true
-    ComActivate = $false
   }
   Ijcad2026 = @{
-    Exe = "C:\Program Files\ITJP\IJCAD 2026 PRO\gcad.exe"
-    StartArguments = @()
-    ProgId = "Gcad.Application"
-    ProcessName = "gcad"
-    Plugin = "src\CadPeta.Plugin.Ijcad\bin\Release\net8.0-windows\CadPeta.Plugin.Ijcad.dll"
-    LoadKind = "DirectNetload"
     CommandStartKind = "SingleBatch"
     GradientRepresentation = "VectorPaths"
     MinGradientPathCount = 200
     SetFileDia = $true
-    ComActivate = $false
   }
   BricscadV26 = @{
-    Exe = "C:\Program Files\Bricsys\BricsCAD V26 ja_JP\bricscad.exe"
-    StartArguments = @("/Automation")
-    ProgId = "BricscadApp.AcadApplication.26.0"
-    ProcessName = "bricscad"
-    Plugin = "src\CadPeta.Plugin.Bricscad\bin\Release\net8.0-windows\CadPeta.Plugin.Bricscad.dll"
-    LoadKind = "DirectNetload"
     CommandStartKind = "SingleBatch"
     GradientRepresentation = "VectorPaths"
     MinGradientPathCount = 200
     SetFileDia = $true
-    ComActivate = $false
   }
 }
 
-$config = $products[$Product]
+$config = Get-CompatProduct $Product $products
 # DataExport（PETADATADIAG）は範囲プロンプトを持たず選択から始まり、成果物は SVG＋diag.json のみ。
 $commandName = if ($Mode -eq "DataExport") { "PETADATADIAG" } else { "PETADIAG" }
 $promptInputs = if ($Mode -eq "DataExport") { @("_ALL", "", "") } else { @("O", "_ALL", "", "") }
 $requiresEmf = ($Mode -ne "DataExport")
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 $exe = [IO.Path]::GetFullPath($config.Exe)
-$plugin = [IO.Path]::GetFullPath((Join-Path $repo $config.Plugin))
+$plugin = $config.Plugin
 . "$PSScriptRoot\..\common\test_helpers.ps1"
 # 配布物と同じビルド（tests/tools/build_e2e.ps1）の DLL であることを、CAD を起動する前に確かめる
 Assert-E2ePluginBuild $plugin
@@ -156,7 +111,6 @@ if (Test-Path -LiteralPath $evidenceLog) { Remove-Item -LiteralPath $evidenceLog
 $dwg = Join-Path $OutRoot "gradient_e2e.dwg"
 Copy-Item -LiteralPath $source -Destination $dwg -Force
 
-. "$PSScriptRoot\..\common\compat_cad_com.ps1"
 
 if (-not ("CadPeta.CompatNativeWindow" -as [type])) {
   Add-Type -TypeDefinition @'
@@ -299,8 +253,10 @@ $document = $null
 $acadState = $null
 $startedProcess = $null
 $connectedProgId = $null
-$comActivatedPid = 0
+$secondaryProcess = $null
+$progIds = $null
 $ownedPid = 0
+$ownedProcess = $null
 $messageFilterRegistered = $false
 $oldFileDia = $null
 $completed = $false
@@ -315,10 +271,7 @@ try {
   if ($windowStation -ne $ExpectedWindowStation -or $desktop -ne $ExpectedDesktop) {
     throw "対話デスクトップが必要です。期待=$ExpectedWindowStation\$ExpectedDesktop、実際=$windowStation\$desktop"
   }
-  if ($PSVersionTable.PSEdition -ne "Desktop") {
-    throw "Marshal.GetActiveObject のため Windows PowerShell 5.1 が必要です。実際の PSEdition=$($PSVersionTable.PSEdition)、Version=$($PSVersionTable.PSVersion)"
-  }
-  if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne [Threading.ApartmentState]::STA) { throw "STA スレッドが必要です" }
+  Assert-CompatLaunchReady $Product
   [CadPeta.CompatMessageFilter]::RetryWindowMilliseconds = $ComRetryWindowMilliseconds
   [CadPeta.CompatMessageFilter]::RetryDelayMilliseconds = $ComRetryDelayMilliseconds
   [CadPeta.CompatMessageFilter]::Register()
@@ -330,42 +283,12 @@ try {
   }
   # インストール済みの CADPeta が自動で読み込まれると、ビルドした DLL を試験できない。試験の間だけ登録を外す
   Suspend-CompatProductAutoload $Product ([ref]$autoloadState)
+  # CADPeta の設定（図面のフォルダに PDF・SVG・EMF）は、起動する CAD にだけ渡す。利用者の %APPDATA%\CADPeta を使わない
+  $dataEnvironment = @{ CADPETA_DATA_DIR = (Write-E2eSettings (Join-Path $OutRoot 'cadpeta-data')) }
   if ($config.DiscoverProgId) {
-    $progIds = @(Get-RegisteredProgIdsForExe $exe)
-    if ($progIds.Count -eq 0) { throw "'$exe' を指す登録済み ARES ProgID がありません" }
-    Write-Evidence "PROGID candidates=$($progIds -join ',') source=HKLM"
-    $startedProcess = Start-Process -FilePath $exe -WorkingDirectory ([IO.Path]::GetDirectoryName($exe)) -PassThru
-    Write-Evidence "PROCESS visible-start PID=$($startedProcess.Id)"
-    $deadline = (Get-Date).AddSeconds($GuiStartupTimeoutSeconds)
-    while ((Get-Date) -lt $deadline -and $null -eq $candidateApplication) {
-      foreach ($progId in $progIds) {
-        try {
-          $candidateApplication = [Runtime.InteropServices.Marshal]::GetActiveObject($progId)
-          $connectedProgId = $progId
-          break
-        } catch {}
-      }
-      if ($null -eq $candidateApplication) { Start-Sleep -Milliseconds $PollMilliseconds }
-    }
-    if ($null -eq $candidateApplication) {
-      throw "ARES が $GuiStartupTimeoutSeconds 秒以内に ROT 登録されませんでした。候補=$($progIds -join ',')。表示中のライセンスまたはバージョンダイアログを確認してください"
-    }
-  } elseif ($config.ComActivate) {
-    # ARES は冷起動した exe を ROT へ登録しない場合がある。LocalServer32 の正規
-    # ProgID を COM activation し、起動直後の RPC_E_CALL_REJECTED は下の再試行で待つ。
-    $candidateApplication = New-Object -ComObject $config.ProgId
-    Write-Evidence "COM activation requested ProgId=$($config.ProgId)"
-    $pidDeadline = (Get-Date).AddSeconds($GuiStartupTimeoutSeconds)
-    while ((Get-Date) -lt $pidDeadline -and $comActivatedPid -eq 0) {
-      $activated = @(Get-Process -Name $config.ProcessName -ErrorAction SilentlyContinue)
-      if ($activated.Count -eq 1) { $comActivatedPid = $activated[0].Id }
-      elseif ($activated.Count -gt 1) { throw "COM 起動で複数の $($config.ProcessName) プロセスが開始されました: PID=$($activated.Id -join ',')" }
-      else { Start-Sleep -Milliseconds $PollMilliseconds }
-    }
-    if ($comActivatedPid -eq 0) { throw "COM 起動で $GuiStartupTimeoutSeconds 秒以内に $($config.ProcessName) が開始されませんでした" }
-    Write-Evidence "COM activation process PID=$comActivatedPid"
+    Start-CadVisibleAndConnect $exe $SecondaryLaunchDelaySeconds $GuiStartupTimeoutSeconds ([ref]$startedProcess) ([ref]$candidateApplication) ([ref]$connectedProgId) ([ref]$secondaryProcess) ([ref]$progIds) $dataEnvironment -failureHint "。表示中のライセンスまたはバージョンダイアログを確認してください"
   } else {
-    $startedProcess = Start-CadProcessHidden $exe $config.StartArguments
+    $startedProcess = Start-CadProcessHidden $exe $config.StartArguments $dataEnvironment
     Write-Evidence "PROCESS started PID=$($startedProcess.Id)"
     $candidateApplication = Wait-ActiveObject $config.ProgId $GuiStartupTimeoutSeconds
     if ($null -eq $candidateApplication) {
@@ -379,10 +302,12 @@ try {
   [uint32]$pidValue = 0
   [void][CadPeta.CompatNativeWindow]::GetWindowThreadProcessId([IntPtr]$hwnd, [ref]$pidValue)
   $candidatePid = [int]$pidValue
-  if ($null -ne $startedProcess -and $candidatePid -ne $startedProcess.Id) {
-    throw "今回開始していないプロセスへ COM 接続しました。開始 PID=$($startedProcess.Id)、接続 PID=$candidatePid"
+  $ownedStartIds = @($startedProcess.Id)
+  if ($null -ne $secondaryProcess) { $ownedStartIds += $secondaryProcess.Id }
+  if ($null -ne $startedProcess -and $candidatePid -notin $ownedStartIds) {
+    throw "今回開始していないプロセスへ COM 接続しました。開始 PID=$($ownedStartIds -join ',')、接続 PID=$candidatePid"
   }
-  Assert-ConnectedExecutable $candidatePid $exe
+  $ownedProcess = Assert-ConnectedExecutable $candidatePid $exe
   $application = $candidateApplication
   $candidateApplication = $null
   $ownedPid = $candidatePid
@@ -496,11 +421,11 @@ try {
   }
   if ($null -ne $application) { Close-CadApplication $application $ownedPid ([ref]$cleanupFailures) }
   Release-CadComResources $messageFilterRegistered @($acadState, $document, $application, $candidateApplication)
-  Stop-OwnedCadProcess $ownedPid $ProcessExitTimeoutSeconds ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop
-  if ($null -ne $startedProcess) {
-    Stop-LeftoverCadProcess $startedProcess.Id "started" $ownedPid ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop
+  Stop-OwnedCadProcess $ownedProcess $ProcessExitTimeoutSeconds ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop -QuitExitCode $config.QuitExitCode
+  # 起動したが ROT の接続先にならなかったプロセス（1 つ目・2 つ目のうち使わなかった方）の後始末
+  foreach ($started in @($startedProcess, $secondaryProcess)) {
+    if ($null -ne $started) { Stop-LeftoverCadProcess $started.Id "started" $ownedPid ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop }
   }
-  Stop-LeftoverCadProcess $comActivatedPid "COM-activated" $ownedPid ([ref]$cleanupFailures) -AllowForceStop:$AllowForceStop
   Remove-CompatPluginStage $pluginStage ([ref]$cleanupFailures)
   Resume-CompatProductAutoload $autoloadState $exe ([ref]$cleanupFailures)
   Write-Evidence "END completed=$completed"

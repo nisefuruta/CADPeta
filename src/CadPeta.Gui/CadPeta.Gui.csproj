@@ -1,12 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- 画面は WPF を C# のコードで組む（XAML は使わない。PETAOPT のダイアログの CadPeta.Ui.Wpf と同じ配色と部品を使う）。
+       色の選択の画面だけは WPF に無いので Windows フォームの画面を使う（Windows フォームの参照は CadPeta.Ui.Wpf から受け継ぐ。
+       ここで UseWindowsForms を指定すると、WinForms の分析器が WPF の高 DPI のマニフェストを拒否する）。 -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
     <TargetFramework>$(CadPetaAppTfm)</TargetFramework>
     <AssemblyName>cadpeta-gui</AssemblyName>
-    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="..\CadPeta.App\CadPeta.App.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CadPeta.App\CadPeta.App.csproj" />
+    <ProjectReference Include="..\CadPeta.Ui.Wpf\CadPeta.Ui.Wpf.csproj" />
+  </ItemGroup>
   <ItemGroup><EmbeddedResource Include="app.ico" LogicalName="CadPeta.Gui.app.ico" /></ItemGroup>
 </Project>

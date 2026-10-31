@@ -22,8 +22,8 @@
          互換版数と食い違い MSB3277 になり得る（Acquire.Ares と同じ実測パターン）。
          コンパイル専用参照で実害がないため、この既知の警告だけを抑制する -->
     <MSBuildWarningsAsMessages Condition="'$(TargetFramework)' == '$(CadPetaNet8Tfm)'">$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
-    <!-- 未対応の AresSdkYearNet48 指定を明示的に失敗させる検査（Directory.Build.props）の対象 -->
-    <CadPetaUsesAresSdk>true</CadPetaUsesAresSdk>
+    <!-- PETAOPT のダイアログ（Ui.Wpf の Window）を開くため -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup>
     <!-- 4 製品で共有するソース（#if CADPETA_<製品> で SDK の違いを分ける）。フォルダの全ファイルを読むので、ファイルを足しても 4 つの csproj を直さない -->
@@ -64,6 +64,14 @@
     <ProjectReference Include="..\CadPeta.Acquire.Ares\CadPeta.Acquire.Ares.csproj" />
     <ProjectReference Include="..\CadPeta.Acquire.Pdf\CadPeta.Acquire.Pdf.csproj" />
     <ProjectReference Include="..\CadPeta.Out.Emf\CadPeta.Out.Emf.csproj" />
+    <ProjectReference Include="..\CadPeta.Out.Png\CadPeta.Out.Png.csproj" />
+    <ProjectReference Include="..\CadPeta.Ui.Wpf\CadPeta.Ui.Wpf.csproj" />
+  </ItemGroup>
+
+  <!-- リボンのボタンのアイコン（AutoCAD と共有。元の絵と作り方は Plugin.Acad の csproj のコメント） -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\CadPeta.Plugin.CadCommon\Resources\Icons\Peta.ico" LogicalName="CadPeta.Peta.ico" />
+    <EmbeddedResource Include="..\CadPeta.Plugin.CadCommon\Resources\Icons\PetaOpt.ico" LogicalName="CadPeta.PetaOpt.ico" />
   </ItemGroup>
 
 </Project>
